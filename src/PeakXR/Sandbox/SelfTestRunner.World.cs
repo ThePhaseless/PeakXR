@@ -1120,8 +1120,8 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// Ground 0.45 m out from <paramref name="lug"/>'s solid bounds, on each of eight headings (from the body's side
-    /// round) whose floor lies within 0.25 m of the case's base and is not the case itself, so a squat reaches low on
-    /// it. Added to <paramref name="spots"/> in heading order.
+    /// round) whose floor lies within 0.25 m of the case's base, at most 1.2 m under its centre, and is not the case
+    /// itself, so a squat reaches low on it. Added to <paramref name="spots"/> in heading order.
     /// </summary>
     static void LevelSpotsBeside(Luggage lug, List<Vector3> spots)
     {
@@ -1149,11 +1149,19 @@ internal sealed partial class SelfTestRunner
                 Mathf.Abs(dir.x) * box.extents.x + Mathf.Abs(dir.z) * box.extents.z + 0.45f;
             var probe = new Vector3(box.center.x, box.max.y + 0.5f, box.center.z) + dir * reach;
             if (
-                Terrain(probe, Vector3.down, box.size.y + 1.5f, out var ground)
-                && ground.collider.GetComponentInParent<Luggage>() == null
-                && Mathf.Abs(ground.point.y - box.min.y) <= 0.25f
-                && StandingRoom(ground.point)
+                !Terrain(probe, Vector3.down, box.size.y + 1.5f, out var ground)
+                || ground.collider.GetComponentInParent<Luggage>() != null
+                || Mathf.Abs(ground.point.y - box.min.y) > 0.25f
             )
+                continue;
+            float underCentre = lug.Center().y - ground.point.y;
+            Plugin.Log.LogDebug(
+                F(
+                    $"[selftest] {lug.name} spot on {ground.collider.name}: slope {Vector3.Angle(ground.normal, Vector3.up):0} deg, {underCentre:0.00} m under the centre (y {lug.Center().y:0.00}, solid top y {SolidTop(lug):0.00})"
+                )
+            );
+            // A case's centre stands well under a metre over its floor. Run 22-23 took a rock 1.5 m under it (#54).
+            if (underCentre <= 1.2f && StandingRoom(ground.point))
                 spots.Add(ground.point);
         }
     }
@@ -1254,7 +1262,11 @@ internal sealed partial class SelfTestRunner
         bool left = VRInput.LeftHanded;
         // The side the eyes face it from: vr43 put the hand 0.9 m behind the head from the body's side.
         var rig = VRRig.Instance;
-        var low = LowGripPoint(lug, rig.Head.position);
+        if (!LowGripPoint(lug, rig.Head.position, out var low))
+        {
+            Fail(NoLowGrip(lug));
+            yield break;
+        }
         // The level spot sits 0.45 m off the case's bounds along its heading, which on a diagonal or a long case
         // left the low grip 1.25 m out (run 50): step in until it is 0.5 m ahead of the eye, as a player would.
         // Up to twice, onto the floor under the new spot (WarpTo's ray from 3 m up can land on the case or a ledge;
@@ -1269,6 +1281,11 @@ internal sealed partial class SelfTestRunner
             var to =
                 new Vector3(c.Center.x, TrackedFloorY() + 0.1f, c.Center.z)
                 + gap.normalized * (gap.magnitude - 0.5f);
+            if (!GroundAtStep(to))
+            {
+                stepped += F($"step-in skipped: no ground within 0.5 m at {to}; ");
+                break;
+            }
             warpedForProp = true;
             c.photonView.RPC("WarpPlayerRPC", Photon.Pun.RpcTarget.All, CentreOver(c, to), false);
             yield return Wait(0.5f);
@@ -1282,7 +1299,11 @@ internal sealed partial class SelfTestRunner
                 )
             );
             yield return Wait(0.6f);
-            low = LowGripPoint(lug, rig.Head.position);
+            if (!LowGripPoint(lug, rig.Head.position, out low))
+            {
+                Fail(NoLowGrip(lug));
+                yield break;
+            }
             stepped += F($"stepped in from {gap.magnitude:0.00} m; ");
         }
         yield return ReachDown(left, () => low, 0.5f);
@@ -1323,7 +1344,9 @@ internal sealed partial class SelfTestRunner
                 $"the low grip did not take {lug.name}: grip {PhysicalInteraction.HandAction(left)} on "
                     + $"{Label(PhysicalInteraction.HandTarget(left))}, hand {Gap(rig.Hand(left).position, lug):0.00} m "
                     + $"from it, {Vector3.Distance(low, rig.Head.position):0.00} m from the eyes, the floor {F($"{TrackedFloorY() - low.y:0.00}")} m over it, hovered "
-                    + $"{Label(interaction0 != null ? interaction0.currentHovered : null)}; {PhysicalInteraction.LastGripNote}"
+                    + $"{Label(interaction0 != null ? interaction0.currentHovered : null)}; grip query touched {GripTouch(lug, rig.Hand(left).position) ?? "nothing"}, "
+                    + F($"centre y {lug.Center().y:0.00}, solid top y {SolidTop(lug):0.00}; ")
+                    + PhysicalInteraction.LastGripNote
             );
             yield break;
         }
@@ -1354,14 +1377,18 @@ internal sealed partial class SelfTestRunner
             Fail("the low grip did not keep the vanilla hold on " + lug.name);
             yield break;
         }
-        stepNote = F($"{lug.name}: {cue}; stooped {headDrop:0.00} m; {LidGesture.LastGrab}");
+        stepNote = F(
+            $"{lug.name}: centre y {lug.Center().y:0.00}, solid top y {SolidTop(lug):0.00}, grip point y {low.y:0.00} on {GripTouch(lug, low)}; {cue}; stooped {headDrop:0.00} m; {LidGesture.LastGrab}"
+        );
         if (lug.IsOpen)
             yield break;
         // A tracked hand sunk into the case, which nothing stops: the grip still takes it (VR run 75's vr.82b met no
         // triangle from inside a concave mesh and did "Interact on nothing").
         // The centre lies half the case further out than the low grip (run 76: past arm's reach), so step in and stoop
         // as for the low grip, until it is in reach or no closer stance is left.
-        var inside = lug.Center() + Vector3.down * 0.05f;
+        // Under the top too: LuggageClown's centre sits over its lid, where the overlap finds nothing sunk (#127).
+        var inside = lug.Center();
+        inside.y = Mathf.Min(inside.y, SolidTop(lug)) - 0.05f;
         float closest = float.MaxValue;
         for (int step = 0; ; step++)
         {
@@ -1382,6 +1409,11 @@ internal sealed partial class SelfTestRunner
             var to =
                 new Vector3(c.Center.x, TrackedFloorY() + 0.1f, c.Center.z)
                 + gap.normalized * (gap.magnitude - 0.5f);
+            if (!GroundAtStep(to))
+            {
+                stepNote += F($"; sunk-in grip skipped: no ground within 0.5 m at {to}");
+                yield break;
+            }
             warpedForProp = true;
             c.photonView.RPC("WarpPlayerRPC", Photon.Pun.RpcTarget.All, CentreOver(c, to), false);
             yield return Wait(0.5f);
@@ -1427,26 +1459,34 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// vr.82b's low grip: the case's near side at least <see cref="LidLowMargin"/> under the lid's give
-    /// (<see cref="LidGesture.LidGive"/>) below its centre. Run 14 (#54): aimed 0.08 m under the centre, the surface
-    /// point came out 0.04 m under it, inside the 0.05 m give, and the grip took the lid half. Lower probes are tried
-    /// until the surface point is that low.
+    /// vr.82b's low grip: a point of the case's near side at least <see cref="LidLowMargin"/> under the lid's give
+    /// (<see cref="LidGesture.LidGive"/>) below the lower of its centre and its solid top, which the grip's own query
+    /// touches. Run 14 (#54): aimed 0.08 m under the centre, the surface point came out 0.04 m under it, inside the
+    /// 0.05 m give, and the grip took the lid half. Runs 22-23: on LuggageClown the first such point lay off the case, so
+    /// the grip found nothing. Lower probes are tried down to 0.6 m; false when none qualifies.
     /// </summary>
-    static Vector3 LowGripPoint(Luggage lug, Vector3 eye)
+    static bool LowGripPoint(Luggage lug, Vector3 eye, out Vector3 point)
     {
         const float want = LidGesture.LidGive + LidLowMargin;
-        var p = NearSide(lug, eye, -want);
-        for (float up = -want - 0.05f; lug.Center().y - p.y < want && up >= -0.3f; up -= 0.05f)
-            p = NearSide(lug, eye, up);
-        return p;
+        float under = Mathf.Min(lug.Center().y, SolidTop(lug)) - want;
+        for (float up = -want; up >= -0.6f; up -= 0.05f)
+            if (
+                NearSide(lug, eye, up, out point)
+                && point.y <= under
+                && GripTouch(lug, point) != null
+            )
+                return true;
+        point = default;
+        return false;
     }
 
     /// <summary>How far (m) under the lid's give vr.82b's low grip aims, clear of the lid/base split.</summary>
     const float LidLowMargin = 0.05f;
 
-    /// <summary>The point of <paramref name="lug"/>'s solid colliders nearest a probe on the side toward
-    /// <paramref name="from"/>, <paramref name="up"/> metres from its render centre, pulled 2 cm out.</summary>
-    static Vector3 NearSide(Luggage lug, Vector3 from, float up)
+    /// <summary>The point of <paramref name="lug"/>'s enabled solid colliders nearest a probe on the side toward
+    /// <paramref name="from"/>, <paramref name="up"/> metres from its render centre, pulled 2 cm out. False when no
+    /// collider gave one.</summary>
+    static bool NearSide(Luggage lug, Vector3 from, float up, out Vector3 point)
     {
         var center = lug.Center();
         var probe = center + Flat(from - center) * 1f + Vector3.up * up;
@@ -1454,7 +1494,7 @@ internal sealed partial class SelfTestRunner
         float bestSq = float.MaxValue;
         foreach (var col in lug.GetComponentsInChildren<Collider>())
         {
-            if (col.isTrigger)
+            if (col.isTrigger || !col.enabled)
                 continue;
             // A concave mesh has no closest-point query, and its bounds can sit well off the real surface (run 60:
             // LuggageAncient's box put the hand where the 0.12 m grab sphere met no triangle, so the grip went to
@@ -1464,7 +1504,9 @@ internal sealed partial class SelfTestRunner
             {
                 var outward = Flat(from - center);
                 var ray = new Ray(probe + outward * 1.5f, -outward);
-                p = col.Raycast(ray, out var hit, 3f) ? hit.point : col.bounds.ClosestPoint(probe);
+                if (!col.Raycast(ray, out var hit, 3f))
+                    continue;
+                p = hit.point;
             }
             else
                 p = col.ClosestPoint(probe);
@@ -1475,7 +1517,55 @@ internal sealed partial class SelfTestRunner
                 best = p;
             }
         }
-        return best + Flat(from - center) * 0.02f;
+        point = best + Flat(from - center) * 0.02f;
+        return bestSq < float.MaxValue;
+    }
+
+    /// <summary>Top of the case's enabled solid colliders. LuggageClown's render centre sits over its lid (#127).</summary>
+    static float SolidTop(Luggage lug)
+    {
+        float top = float.NegativeInfinity;
+        foreach (var col in lug.GetComponentsInChildren<Collider>())
+            if (col.enabled && !col.isTrigger)
+                top = Mathf.Max(top, col.bounds.max.y);
+        return top;
+    }
+
+    /// <summary>The collider of <paramref name="lug"/> the grip's own query touches at <paramref name="at"/>, or null:
+    /// the same mask, trigger mode and radius as PhysicalInteraction.FindCandidate (PhysicalInteraction.cs:1737-1743).</summary>
+    static string GripTouch(Luggage lug, Vector3 at)
+    {
+        foreach (
+            var col in Physics.OverlapSphere(
+                at,
+                InteractConfig.Instance.GrabRadius,
+                HelperFunctions.AllPhysicalExceptCharacter,
+                QueryTriggerInteraction.Collide
+            )
+        )
+            if (ReferenceEquals(col.GetComponentInParent<IInteractible>(), lug))
+                return col.name;
+        return null;
+    }
+
+    /// <summary>Why a step-in may warp: ground within 0.5 m of the floor it stands on, <paramref name="to"/> being 0.1 m
+    /// over that floor. Run 23 vr3 stepped off a rock and fell 9.4 m beside the case (#54).</summary>
+    static bool GroundAtStep(Vector3 to) =>
+        Terrain(to + Vector3.up * 0.4f, Vector3.down, 1f, out _);
+
+    /// <summary>The setup failure when <see cref="LowGripPoint"/> finds nothing, with what the case is made of.</summary>
+    static string NoLowGrip(Luggage lug)
+    {
+        var list = new System.Text.StringBuilder();
+        foreach (var col in lug.GetComponentsInChildren<Collider>())
+            list.Append(
+                F(
+                    $"{col.name} {col.GetType().Name} convex {col is MeshCollider { convex: true }} enabled {col.enabled} bounds {col.bounds}; "
+                )
+            );
+        return F(
+            $"setup: no low grip point on {lug.name}: centre y {lug.Center().y:0.00}, solid top y {SolidTop(lug):0.00}; {list}"
+        );
     }
 
     /// <summary>vr.83c's food distance from the fire base: 0.25 m outside the cook column (FireGestures' 0.6 m), well
