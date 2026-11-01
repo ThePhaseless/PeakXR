@@ -75,6 +75,10 @@ internal sealed class RigDriver : MonoBehaviour
     /// player.locomotion can absorb the body's travel into <see cref="VRRig.RoomAnchor"/> in the same frame.</summary>
     internal static System.Action<Vector3> BodyAnchorMoved;
 
+    /// <summary>The view was placed on the body this frame (a recenter, a new view): <see cref="BodyAnchor"/> jumped, it
+    /// did not travel.</summary>
+    internal static bool BodyAnchorPlaced;
+
     /// <summary>World offset of the first-person view from the avatar's calibrated eyes that the lean leaves out:
     /// follow lag and the view hold, what a turn put on the debt (<see cref="TurnSkip"/>), the crouch lift, the step back while looking down
     /// (<see cref="BodyStance.LeanSkip"/>), and the head's offset past the lean limit (<see cref="BodyStance.LeanBeyond"/>). avatar.local leans the body from the head minus this, so the lean bends
@@ -1226,9 +1230,10 @@ internal sealed class RigDriver : MonoBehaviour
             Chasing = chasing,
             Snap = snapped,
         };
-        if (shownKind == ViewKind.FirstPerson && !snap)
+        if (shownKind == ViewKind.FirstPerson)
         {
             BodyAnchor = anchor;
+            BodyAnchorPlaced = snap;
             // Room-scale absorbs this frame's body travel before the origin is placed from its anchor.
             BodyAnchorMoved?.Invoke(anchor);
         }
@@ -1297,9 +1302,15 @@ internal sealed class RigDriver : MonoBehaviour
     /// </summary>
     private void UpdateTurnShift(Character c, float yaw, float dt)
     {
-        if (snap || shownKind != ViewKind.FirstPerson || c == null || VRFade.Target >= 0.99f)
+        if (
+            snap
+            || shownKind != ViewKind.FirstPerson
+            || c == null
+            || UI.Common.FadeView.Alpha >= FadeCut.BlackLevel
+        )
         {
-            // The view is being placed anyway (recenter, new view) or nothing is seen: start on the avatar's eyes.
+            // The view is being placed anyway (recenter, new view) or nothing is seen: start on the avatar's eyes. The
+            // drawn fade, not its request, which is black about 0.05 s early (run 21: 0.163 m with the world still there).
             turnShift = Vector3.zero;
             turnSkip.Reset();
             turnYaw = yaw;

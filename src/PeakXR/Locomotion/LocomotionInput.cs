@@ -83,10 +83,15 @@ internal static class LocomotionInput
             return;
         var delta = rig.Origin.InverseTransformVector(anchor - lastBody);
         lastBody = anchor;
-        if (!lastOwn || Time.time - OutsideForceAt < OutsideSeconds)
+        // A placed view starts on the body: its placement is no travel, or the fresh room anchor takes it.
+        if (RigDriver.BodyAnchorPlaced || !lastOwn || Time.time - OutsideForceAt < OutsideSeconds)
             return;
         Follow.Anchor = rig.RoomAnchor;
-        if (!Follow.Absorb(new NVector2(delta.x, delta.z), Time.unscaledDeltaTime))
+        // Under a black fade the view takes it unseen: no jump to report.
+        if (
+            !Follow.Absorb(new NVector2(delta.x, delta.z), Time.unscaledDeltaTime)
+            && UI.Common.FadeView.Alpha < FadeCut.BlackLevel
+        )
             Plugin.Log.LogInfo(
                 System.FormattableString.Invariant(
                     $"[player.locomotion] kept out of the room anchor: {delta.magnitude:0.000} m in {Time.unscaledDeltaTime * 1000f:0} ms, own motion, the view takes it"
