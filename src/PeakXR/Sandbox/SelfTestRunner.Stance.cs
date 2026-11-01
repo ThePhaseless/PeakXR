@@ -539,14 +539,11 @@ internal sealed partial class SelfTestRunner
                     $"the legs moved {ratio:0.00} x the ground speed, want {MinLegRatio:0.0}..{MaxLegRatio:0.0}"
                 )
             );
-        if (room)
-        {
-            var origin = new Bounds(rig.Origin.position, Vector3.zero);
-            yield return Settle(rig, origin, b => origin = b);
-            JudgeEyes(c, "after the walk", fails, notes);
-        }
-        else
-            yield return Wait(1f);
+        // The stick walk too: a sample of the walking eyes kept as the eye model left the standing body's drawn eyes
+        // 0.16 m off the view (run 17).
+        var origin = new Bounds(rig.Origin.position, Vector3.zero);
+        yield return Settle(rig, origin, b => origin = b);
+        JudgeEyes(c, "after the walk", fails, notes);
         ReleaseHead();
         Verdict(fails, notes);
     }

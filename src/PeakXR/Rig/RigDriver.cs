@@ -666,7 +666,7 @@ internal sealed class RigDriver : MonoBehaviour
 
     /// <summary>
     /// Learns where the character's eyes are relative to the torso (forward and up in its facing frame) while the
-    /// body stands upright and looks level, as a slow average so walk bob does not reach the view. The eyes are the
+    /// body stands still, upright and looking level, as a slow average so idle sway does not reach the view. The eyes are the
     /// face's eye renderers (CustomizationRefs.EyeRenderers, CharacterCustomization.cs:282). Not the vanilla camera
     /// point <c>head.TransformPoint(up * 1 + forward * -0.5)</c> (Character.cs:1355): that sits on top of the head,
     /// about 0.2 m above the eyes, and straight over the torso, so looking down showed the top of your own body.
@@ -693,11 +693,12 @@ internal sealed class RigDriver : MonoBehaviour
             // the wake-up fall reads a body still rising (eyes 1.32-1.43 m over the ground against 1.77 m standing),
             // and the calibration kept what that frame said (run 21: eyes 0.16 m ahead of the mass centre on that
             // frame, 0.12 m for the whole beach, a taller back-tilted stand and a hip bobbing 0.03 m; run 20: 0.25 m).
-            || !massEyes.Have
-                && (
-                    d.passedOutOnTheBeach > 0f
-                    || d.avarageVelocity.sqrMagnitude >= StillSpeed * StillSpeed
-                )
+            || !massEyes.Have && d.passedOutOnTheBeach > 0f
+            // Every sample waits for a still stand: the model is the standing pose's eyes, which the stance and the lean
+            // use. The lean is on whenever the body stands, so a sample taken walking was kept for good (run 17: the
+            // stick walk's eyes 0.13 m ahead of the mass centre, the spawn's random idle, CharacterCustomization.cs:110,
+            // 0.29 m; the drawn eyes then stood 0.16 m off the view after every stance step).
+            || d.avarageVelocity.sqrMagnitude >= StillSpeed * StillSpeed
         )
             return false;
         // Only the unleaned eyes (EyeCalibration): any lean puts them on the headset, and sampling that would carry
