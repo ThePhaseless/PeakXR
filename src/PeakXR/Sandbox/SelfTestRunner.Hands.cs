@@ -2260,6 +2260,7 @@ internal sealed partial class SelfTestRunner
         right = Vector3.Cross(Vector3.up, forward);
     }
 
+    /// <summary>The level direction of <paramref name="v"/>, a unit vector; for a level distance, <see cref="FlatDistance"/>.</summary>
     static Vector3 Flat(Vector3 v)
     {
         v.y = 0f;
