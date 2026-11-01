@@ -230,6 +230,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
                     EyeEffectsLive ? 120f : 90f,
                     EyeEffectsStep()
                 );
+                yield return VRStep("vr.483-eye-state", 10f, EyeStateStep());
             }
             yield return VRStep("vr.471-fallback-exclusive", 8f, FallbackExclusiveCheck());
             yield return VRStep("vr.279-perf-line", 65f, PerfProbeCheck());

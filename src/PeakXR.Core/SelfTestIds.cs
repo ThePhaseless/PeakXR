@@ -272,6 +272,7 @@ public static class SelfTestIds
         "vr.480-eye-overlays",
         "vr.481-eye-mono-diff",
         "vr.482-eye-effects",
+        "vr.483-eye-state",
         "vr.279-perf-line",
         "vr.286-quick-release",
         "vr.287-quick-release-fist",

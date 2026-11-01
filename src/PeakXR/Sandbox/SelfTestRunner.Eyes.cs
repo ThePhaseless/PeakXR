@@ -17,7 +17,7 @@ namespace PeakXR.Sandbox;
 /// Whether anything differs between the eyes that should not (issue #5), from each eye's own pixels (<see cref="ReadEyes"/>)
 /// on the level. <c>vr.480</c> measures the head-locked overlays: the Peripheral hide, a control that shows it could fail,
 /// and the stereo offset of a real quad. <c>vr.481</c> renders both eyes from one view and from swapped views.
-/// <c>vr.482</c> logs stereo metrics per effect.
+/// <c>vr.482</c> logs stereo metrics per effect, and <c>vr.483</c> checks what each eye renders from.
 /// </summary>
 internal sealed partial class SelfTestRunner
 {
@@ -770,5 +770,64 @@ internal sealed partial class SelfTestRunner
             }
         }
         return nearest;
+    }
+
+    /// <summary>vr.483: over 30 frames each eye renders from its target's corner and with its own depth-normal prepass.
+    /// Without that prepass, from a disabled fog or decal feature, transparents would read another eye's stale depth,
+    /// because the renderer copies depth only after them. The note's cant and tangents are what a real headset's bug report
+    /// answers.</summary>
+    IEnumerator EyeStateStep()
+    {
+        if (!EyesReady(out var cam, out _))
+            yield break;
+        int frames = 0;
+        int good = 0;
+        string bad = null;
+        for (int i = 0; i < 30; i++)
+        {
+            yield return null;
+            var left = EyeMatrixFeature.Eyes[0];
+            var right = EyeMatrixFeature.Eyes[1];
+            int rendered = Time.frameCount - 1;
+            if (left.Frame < rendered || right.Frame < rendered)
+                continue;
+            frames++;
+            string wrong = EyeStateProblem(left, "left") ?? EyeStateProblem(right, "right");
+            if (wrong == null)
+                good++;
+            else
+                bad = wrong;
+        }
+        stepNote = $"{good} of {frames} frames; {EyeStateNote(cam, 0)}; {EyeStateNote(cam, 1)}";
+        if (frames == 0)
+            Fail("no frame recorded both eyes");
+        else if (good < frames)
+            Fail($"{frames - good} of {frames} frames: {bad}");
+    }
+
+    static string EyeStateProblem(in EyeMatrixFeature.EyeRecord eye, string label)
+    {
+        if (eye.Viewport.x >= 0.5f || eye.Viewport.x <= -0.5f)
+            return F($"{label} eye viewport starts at x {eye.Viewport.x:0}");
+        return eye.NormalsPrepass ? null : $"{label} eye had no depth-normal prepass";
+    }
+
+    static string EyeStateNote(Camera cam, int eye)
+    {
+        var record = EyeMatrixFeature.Eyes[eye];
+        var (left, right, bottom, top) = StereoCull.Tangents(
+            record.Proj.m00,
+            record.Proj.m02,
+            record.Proj.m11,
+            record.Proj.m12
+        );
+        // View space looks down -Z.
+        Vector3 forward = cam.transform.InverseTransformDirection(
+            -(Vector3)record.View.inverse.GetColumn(2)
+        );
+        float yaw = Mathf.Atan2(forward.x, forward.z) * Mathf.Rad2Deg;
+        return F(
+            $"{(eye == 0 ? "left" : "right")} cant {yaw:0.00} deg, viewport {record.Viewport}, tangents {left:0.00}/{right:0.00}/{bottom:0.00}/{top:0.00}, prepass {record.NormalsPrepass}"
+        );
     }
 }
