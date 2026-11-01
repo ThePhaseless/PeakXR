@@ -74,6 +74,8 @@ internal sealed partial class SelfTestRunner
         var scout = go.GetComponentInChildren<Scoutmaster>();
         var swarm = go.GetComponentInChildren<BeeSwarm>();
         string staged = StageMob(scout, swarm, c);
+        if (stepSkip != null)
+            yield break;
         var start = Where();
         float size = BoundsSize(go);
         float near = Vector3.Distance(start, c.Center);
@@ -208,8 +210,11 @@ internal sealed partial class SelfTestRunner
     /// forced time, whose RPC this sends, Scoutmaster.cs:120-147); a forced target chases (Chase, :505-545). A swarm
     /// aggroes only a player within <c>defaultAggroDistance</c> (UpdateAggro, BeeSwarm.cs:251-273), and the 6 m spawn
     /// left it idling back to its spawn point, so it is moved in to half that range, as a player walks up to bees.
+    /// It flies straight at its target with a solid collider (BeeSwarm.cs:164), so the spot needs a clear flight to the
+    /// player: sweeping out from the player catches a spot behind a collider and one inside it. Skips the step, with
+    /// the reason, when no heading has one.
     /// </summary>
-    static string StageMob(Scoutmaster scout, BeeSwarm swarm, Character c)
+    string StageMob(Scoutmaster scout, BeeSwarm swarm, Character c)
     {
         if (scout != null)
         {
@@ -223,18 +228,54 @@ internal sealed partial class SelfTestRunner
         if (swarm == null)
             return null;
         float range = swarm.defaultAggroDistance;
+        float off = range * 0.5f;
         var away = swarm.transform.position - c.Center;
         away.y = 0f;
-        var at =
-            c.Center
-            + (away.sqrMagnitude > 1e-4f ? away.normalized : Vector3.forward) * (range * 0.5f);
-        swarm.transform.position = at;
-        if (swarm.TryGetComponent(out Rigidbody rb))
+        var forward = away.sqrMagnitude > 1e-4f ? away.normalized : Vector3.forward;
+        float radius = swarm.GetComponentInChildren<SphereCollider>().radius;
+        int mask = 0;
+        for (int l = 0; l < 32; l++)
         {
-            rb.position = at;
-            rb.linearVelocity = Vector3.zero;
+            if (!Physics.GetIgnoreLayerCollision(swarm.gameObject.layer, l))
+                mask |= 1 << l;
         }
-        return F($"moved to {range * 0.5f:0.0} m, inside its {range:0.0} m aggro range");
+        string refused = "";
+        for (int i = 0; i < ApproachHeadings; i++)
+        {
+            float yaw = ApproachYaw(i);
+            var dir = Quaternion.Euler(0f, yaw, 0f) * forward;
+            if (
+                Physics.SphereCast(
+                    c.Center,
+                    radius,
+                    dir,
+                    out var hit,
+                    off,
+                    mask,
+                    QueryTriggerInteraction.Ignore
+                )
+            )
+            {
+                refused += F(
+                    $", {yaw:0} deg refused by {hit.collider.name} at {hit.distance:0.0} m"
+                );
+                continue;
+            }
+            var at = c.Center + dir * off;
+            swarm.transform.position = at;
+            if (swarm.TryGetComponent(out Rigidbody rb))
+            {
+                rb.position = at;
+                rb.linearVelocity = Vector3.zero;
+            }
+            return F(
+                $"moved to {off:0.0} m, inside its {range:0.0} m aggro range, {yaw:0} deg off the look{refused}"
+            );
+        }
+        stepSkip = F(
+            $"no clear {off:0.0} m flight to the player in {ApproachHeadings} headings{refused}"
+        );
+        return stepSkip;
     }
 
     /// <summary>A staged mob came for the player: the Scoutmaster 0.3 m closer or holding the player; the swarm

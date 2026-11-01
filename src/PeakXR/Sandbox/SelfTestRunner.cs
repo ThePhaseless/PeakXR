@@ -794,6 +794,10 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
     /// <summary>Headings round the player an approach mob's start is looked for in.</summary>
     const int ApproachHeadings = 12;
 
+    /// <summary>Straight ahead first, then round the player both ways.</summary>
+    static float ApproachYaw(int i) =>
+        (i + 1) / 2 * (360f / ApproachHeadings) * (i % 2 == 0 ? 1f : -1f);
+
     IEnumerator Mob(MobEntry entry)
     {
         if (Array.IndexOf(ApproachMobs, entry.Name) >= 0)
@@ -809,7 +813,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             bool open = false;
             for (int i = 0; i < ApproachHeadings && !open; i++)
             {
-                float yaw = (i + 1) / 2 * (360f / ApproachHeadings) * (i % 2 == 0 ? 1f : -1f);
+                float yaw = ApproachYaw(i);
                 var dir = Quaternion.Euler(0f, yaw, 0f) * forward;
                 open =
                     Terrain(
