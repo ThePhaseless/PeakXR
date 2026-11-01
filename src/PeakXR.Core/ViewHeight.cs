@@ -18,9 +18,9 @@ public sealed class ViewHeight
     /// crouch or settling from a landing is followed, not frozen part way.</summary>
     public const float EngageSeconds = 0.5f;
 
-    /// <summary>Most the held view may sit off the body's own height (m). Above the 0.105 m vr.273's step back raised
-    /// the hip in run 14; a body further off stands on something the ground ray missed.</summary>
-    public const float Deadband = 0.12f;
+    /// <summary>Most the held view may sit off the body's own height (m). Above the 0.131 m a stance push lifted the hip
+    /// over the ground (run 20, vr.396 t346.46); a body further off stands on something the ground ray missed.</summary>
+    public const float Deadband = 0.15f;
 
     /// <summary>Time constant (s) of the release onto the body.</summary>
     public const float ReleaseSeconds = 0.15f;

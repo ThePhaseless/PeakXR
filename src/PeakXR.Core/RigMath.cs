@@ -243,11 +243,27 @@ namespace PeakXR.Core
         /// filter a 2 Hz bob, quick enough to reach a new ground height within a couple of seconds.</summary>
         public const float FollowVerticalRate = 0.5f;
 
+        /// <summary>Seconds after a walk over which the rate eases from <see cref="FollowVerticalRate"/> to
+        /// <see cref="GroundedVerticalRate"/>: the ground the walk reached is still owed, and switching at once rose the
+        /// view 0.047 m in 0.3 s (run 20, vr.45 t183.74-184.05).</summary>
+        public const float WalkEaseSeconds = 1f;
+
         /// <summary>The eye anchor's vertical follow rate for the view's own <paramref name="rate"/>.</summary>
-        public static float ViewVerticalRate(float rate, bool grounded, bool followWalking) =>
+        /// <param name="sinceWalk">Seconds since the stance walk last walked.</param>
+        public static float ViewVerticalRate(
+            float rate,
+            bool grounded,
+            bool followWalking,
+            float sinceWalk = float.PositiveInfinity
+        ) =>
             !grounded ? rate
             : followWalking ? MathF.Min(rate, FollowVerticalRate)
-            : MathF.Min(rate, GroundedVerticalRate);
+            : MathF.Min(
+                rate,
+                FollowVerticalRate
+                    + (GroundedVerticalRate - FollowVerticalRate)
+                        * MathF.Min(sinceWalk / WalkEaseSeconds, 1f)
+            );
 
         // Follow's own rule: 0 holds an axis (a still vertical); negative snaps like ExpSmooth.
         static float Blend(float rate, float dt) => rate == 0f ? 0f : ExpSmooth.Factor(rate, dt);

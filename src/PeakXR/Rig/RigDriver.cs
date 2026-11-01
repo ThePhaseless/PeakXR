@@ -1154,10 +1154,12 @@ internal sealed class RigDriver : MonoBehaviour
         lastGoal = goal;
         lastRawGoal = rawGoal;
         haveLastGoal = true;
+        sinceWalk = FollowWalking ? 0f : sinceWalk + dt;
         float verticalRate = RigMath.ViewVerticalRate(
             rate,
             shownKind == ViewKind.FirstPerson && c.data.isGrounded && !c.data.isClimbingAnything,
-            FollowWalking
+            FollowWalking,
+            sinceWalk
         );
         // The standing body's idle sway stays out of the view (ViewHold); goal keeps the body's own point, so
         // ViewOffset carries the held offset like follow lag and the lean never reads it as head motion.
@@ -1619,6 +1621,11 @@ internal sealed class RigDriver : MonoBehaviour
     private readonly ViewHeight viewHeight = new();
     private ViewHoldInputs viewHoldIn;
     private float groundY = float.NaN;
+    private float sinceWalk = float.PositiveInfinity;
+
+    /// <summary>The ground the view's height rides this frame (<see cref="GroundUnder"/>), NaN without any or without a
+    /// first-person view: the self-test judges the view's height against this.</summary>
+    internal static float GroundNow => instance != null ? instance.groundY : float.NaN;
 
     /// <summary>The terrain under the feet (<see cref="FeetMid"/>), NaN without any within reach: what
     /// <see cref="ViewHeight"/> keeps the view's height over. A lean leaves the feet planted; under the hip, which a
