@@ -111,6 +111,11 @@ internal sealed class TraversalGrips : IGripExtension
         int ropes = 0,
             vines = 0,
             handles = 0;
+        // The game takes the segment at the hand (RopeSegment.IsInteractible is per segment, RopeSegment.cs:49-58), so
+        // only the nearest one is judged: a kinked segment elsewhere in the search radius refused a grip on an 18 deg
+        // segment as TooFlat (#115).
+        RopeSegment nearestSegment = null;
+        float nearestSq = float.PositiveInfinity;
         for (int i = 0; i < n && !found; i++)
         {
             var col = hits[i];
@@ -120,7 +125,12 @@ internal sealed class TraversalGrips : IGripExtension
             if (col.TryGetComponent<RopeSegment>(out var segment))
             {
                 ropes++;
-                found = Rope(c, segment, pos, outOfStamina);
+                float sq = (segment.transform.position - pos).sqrMagnitude;
+                if (sq < nearestSq)
+                {
+                    nearestSq = sq;
+                    nearestSegment = segment;
+                }
             }
             else if (col.GetComponentInParent<ClimbHandle>() is { } handle)
             {
@@ -133,6 +143,8 @@ internal sealed class TraversalGrips : IGripExtension
                 found = Vine(c, vine, pos, outOfStamina);
             }
         }
+        if (!found && nearestSegment != null)
+            found = Rope(c, nearestSegment, pos, outOfStamina);
         for (int i = 0; i < n; i++)
             hits[i] = null;
         if (!note)
