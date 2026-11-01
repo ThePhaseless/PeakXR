@@ -81,6 +81,28 @@ public class ItemFollowTests
     }
 
     [Fact]
+    public void AFreshlyGivenItemIsNotProbedForWhatHoldsItBack()
+    {
+        // #121, vr.244: in the attach's settle the arm is on its way and the item can be metres from its place, so a
+        // probe hit would stop the arm's reach and the hold spring on an item nothing holds back.
+        var g = new WeldGate();
+        Assert.False(g.ProbesHeldBack(0.6f, equipSettled: false));
+        Assert.True(g.ProbesHeldBack(0.6f, equipSettled: true));
+        // A hand within the rejoin distance of its controller has nothing to be held back from.
+        Assert.False(g.ProbesHeldBack(g.Rejoin, equipSettled: true));
+    }
+
+    [Fact]
+    public void AFreeItemIsAlwaysProbedForWhatHoldsItBack()
+    {
+        var g = new WeldGate();
+        for (int i = 0; i < 60; i++)
+            g.Update(0.6f, 0f, 0.02f);
+        Assert.True(g.Released);
+        Assert.True(g.ProbesHeldBack(0f, equipSettled: false));
+    }
+
+    [Fact]
     public void AHandOnAHeldBackItemReachesOnlyALittlePastWhereItIs()
     {
         // #116, vr.87: the torch kept on the cannon held the hand 0.4-0.7 m off its controller; the arm's muscles

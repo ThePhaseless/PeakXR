@@ -202,22 +202,65 @@ public partial class AvatarPoseDriver
             ItemProbeMin,
             ItemProbeMax
         );
-        return Physics.CheckSphere(
+        heldBackBy = null;
+        if (
+            Physics.CheckSphere(
                 centre,
                 0.5f * radius,
                 HelperFunctions.terrainMapMask,
                 QueryTriggerInteraction.Ignore
             )
-            || Physics.SphereCast(
+        )
+            return true;
+        if (
+            Physics.SphereCast(
                 centre,
                 radius,
                 toTarget / dist,
-                out _,
+                out var hit,
                 dist,
                 HelperFunctions.terrainMapMask,
                 QueryTriggerInteraction.Ignore
             )
-            || OtherBodyInTheWay(centre, radius, toTarget / dist, dist);
+        )
+        {
+            heldBackBy = hit.collider;
+            return true;
+        }
+        return OtherBodyInTheWay(centre, radius, toTarget / dist, dist);
+    }
+
+    /// <summary>What the last <see cref="ItemHeldBack"/> sweep met, for the log; null when the item's centre sits in
+    /// terrain, which an overlap check cannot name.</summary>
+    private Collider heldBackBy;
+
+    /// <summary>A kept weld's start has been logged and its end not yet (<see cref="LogKeptWeld"/>).</summary>
+    private bool keptWeldLogged;
+
+    /// <summary>Rare edges, kept in the log: when a weld keeps an item held back and when it stops, ended only once
+    /// the arm's limit has lapsed (<see cref="HeldBlockedFresh"/>), so a probe flickering along a wall logs once. The
+    /// numbers tell a real wall from a probe that read a settling item as held back (#121).</summary>
+    private void LogKeptWeld(
+        Item item,
+        bool kept,
+        float toController,
+        float shortfall,
+        float toItem
+    )
+    {
+        bool holding = kept || Time.fixedTime - heldBlockedAt <= HeldBlockedFresh;
+        if (holding == keptWeldLogged)
+            return;
+        keptWeldLogged = holding;
+        string state = holding
+            ? "kept in the hand, held back by "
+                + (heldBackBy != null ? heldBackBy.name : "terrain around its centre")
+            : "no longer held back";
+        Plugin.Log.LogInfo(
+            System.FormattableString.Invariant(
+                $"[avatar.local] {item.name} {state}: hand {toController:0.00} m from its controller (arm {shortfall:0.00} m short), {toItem:0.00} m from the item's grip, item {HeldItemGap:0.00} m from its place, {Owner.data.sinceItemAttach:0.00} s after its attach"
+            )
+        );
     }
 
     /// <summary>The sweep meets a body <see cref="ItemFollow.BodyHoldsItemBack"/> counts. It also lists colliders it
@@ -245,7 +288,10 @@ public partial class AvatarPoseDriver
                     Owner.data.carrier
                 )
             )
+            {
+                heldBackBy = BodyHits[i].collider;
                 return true;
+            }
         }
         return false;
     }
@@ -355,10 +401,11 @@ public partial class AvatarPoseDriver
         // Cast only while the hand lags or the item is free. Walking or not, as vanilla keeps a held item against a
         // wall: run 18 let the apple go as the controller rose with the stick idle (vr.246, #17). Kept, the arm stops
         // pressing for the controller (heldBlockedHand, OnConfigureIK), so the item's contact never lifts the body:
-        // the torch held on the cannon pushed the body up onto it (vr.87, #116).
+        // the torch held on the cannon pushed the body up onto it (vr.87, #116). Not on a freshly given item, as the
+        // gate below waits: a hit would stop an arm still on its way to it (vr.244, #121).
         bool itemBlocked =
             Owner.IsLocal
-            && (toController - shortfall > weldGate.Rejoin || weldGate.Released)
+            && weldGate.ProbesHeldBack(toController - shortfall, EquipSettled)
             && ItemHeldBack(item, target - body.position);
         bool free =
             !Owner.IsLocal
@@ -382,6 +429,8 @@ public partial class AvatarPoseDriver
             heldBlockedAt = Time.fixedTime;
             heldBlockedHand = hand;
         }
+        if (Owner.IsLocal)
+            LogKeptWeld(item, itemBlocked && !free, toController, shortfall, toItem);
         if (free != wasFree && Owner.IsLocal)
         {
             // Rare edges, kept in the log: why a held item left or rejoined the hand.
