@@ -118,6 +118,12 @@ public sealed class WeldGate
         return Released;
     }
 
+    /// <summary>Whether to ask if the world holds the item back: for a free item, and for a welded one whose hand
+    /// lags its controller (<paramref name="lag"/>, past the arm's shortfall) once the equip has settled, as the gate
+    /// itself waits. Before that the arm is on its way and the item can be metres from its place (#121).</summary>
+    public bool ProbesHeldBack(float lag, bool equipSettled) =>
+        Released || (equipSettled && lag > Rejoin);
+
     public void Reset()
     {
         Released = false;

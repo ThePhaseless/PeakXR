@@ -2320,7 +2320,7 @@ internal sealed partial class SelfTestRunner
                         out float arm
                     )
                         ? F(
-                            $"; shoulder {Vector3.Distance(shoulder, bone):0.00} m from the controller (reach {arm:0.00}, ghost gap {gap:0.00}), body to head {Flat(lag).magnitude:0.00} m level {lag.y:0.00} up, eye model f{RigDriver.EyeModel.X:0.00} u{RigDriver.EyeModel.Y:0.00}"
+                            $"; shoulder {Vector3.Distance(shoulder, bone):0.00} m from the controller (reach {arm:0.00}, ghost gap {gap:0.00}), body to head {FlatDistance(lag, Vector3.zero):0.00} m level {lag.y:0.00} up, eye model f{RigDriver.EyeModel.X:0.00} u{RigDriver.EyeModel.Y:0.00}"
                         )
                         : "";
                 }
@@ -2390,19 +2390,17 @@ internal sealed partial class SelfTestRunner
         var controller = new Vector3(head.x, realFloor + 0.1f, head.z) + forward * 0.4f;
         SetHand(false, controller);
         yield return Wait(0.3f);
-        var apple = FindItem(SandboxActions.Items, AppleFragment);
         var top = rig.Origin.TransformPoint(new Vector3(controller.x, seatedEye, controller.z));
-        if (apple == null || !Terrain(top, Vector3.down, 6f, out var ground))
+        if (!Terrain(top, Vector3.down, 6f, out var ground))
         {
-            Fail("no apple or no ground under the hand");
+            Fail("no ground under the hand");
             yield break;
         }
-        yield return SpawnItem(apple, ground.point + Vector3.up * 0.05f);
+        // Held still from the frame it spawns: this low it starts inside the terrain and falls through it (run 53,
+        // PropDrop), and by the time two frames had passed at 13 fps it lay 0.18 m under the ground (run 19, #118).
+        var item = SpawnTestItem(AppleFragment, ground.point + Vector3.up * 0.05f);
         if (!stepOk)
             yield break;
-        var item = spawned[spawned.Count - 1].GetComponent<Item>();
-        if (item.rig != null)
-            item.rig.isKinematic = true;
         yield return Wait(0.3f);
         var hand = rig.RightHand.position;
         float reach = float.MaxValue;
@@ -2426,7 +2424,7 @@ internal sealed partial class SelfTestRunner
             new Vector3(controller.x, virtualFloor, controller.z)
         );
         var note = F(
-            $"seated eye {seatedEye:0.00} m, controller {controller.y - realFloor:0.00} m over the real floor, hand {local - virtualFloor:0.00} m over the virtual floor, {reach:0.00} m from the apple (grab radius {grab:0.00}; {Flat(nearest - hand).magnitude:0.00} level, {hand.y - nearest.y:0.00} above), the ground there {ground.point.y - floorWorld.y:0.00} m over the virtual floor, the hand {Flat(hand - top).magnitude:0.00} m level off where the apple was put under it, eye model f{RigDriver.EyeModel.X:0.00} u{RigDriver.EyeModel.Y:0.00}"
+            $"seated eye {seatedEye:0.00} m, controller {controller.y - realFloor:0.00} m over the real floor, hand {local - virtualFloor:0.00} m over the virtual floor, {reach:0.00} m from the apple (grab radius {grab:0.00}; {FlatDistance(nearest, hand):0.00} level, {hand.y - nearest.y:0.00} above), the ground there {ground.point.y - floorWorld.y:0.00} m over the virtual floor, the apple's centre {item.Center().y - ground.point.y:0.00} m over that ground, the hand {FlatDistance(hand, top):0.00} m level off where the apple was put under it, eye model f{RigDriver.EyeModel.X:0.00} u{RigDriver.EyeModel.Y:0.00}"
         );
         if (local < virtualFloor - 0.01f)
             Fail("the hand went below the virtual floor: " + note);

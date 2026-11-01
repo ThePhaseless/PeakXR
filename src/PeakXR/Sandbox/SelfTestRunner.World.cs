@@ -956,7 +956,7 @@ internal sealed partial class SelfTestRunner
                 ? Vector3.Distance(fuseCol.ClosestPointOnBounds(flame.position), flame.position)
                 : Vector3.Distance(at, flame.position);
         flameNote = F(
-            $"flame {gap:0.00} m from {(fuseCol != null ? fuseCol.name : fuse.name)} ({Touch().y - Feet(c).y:0.00} m over the feet), hand {Vector3.Distance(rig.Head.position, rig.Hand(left).position):0.00} m from the eye and {Vector3.Distance(rig.Hand(left).position, flame.position):0.00} m from the flame, stooped {headDrop:0.00} m, body {FlatDistance(c.Center, Touch()):0.00} m from the fuse standing {TrackedFloorY() - Feet(c).y:0.00} m over the ground, closest {carryBest:0.00} m to the carry goal; {fuseWay}"
+            $"flame {gap:0.00} m from {(fuseCol != null ? fuseCol.name : fuse.name)} ({Touch().y - Feet(c).y:0.00} m over the feet), hand {Vector3.Distance(rig.Head.position, rig.Hand(left).position):0.00} m from the eye and {Vector3.Distance(rig.Hand(left).position, flame.position):0.00} m from the flame, stooped {headDrop:0.00} m, body {FlatDistance(c.Center, Touch()):0.00} m from the fuse standing {TrackedFloorY() - Feet(c).y:0.00} m over the ground, {CarryNote}; {fuseWay}"
         );
         if (OverReach(left) is { } far)
             Fail($"{far}: {flameNote}");

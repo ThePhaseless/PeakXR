@@ -191,6 +191,13 @@ internal sealed partial class SelfTestRunner
     /// checks, never this one.</summary>
     const float GameGripTolerance = 0.04f;
 
+    /// <summary>vr.244: the drawn hand this near its grip (m) is on it.</summary>
+    const float LeftHoldOnGrip = 0.04f;
+
+    /// <summary>vr.244: seconds past the settle the hand has to land on its grip, past the longest swing a give gave
+    /// (under 0.5 s in run 19); one that stays off fails.</summary>
+    const float LeftHoldLand = 2f;
+
     /// <summary>The local player's <paramref name="left"/> hand bone as drawn (the <see cref="DrawnHands"/> proxy) at the
     /// game's hand size: the proxy is scaled about the controller's point in the palm (DrawnHands.Pose), so only a
     /// drawn proxy is moved back. Without the proxies, the ragdoll hand itself.</summary>
@@ -255,6 +262,28 @@ internal sealed partial class SelfTestRunner
                     lost = $"{itemName} left the {(left ? "left" : "right")} hand";
                     break;
                 }
+                // The give jolts the body and the arm arrives through it, so the hand gets time to land before it is
+                // judged. Read at the end of the frame: DrawnHands poses the hand in LateUpdate, and from Update the
+                // pose is a frame behind the item (run 19: 0.1-0.2 m on a body still swinging at 13 fps, #121).
+                var endOfFrame = new WaitForEndOfFrame();
+                float landFrom = Now;
+                do yield return endOfFrame;
+                while (
+                    item != null
+                    && Now - landFrom < LeftHoldLand
+                    && Vector3.Distance(
+                        DrawnHandBone(c, left),
+                        item.transform.TransformPoint(
+                            info.HoldLocal(info.GripLocal, left, primaryGrip: true)
+                        )
+                    ) > LeftHoldOnGrip
+                );
+                float landed = Now - landFrom;
+                if (item == null)
+                {
+                    lost = $"{itemName} left the {(left ? "left" : "right")} hand";
+                    break;
+                }
                 var hand = rig.Hand(left);
                 var head = rig.Head;
                 var middle = (info.BoundsMin + info.BoundsMax) * 0.5f;
@@ -308,7 +337,7 @@ internal sealed partial class SelfTestRunner
                 // Every hold's numbers, passing or not.
                 Plugin.Log.LogInfo(
                     F(
-                        $"[selftest] vr.244 {itemName} {(left ? "left" : "right")}: plane {held.Plane}{(held.EvenEnds ? " (even ends)" : "")}, palm {held.Palm:0.000} m, second {held.Second:0.000} m, hand on grip {held.HandOff:0.000} m, middle in {held.MidIn:0.00}, far end in {held.EndIn:0.00} up {held.EndUp:0.00}, +Z to the eyes {held.Facing:0.00}{(held.Front ? " (has a front)" : "")}"
+                        $"[selftest] vr.244 {itemName} {(left ? "left" : "right")}: plane {held.Plane}{(held.EvenEnds ? " (even ends)" : "")}, palm {held.Palm:0.000} m, second {held.Second:0.000} m, hand on grip {held.HandOff:0.000} m ({landed:0.00} s past the settle), middle in {held.MidIn:0.00}, far end in {held.EndIn:0.00} up {held.EndUp:0.00}, +Z to the eyes {held.Facing:0.00}{(held.Front ? " (has a front)" : "")}"
                     )
                 );
                 if (Array.IndexOf(LeftHoldShots, itemName) >= 0)
@@ -353,7 +382,8 @@ internal sealed partial class SelfTestRunner
                 : l.Palm < r.Palm - LeftHold.DeepTolerance ? "the left palm sinks into the item"
                 : !float.IsNaN(l.Second) && l.Second > r.Second + LeftHoldSlack
                     ? "the left hold's second grip is off the item"
-                : l.HandOff > 0.04f || r.HandOff > 0.04f ? "the welded hand is off its grip"
+                : l.HandOff > LeftHoldOnGrip || r.HandOff > LeftHoldOnGrip
+                    ? "the welded hand is off its grip"
                 // NaN too: an item without Hand_R, or one the weld let go, is not the game's own hold.
                 : !(r.GameGripOff <= GameGripTolerance)
                     ? F(
@@ -1168,6 +1198,13 @@ internal sealed partial class SelfTestRunner
     const float CarryStallSeconds = 0.4f;
 
     float carryBest;
+
+    /// <summary>The last carry's closest approach, for a note; carryBest keeps its start value if none ran.</summary>
+    string CarryNote =>
+        carryBest < float.MaxValue
+            ? F($"closest {carryBest:0.00} m to the carry goal")
+            : "no carry on the last leg";
+
     float carryBestAt;
     Vector3 carryLead;
 
