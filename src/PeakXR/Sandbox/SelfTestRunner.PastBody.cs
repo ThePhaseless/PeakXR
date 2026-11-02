@@ -19,10 +19,10 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// vr.495 (Bandages), vr.495b (FirstAidKit, the big one): given to the hand that did not hold the last item while it
-    /// rests on the chest, it waits for the hand to move. Held out in front, the item itself on the body and the hand
-    /// well off it, it starts nothing. Carried from there, in past the belly (inside the press zone, as a real hand's arc
-    /// is) to each hotbar slot, at a hand's speed and slowly, rested there and let go: no cast starts, nothing is spent,
-    /// and it is in its slot. Then a cast started on the chest and carried on to the slot stops there and stows. Then
+    /// rests on the chest, it waits for the hand to move. Held out in front at the belt, the item itself on the body and
+    /// the hand under it, it starts nothing. Carried from there, across the belly (inside the press zone for longer than
+    /// the dwell, at either speed) to each hotbar slot, rested there and let go: no cast starts, nothing is spent, and it
+    /// is in its slot. Then a cast started on the chest and carried on to the slot stops there and stows. Then
     /// drawn and lifted straight up to the chest, held still, it heals (<see cref="BandageHeld"/>).
     /// </summary>
     IEnumerator BandagePastBodyStep(Item prefab)
@@ -98,12 +98,18 @@ internal sealed partial class SelfTestRunner
                     if (HeldGestures.AtBody)
                         inZone += Time.unscaledDeltaTime;
                 }
+                // From the far side of the belly: the straight way to the holding side's slot met the zone for 0.31 s at
+                // 0.8 m/s, under the dwell, so a carry there could not have started a cast whatever the rule (#147).
+                var far = head + forward * 0.1f + Vector3.down * 0.5f - side * 0.3f;
                 var belly = head + forward * 0.1f + Vector3.down * 0.5f + side * 0.08f;
-                while (Vector3.Distance(Script(left).Position, belly) > 0.01f)
+                foreach (var point in new[] { far, belly })
                 {
-                    SetHand(left, ApproachAt(left, belly, speed));
-                    Sample();
-                    yield return null;
+                    while (Vector3.Distance(Script(left).Position, point) > 0.01f)
+                    {
+                        SetHand(left, ApproachAt(left, point, speed));
+                        Sample();
+                        yield return null;
+                    }
                 }
                 while (Vector3.Distance(Script(left).Position, inv.Anchor(to)) > 0.01f)
                 {
@@ -234,24 +240,23 @@ internal sealed partial class SelfTestRunner
             Fail("it started the use: " + note);
     }
 
-    /// <summary>In from far out in front until the item itself meets the body, stopping short of where the hand itself
-    /// would count: the hold most likely to start a use by mistake, whatever the item's size. Then a second's rest.</summary>
+    /// <summary>In from far out in front until the item itself meets the body, the hand just under the torso's bottom,
+    /// where it never counts: the hold most likely to start a use by mistake, whatever the item's size. Straight in at
+    /// chest height the hand counted first: the Bandages' near face stops 0.19 m off the grip, under the 0.2 m the hand
+    /// gets (<see cref="BodyZones.HandOffTorso"/>), so the item stayed 0.028 m short (#147). Then a second's rest.</summary>
     IEnumerator FrontHold(bool left, Vector3 head, Vector3 forward, Vector3 side)
     {
-        var level = head + Vector3.down * 0.45f + side * 0.1f;
+        var level = head + Vector3.down * (BodyZones.TorsoBottom + 0.1f) + side * 0.1f;
         yield return MoveTrack(left, level + forward * 0.6f, 0.5f);
-        while (
-            !HeldGestures.AtBody
-            && !BodyZones.HandAtTorso(
-                Script(left).Position.N(),
-                head.N(),
-                forward.N(),
-                BandageTorsoRadius + 0.02f
-            )
-        )
+        while (!HeldGestures.AtBody && Vector3.Distance(Script(left).Position, level) > 0.01f)
         {
             SetHand(left, ApproachAt(left, level, 0.2f));
             yield return null;
+        }
+        if (BodyInventory.Instance.HeldSlot(Character.localCharacter, left) >= 0)
+        {
+            Fail("setup: the front hold landed on a body slot, which would end a use anyway");
+            yield break;
         }
         yield return ExpectNoCast(left, "at the front hold");
     }
