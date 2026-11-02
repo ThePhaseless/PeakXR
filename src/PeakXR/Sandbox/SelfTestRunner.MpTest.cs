@@ -1441,10 +1441,17 @@ internal sealed partial class SelfTestRunner
         yield return FreeHands();
         if (!stepOk)
             yield break;
-        yield return FetchFood(i => IsFood(i) && i.canUseOnFriend);
+        yield return GrabReachable(
+            i => IsFood(i) && i.canUseOnFriend,
+            null,
+            NearItems,
+            3,
+            spawn: MpFeedFood
+        );
         if (!stepOk || stepSkip != null)
             yield break;
         var item = HeldItem();
+        string foodName = item.name;
         cpItemId = item.itemID;
         bool left = LocalHold.ItemInLeftHand;
         var c = Character.localCharacter;
@@ -1722,7 +1729,7 @@ internal sealed partial class SelfTestRunner
         if (c.data.lastConsumedItem != consumedBefore)
             yield return WaitFor(() => HeldItem() != item, 2f);
         var note =
-            $"item closest {best:0.00} m to the host's head, {atMouth:0.0} s at the mouth, trigger up; {standNote}";
+            $"{foodName} closest {best:0.00} m to the host's head, {atMouth:0.0} s at the mouth, trigger up; {standNote}";
         if (c.data.lastConsumedItem == consumedBefore)
             Fail(
                 (item != null && HeldItem() == item ? "not fed: " : "item left the hand unfed: ")
@@ -1768,7 +1775,6 @@ internal sealed partial class SelfTestRunner
         cpItemId = item.itemID;
         bool left = LocalHold.ItemInLeftHand;
         float consumedBefore = c.data.lastConsumedItem;
-        var driver = AvatarPoseDriver.Of(c);
         Face(HostPart(host, BodypartType.Head));
         VRRig.Instance.RotateYaw(left ? 90f : -90f);
         yield return CarryFoodBack(left);
@@ -1784,8 +1790,7 @@ internal sealed partial class SelfTestRunner
             closest = Mathf.Min(closest, gap);
             if (gap <= Social.SocialHands.FeedRadius)
                 inZone += Time.unscaledDeltaTime;
-            if (driver != null && driver.HeldItemGap >= 0f)
-                place = Mathf.Min(place, Vector3.Distance(driver.HeldItemPlace, mouth));
+            place = Mathf.Min(place, Social.SocialHands.FeedPlaceGap(item, mouth));
             used |= item.isUsingSecondary || c.input.useSecondaryIsPressed;
             yield return null;
         }
@@ -1862,8 +1867,7 @@ internal sealed partial class SelfTestRunner
         {
             var mouth = HostPart(host, BodypartType.Head);
             best = Mathf.Min(best, Social.SocialHands.FeedGap(item, mouth));
-            if (driver != null && driver.HeldItemGap >= 0f)
-                placeBest = Mathf.Min(placeBest, Vector3.Distance(driver.HeldItemPlace, mouth));
+            placeBest = Mathf.Min(placeBest, Social.SocialHands.FeedPlaceGap(item, mouth));
             if (driver != null && driver.HeldBackBody == host)
                 keptFor += Time.unscaledDeltaTime;
             var goal = rig.Origin.InverseTransformPoint(mouth - grip.World(rig, Script(left)));
@@ -2139,6 +2143,10 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>The food the steps ask the host for: one-hand, feeds a friend, and packs take it.</summary>
     const string MpFood = "TrailMix";
+
+    /// <summary>The food feed asks for: its pivot sits 0.38 m from the far end of its box, where <see cref="MpFood"/>'s
+    /// is nearly in the box, so it proves the zone's own measure at the held place (#119).</summary>
+    const string MpFeedFood = "Apple Berry Red";
 
     /// <summary>A plain one-hand item with no use of its own (feed-refuse, a full hand).</summary>
     const string MpPlainItem = "Compass";

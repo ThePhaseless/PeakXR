@@ -18,6 +18,18 @@ public static class FeedZone
         var d = System.Numerics.Vector3.Abs(target - center) - extents;
         return System.Numerics.Vector3.Max(d, System.Numerics.Vector3.Zero).Length();
     }
+
+    /// <summary><see cref="Gap"/> for the box moved to where its controller puts the item: <paramref name="rig"/> is
+    /// the item's body now, <paramref name="place"/> that body's controller-held place. A friend's body can keep the
+    /// box on them while the controller is elsewhere (#119), and the body's pivot is no measure of the box: it can lie
+    /// at one end, 0.51 m from the other on a Berrynana.</summary>
+    public static float PlaceGap(
+        System.Numerics.Vector3 center,
+        System.Numerics.Vector3 extents,
+        System.Numerics.Vector3 rig,
+        System.Numerics.Vector3 place,
+        System.Numerics.Vector3 target
+    ) => Gap(center + (place - rig), extents, target);
 }
 
 /// <summary>What a held item at a friend's mouth or chest does this frame (<see cref="HandOver"/>).</summary>
@@ -78,14 +90,15 @@ public sealed class HandOver
     public static bool Still(float feederSpeed, float friendSpeed) =>
         Still(feederSpeed) && Still(friendSpeed);
 
-    /// <summary>How far (m) from the mouth or chest the item's controller-held place may be for the dwell to count: the
-    /// player holds it there, it did not only come to rest there. The body weld keeps an item on a friend with the
-    /// controller elsewhere (#119: 0.63 m off, fed in 1.15 s).</summary>
-    public const float PlaceRadius = 0.35f;
+    /// <summary>The feed zone (m): how near the item's nearest point comes to the mouth, and how near it would be at its
+    /// controller-held place (<see cref="FeedZone.PlaceGap"/>) for the dwell to count: the player holds it there, it did
+    /// not only come to rest there. The body weld keeps an item on a friend with the controller elsewhere (#119: 0.63 m
+    /// off, fed in 1.15 s).</summary>
+    public const float PlaceRadius = 0.22f;
 
-    /// <summary>The same limit just outside the zone (out to a friend's near radius and the item's own size): a hand
-    /// offering the item there, not one whose item a friend's body keeps while it is elsewhere.</summary>
-    public const float NearPlaceRadius = 0.6f;
+    /// <summary>The same two measures just outside the zone, out to where a press says "closer": a hand offering the item
+    /// there, not one whose item a friend's body keeps while it is elsewhere.</summary>
+    public const float NearPlaceRadius = 0.45f;
 
     /// <summary>A friend's body holds the item off the spot its controller has reached: it cannot get closer, and
     /// letting go would only snap it inside them (#116, #119), so it counts as there (#112: a Frisbee 0.24 m off on a
@@ -110,8 +123,9 @@ public sealed class HandOver
     /// <param name="dt">Seconds since the last update, for the <see cref="Grace"/>; 0 gives none.</param>
     /// <param name="still">The feeder and the friend are nearly still (<see cref="Still(float, float)"/>): the
     /// <see cref="Dwell"/> only counts then, and starts over when one moves before it is done.</param>
-    /// <param name="placeGap">The item's controller-held place from the mouth or chest (m): the <see cref="Dwell"/>
-    /// only counts within <see cref="PlaceRadius"/>. The trigger does not read it.</param>
+    /// <param name="placeGap">The item at its controller-held place from the mouth or chest (m,
+    /// <see cref="FeedZone.PlaceGap"/>): the <see cref="Dwell"/> only counts within <see cref="PlaceRadius"/>. The
+    /// trigger does not read it.</param>
     /// <param name="nearBand">Out of the zone, the item is still just short of it (<see cref="NearStep"/>).</param>
     public HandOverState Update(
         bool inZone,
