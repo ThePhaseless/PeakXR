@@ -13,6 +13,7 @@ using PeakXR.UI.Common;
 using PeakXR.UI.RunFlow;
 using PeakXR.UI.World;
 using PeakXR.VR;
+using Photon.Pun;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -39,7 +40,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.82-lid-progress", 40f, LidProgressStep());
         yield return WarpBack();
         // Restoring: the step may stand on a test ledge (LedgeBeside), which must go after it.
-        yield return Restoring("vr.82b-lid-low-grip", 60f, LidLowGripStep());
+        yield return Restoring("vr.82b-lid-low-grip", 180f, LidLowGripStep());
         yield return WarpBack();
         yield return HandStep("vr.83-cook-cant-use", 40f, CookCantUseStep());
         yield return WarpBack();
@@ -1149,8 +1150,7 @@ internal sealed partial class SelfTestRunner
                     $"[selftest] {lug.name} spot on {ground.collider.name}: slope {Vector3.Angle(ground.normal, Vector3.up):0} deg, {underCentre:0.00} m under the centre (y {lug.Center().y:0.00}, solid top y {SolidTop(lug):0.00})"
                 )
             );
-            // A case's centre stands well under a metre over its floor. Run 22-23 took a rock 1.5 m under it (#54).
-            if (underCentre <= 1.2f && StandingRoom(ground.point))
+            if (StandingRoom(ground.point))
                 spots.Add(ground.point);
         }
     }
@@ -1246,6 +1246,160 @@ internal sealed partial class SelfTestRunner
     /// <summary>vr.82b tries the level spots of at most this many slow cases, nearest first.</summary>
     const int LidCaseTries = 3;
 
+    /// <summary>The case vr.82b copies: a LuggageClown when it is loaded (the case #54 was found on), else the closed case
+    /// the game has with a Lid collider and the longest open time. Any scene or prefab copy will do; the copy's open time
+    /// is set to <see cref="SlowCaseOpen"/>.</summary>
+    static Luggage SlowCaseSource()
+    {
+        Luggage best = null;
+        float bestScore = float.NegativeInfinity;
+        foreach (var l in Resources.FindObjectsOfTypeAll<Luggage>())
+        {
+            if (l == null || l is RespawnChest || l.IsOpen)
+                continue;
+            float score = l.timeToOpen;
+            if (l.name.Contains("Clown", StringComparison.Ordinal))
+                score += 1000f;
+            foreach (var box in l.GetComponentsInChildren<BoxCollider>(true))
+                if (box.name.StartsWith("Lid", StringComparison.Ordinal))
+                {
+                    score += 100f;
+                    break;
+                }
+            if (score > bestScore)
+            {
+                bestScore = score;
+                best = l;
+            }
+        }
+        return best;
+    }
+
+    /// <summary>The slow case's open time: past everything the step holds its grip for, so no grip here opens it.</summary>
+    const float SlowCaseOpen = 6f;
+
+    /// <summary>What the last <see cref="SpawnSlowCase"/> stood up; destroyed by the step, or on restore.</summary>
+    Luggage spawnedCase;
+
+    GameObject caseFloor;
+
+    /// <summary>
+    /// A local copy of <paramref name="source"/> on a level test floor laid over open ground, turned 35 degrees about its up and its side
+    /// toward the body tipped down by <paramref name="tilt"/> degrees, its solids' lowest corner on the ground.
+    /// Under an inactive parent so its <c>PhotonView.Awake</c> (which would register the source's scene view id and
+    /// replace it) runs only after the id is cleared; it gets its own view id, so its RPCs stay its own.
+    /// </summary>
+    IEnumerator SpawnSlowCase(Luggage source, float tilt)
+    {
+        var c = Character.localCharacter;
+        var forward = Flat(VRRig.Instance.Head.forward);
+        Vector3? spot = null;
+        foreach (float dist in new[] { 5f, 8f, 12f, 18f, 25f })
+        {
+            for (int i = 0; i < 12 && spot == null; i++)
+            {
+                var at = c.Center + Quaternion.Euler(0f, i * 30f, 0f) * forward * dist;
+                if (SlabTop(at, out var top))
+                    spot = top;
+            }
+        }
+        if (spot is not { } floor)
+        {
+            Fail("setup: no open ground for the test case's floor within 25 m");
+            yield break;
+        }
+        var slab = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        slab.name = "PeakXR_TestCaseFloor";
+        slab.layer = LayerMask.NameToLayer("Map");
+        slab.transform.localScale = new Vector3(SlabHalf * 2f, SlabThick, SlabHalf * 2f);
+        slab.transform.position = floor + Vector3.down * (SlabThick * 0.5f);
+        OnRestore(() =>
+        {
+            if (slab != null)
+                UnityEngine.Object.Destroy(slab);
+        });
+        caseFloor = slab;
+        var hold = new GameObject("PeakXR_SlowCaseHold");
+        hold.SetActive(false);
+        var go = UnityEngine.Object.Instantiate(source.gameObject, hold.transform);
+        go.name = "PeakXR_SlowCase_" + source.name;
+        go.transform.localScale = source.transform.lossyScale;
+        var tip = Quaternion.AngleAxis(tilt, Vector3.Cross(Vector3.up, Flat(floor - c.Center)));
+        go.transform.SetPositionAndRotation(
+            floor,
+            tip * Quaternion.LookRotation(forward) * Quaternion.Euler(0f, 35f, 0f)
+        );
+        foreach (var view in go.GetComponentsInChildren<PhotonView>(true))
+        {
+            view.sceneViewId = 0;
+            view.InstantiationId = 0;
+        }
+        var lug = go.GetComponent<Luggage>();
+        lug.timeToOpen = Mathf.Max(lug.timeToOpen, SlowCaseOpen);
+        go.transform.SetParent(null, true);
+        go.SetActive(true);
+        UnityEngine.Object.Destroy(hold);
+        foreach (var view in go.GetComponentsInChildren<PhotonView>(true))
+            PhotonNetwork.AllocateViewID(view);
+        OnRestore(() =>
+        {
+            if (go != null)
+                UnityEngine.Object.Destroy(go);
+        });
+        foreach (var body in go.GetComponentsInChildren<Rigidbody>())
+            body.isKinematic = true;
+        var box = SolidBounds(lug);
+        go.transform.position += new Vector3(
+            floor.x - box.center.x,
+            floor.y - box.min.y,
+            floor.z - box.center.z
+        );
+        Physics.SyncTransforms();
+        spawnedCase = lug;
+        yield return null;
+        Plugin.Log.LogInfo(
+            F(
+                $"[selftest] test case from {source.name}: open {source.timeToOpen:0.0} -> {lug.timeToOpen:0.0} s, solids {SolidBounds(lug)}, up {go.transform.up}, centre y {lug.Center().y:0.00}"
+            )
+        );
+    }
+
+    /// <summary>Half the side and the thickness (m) of the level floor vr.82b lays: a 3 m case, a stance beside it and a
+    /// step in all fit, whatever the beach's slope (a 14 degree stretch left the case 0.76 m under the body).</summary>
+    const float SlabHalf = 3f;
+
+    const float SlabThick = 2f;
+
+    /// <summary>Where the top of a level floor round <paramref name="at"/> goes: just over the highest ground under it,
+    /// with ground all under it, and no rock or tree on it from there to over a body's height. An item lying there is
+    /// covered, and a run's scattered items left no spot at all otherwise.</summary>
+    static bool SlabTop(Vector3 at, out Vector3 top)
+    {
+        top = default;
+        float high = float.NegativeInfinity;
+        float low = float.PositiveInfinity;
+        for (int x = -2; x <= 2; x++)
+        for (int z = -2; z <= 2; z++)
+        {
+            var probe = at + new Vector3(x * SlabHalf * 0.5f, 4f, z * SlabHalf * 0.5f);
+            if (!Terrain(probe, Vector3.down, 8f, out var under))
+                return false;
+            high = Mathf.Max(high, under.point.y);
+            low = Mathf.Min(low, under.point.y);
+        }
+        // The floor sits in the ground on its low side only as far as it is thick.
+        if (high - low > SlabThick - 0.2f)
+            return false;
+        top = new Vector3(at.x, high + 0.05f, at.z);
+        return !Physics.CheckBox(
+            top + Vector3.up * 1.5f,
+            new Vector3(SlabHalf, 1.4f, SlabHalf),
+            Quaternion.identity,
+            HelperFunctions.terrainMapMask,
+            QueryTriggerInteraction.Ignore
+        );
+    }
+
     /// <summary>Room for a standing body on <paramref name="feet"/>: nothing solid but characters within 0.3 m of the
     /// line from knee to eye height. Issue #54: a spot whose ray column was clear but had something solid beside it
     /// took the warp, and the body was pushed up out of it, about 1 m over the case's base, out of a squat's
@@ -1260,37 +1414,55 @@ internal sealed partial class SelfTestRunner
         );
 
     /// <summary>vr.82b: a grip low on a closed slow suitcase (open time at least <see cref="LidGesture.LowGripMinOpen"/>)
-    /// keeps the vanilla hold and, after 0.5 s, gets the "grab the lid" notice (AimHigher, ring on the lid edge above
-    /// the hand). A would-work hint: needs UI.ActionHints.</summary>
+    /// keeps the vanilla hold and, after 0.5 s, gets the "grab the lid" notice (AimHigher, ring on the lid edge above the
+    /// hand). A would-work hint: needs UI.ActionHints. The step brings its own case (<see cref="SpawnSlowCase"/>), since
+    /// the level rolls by date and Level_90's beach has no slow one (#54): once on the level turned about its up, so its
+    /// world box has corners past the walls, and once with its near side tipped down, as a LuggageClown lies on a rock
+    /// (#127), by less than that rock's 21 degrees, which on a 3 m case left the far side past any reach.</summary>
     IEnumerator LidLowGripStep()
     {
-        var c = Character.localCharacter;
-        var cases = new List<Luggage>();
-        foreach (var l in FindObjectsByType<Luggage>(FindObjectsSortMode.None))
+        if (!Affordance.Hints || !Setting("Interaction", "LiftLidToOpen", true))
         {
-            if (
-                l != null
-                && !l.IsOpen
-                && l is not RespawnChest
-                && l.GetInteractTime(c) >= LidGesture.LowGripMinOpen
-            )
-                cases.Add(l);
-        }
-        cases.Sort(
-            (a, b) =>
-                (a.transform.position - c.Center).sqrMagnitude.CompareTo(
-                    (b.transform.position - c.Center).sqrMagnitude
-                )
-        );
-        var lug = cases.Count > 0 ? cases[0] : null;
-        if (lug == null || !Affordance.Hints || !Setting("Interaction", "LiftLidToOpen", true))
-        {
-            stepSkip =
-                lug == null ? "no slow closed suitcase in the active segment"
-                : !Affordance.Hints ? "UI.ActionHints is off"
+            stepSkip = !Affordance.Hints
+                ? "UI.ActionHints is off"
                 : "Interaction.LiftLidToOpen is off";
             yield break;
         }
+        var source = SlowCaseSource();
+        if (source == null)
+        {
+            stepSkip = "the game has no Luggage to copy loaded";
+            yield break;
+        }
+        string notes = "";
+        foreach (float tilt in new[] { 0f, 12f })
+        {
+            string how = tilt > 0f ? "tilted" : "turned";
+            yield return SpawnSlowCase(source, tilt);
+            if (!stepOk || spawnedCase == null)
+                yield break;
+            var lug = spawnedCase;
+            yield return LidLowGrip(lug);
+            if (!stepOk)
+            {
+                failNote += $"; on the {how} copy of {source.name}, after: {notes}";
+                yield break;
+            }
+            notes += $"{how} copy of {source.name}: {stepNote}; ";
+            stepNote = null;
+            yield return GripTo(VRInput.LeftHanded, 0f, 0.05f);
+            yield return StandUp(VRInput.LeftHanded);
+            UnityEngine.Object.Destroy(lug.gameObject);
+            UnityEngine.Object.Destroy(caseFloor);
+            yield return null;
+        }
+        stepNote = notes;
+    }
+
+    IEnumerator LidLowGrip(Luggage lug)
+    {
+        var c = Character.localCharacter;
+        var cases = new List<Luggage> { lug };
         // 0.6 m out and stooping, as a player crouches at a case on the ground: 8 cm under its centre is about knee
         // height, 1.4 m under a standing eye.
         // Run 48 warped onto higher ground (or the case) 0.25 m from it, so even a full squat left the hand 1.03 m
@@ -1630,7 +1802,7 @@ internal sealed partial class SelfTestRunner
             );
         else
             stepNote += F(
-                $"; a hand {Gap(at, lug):0.00} m off its walls, in its world box, does not"
+                $"; a hand over {InteractConfig.Instance.GrabRadius + 0.1f:0.00} m off its walls, in its world box, does not"
             );
     }
 
