@@ -1359,7 +1359,8 @@ internal sealed class SocialHands : IGripExtension
     /// there at its controller-held place too (<see cref="FeedZone.PlaceGap"/>), the feeder, the friend and the feeder's
     /// hand must be nearly still for the dwell (#93: walking up with food at chest height fed them; #119: a friend's body
     /// held the food on them with the controller 0.63 m off; #147: a hand on its way to the belt healed whoever stood
-    /// close), and your own slot or pack in reach wins, unless the trigger says otherwise. A friend's copy has a live velocity: their own client's <c>averageVelocity</c> arrives in every sync package
+    /// close), and your own slot or pack in reach wins over a use, unless the trigger says otherwise, though not over a
+    /// refusal (<see cref="HandOver.YieldsToOwnSlot"/>). A friend's copy has a live velocity: their own client's <c>averageVelocity</c> arrives in every sync package
     /// (CharacterSyncer.cs:116-117) and their ragdoll simulates here between them (CharacterMovement.cs:295, :683-697). A
     /// teal ring marks the mouth or chest while in range and through the cast. An item they cannot take is refused at
     /// the mouth after the dwell or on the squeeze (CharacterInteractible.HasItemCanUseOnFriend, :90), and so is a bot (:128).
@@ -1421,6 +1422,7 @@ internal sealed class SocialHands : IGripExtension
             who = near;
         if (who == null)
         {
+            EndFeedVisit();
             handOver.Reset();
             atFriendMouth = false;
             feedLogged = false;
@@ -1438,7 +1440,9 @@ internal sealed class SocialHands : IGripExtension
         float friendSpeed = LevelSpeed(who);
         float placeGap = PlaceGap(c, item, box, spot);
         bool trigger = VRInput.Hand(left).Trigger > HandOverTrigger;
-        bool putAway = !trigger && Inventory.BodyInventory.Instance.TakesHeld(c, left);
+        bool onOwnSlot = Inventory.BodyInventory.Instance.TakesHeld(c, left);
+        bool putAway = HandOver.YieldsToOwnSlot(usable, trigger, onOwnSlot);
+        bool handStill = feedHand.Update(Interact.Physical.HeldGestures.RestPoint(left));
         var eye = VRRig.Instance != null ? VRRig.Instance.Head : null;
         bool looking =
             eye != null
@@ -1454,14 +1458,27 @@ internal sealed class SocialHands : IGripExtension
             dt,
             // Never on the walk up, as a friend walks into it, or with the hand on its way somewhere (#93, #119, #147). A
             // real nearGap, not an infinite one: that would end the near band's visit and repeat its refusal.
-            feedHand.Update(Interact.Physical.HeldGestures.RestPoint(left))
-                && !putAway
-                && HandOver.Still(feederSpeed, friendSpeed),
+            handStill && !putAway && HandOver.Still(feederSpeed, friendSpeed),
             placeGap - grow,
             nearGap,
             looking
         );
         FeedState = state;
+        if (!feedVisit.Open)
+            feedVisitItem = item.name;
+        feedVisit.Note(
+            state,
+            inZone,
+            trigger,
+            handStill,
+            onOwnSlot,
+            feederSpeed,
+            friendSpeed,
+            placeGap - grow,
+            nearGap,
+            looking,
+            dt
+        );
         if (!inZone && state == HandOverState.Apply)
             feedCandidate = who;
         if (usable && (inZone || state == HandOverState.Apply))
@@ -1489,6 +1506,17 @@ internal sealed class SocialHands : IGripExtension
     }
 
     private bool feedLogged;
+
+    private readonly HandOverVisit feedVisit = new();
+    private string feedVisitItem;
+
+    private void EndFeedVisit()
+    {
+        if (feedVisit.Open)
+            Plugin.Log.LogInfo(
+                $"[interact.social] hand-over visit ended: {feedVisitItem}, {feedVisit.End()}"
+            );
+    }
 
     /// <summary>What the hand-over did this frame (self-test: the ring just short of the mouth, #112).</summary>
     internal HandOverState FeedState { get; private set; }
@@ -1610,6 +1638,7 @@ internal sealed class SocialHands : IGripExtension
 
     private void ResetFeed()
     {
+        EndFeedVisit();
         atFriendMouth = false;
         nearFriendMouth = false;
         nearFriendSpot = null;

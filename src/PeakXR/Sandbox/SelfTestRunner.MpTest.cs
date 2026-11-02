@@ -2256,6 +2256,11 @@ internal sealed partial class SelfTestRunner
             else
                 spawnNote = "; " + stepSkip;
             stepSkip = null;
+            // The nearest match goes first then, whatever it is (#112: a Frisbee on a run that asked for a Compass).
+            if (first == null || !OnReachableGround(first))
+                Plugin.Log.LogInfo(
+                    $"[mptest] {spawn} is not the first reach{(first != null ? ": " + GroundNote(first) : spawnNote)}"
+                );
         }
         var tried = new HashSet<Item>();
         string missed = null;
@@ -2645,7 +2650,13 @@ internal sealed partial class SelfTestRunner
         {
             var rot = rig.Origin.rotation * hand.Rotation;
             var ctrl = rig.Origin.TransformPoint(hand.Position);
-            var off = Quaternion.Inverse(rot) * (item.Center() - ctrl);
+            // The item at its place on the controller, not where it is now: its lag or a friend's body would aim the
+            // hand that far off (#112: 0.48 m on a Compass 0.1 s after the carry back, the hand driven onto A's own belt).
+            var center = item.Center();
+            var driver = AvatarPoseDriver.Of(Character.localCharacter);
+            if (driver != null && driver.HeldItemGap >= 0f)
+                center += driver.HeldItemPlace - item.rig.position;
+            var off = Quaternion.Inverse(rot) * (center - ctrl);
             // Up to 0.6 m: a lollipop held by its stick has its centre well past 0.3 m (MP run 27).
             return new HeldGrip(Vector3.ClampMagnitude(off, 0.6f));
         }
@@ -3234,10 +3245,8 @@ internal sealed partial class SelfTestRunner
         // The zone SocialHands.UpdateFeed tests: the item's nearest point within FeedRadius of the Head bodypart.
         Vector3 Mouth() => HostPart(host, BodypartType.Head);
         bool left = LocalHold.ItemInLeftHand;
-        // The item's place on the controller, read here where the air is clear. Read at the host, it took the body's keep
-        // for the item's place (#112, modded B: 0.46 m on a Compass, with A's eye 0.28 m from the mouth after a walk to
-        // 0.45 m, so the hand never brought it to the mouth). It stays read once: read every frame it fed the weld's lag
-        // back into the aim (MP run 25: the hand jumped 0.9 m as the weld let go and rejoined, and the item left the mouth).
+        // The item's place on the controller, read once: read every frame it fed the weld's lag back into the aim (MP run
+        // 25: the hand jumped 0.9 m as the weld let go and rejoined, and the item left the mouth).
         yield return HoldingHandSettled();
         var grip = HeldGrip.Of(rig, Script(left), item);
         // The host's mouth must be within arm's reach of the head, not on a ledge below (MP run 7: the hand was driven

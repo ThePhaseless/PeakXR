@@ -331,6 +331,82 @@ public class HandOverTests
             );
     }
 
+    /// <summary>One frame of #112's modded B hold, as SocialHands.UpdateFeed calls it: the feeder at 0.02 m/s, the
+    /// friend still, the hand stopped.</summary>
+    private static HandOverState RestOnBelt(HandOver h, bool usable, float gap, float placeGap)
+    {
+        bool putAway = HandOver.YieldsToOwnSlot(usable, trigger: false, slotTakes: true);
+        return h.Update(
+            gap <= HandOver.PlaceRadius && !putAway,
+            false,
+            usable,
+            false,
+            0.024f,
+            !putAway && HandOver.Still(0.02f, 0f),
+            placeGap,
+            gap,
+            true
+        );
+    }
+
+    [Fact]
+    public void ACompassAtTheMouthWithTheHandOnYourOwnBeltIsStillRefused()
+    {
+        // #112, modded B: Compass 0.16 m from the mouth, its place 0.00 m off, the controller 0.07 m from a belt slot, and
+        // nothing said for the whole hold.
+        var h = Mouth();
+        HandOverState last = HandOverState.None;
+        int cues = 0;
+        for (float t = 0f; t < 1f; t += 0.024f)
+        {
+            last = RestOnBelt(h, false, 0.16f, 0.00f);
+            cues += last == HandOverState.Refuse ? 1 : 0;
+        }
+        Assert.Equal(1, cues);
+        Assert.Equal(HandOverState.Refused, last);
+    }
+
+    [Fact]
+    public void ACompassBesideTheMouthWithTheHandOnYourOwnBeltStaysRefused()
+    {
+        var h = Mouth();
+        HandOverState last = HandOverState.None;
+        int cues = 0;
+        for (float t = 0f; t < 1f; t += 0.024f)
+        {
+            last = RestOnBelt(h, false, 0.30f, 0.30f);
+            cues += last == HandOverState.Refuse ? 1 : 0;
+        }
+        Assert.Equal(1, cues);
+        Assert.Equal(HandOverState.Refused, last);
+    }
+
+    [Fact]
+    public void FoodAtTheMouthWithTheHandOnYourOwnBeltIsNotSpent()
+    {
+        // #147: stowing it next to a friend must not feed them.
+        var h = Mouth();
+        for (float t = 0f; t < 1f; t += 0.024f)
+            Assert.NotEqual(HandOverState.Apply, RestOnBelt(h, true, 0.16f, 0.00f));
+    }
+
+    [Fact]
+    public void AVisitsLineSaysWhichConditionWasClosed()
+    {
+        var v = new HandOverVisit();
+        v.Note(HandOverState.None, true, false, true, true, 0.02f, 0f, 0.5f, 0.16f, true, 2f);
+        v.Note(HandOverState.Refuse, true, false, false, false, 0.6f, 0f, 0.1f, 0.3f, false, 1f);
+        Assert.True(v.Open);
+        string line = v.End();
+        Assert.Contains("3.00 s, 3.00 s in the zone, nearest 0.16 m, its place 0.10 m", line);
+        Assert.Contains("hand moving 1.00 s, feeder 1.00 s, friend 0.00 s, place off 2.00 s", line);
+        Assert.Contains("not looking 1.00 s, own slot 2.00 s", line);
+        Assert.Contains("refused 1 time(s)", line);
+        Assert.False(v.Open);
+        v.Note(HandOverState.None, false, false, true, false, 0f, 0f, 0.3f, 0.3f, true, 1f);
+        Assert.Contains("1.00 s, 0.00 s in the zone, nearest 0.30 m", v.End());
+    }
+
     [Fact]
     public void BothMoversHaveToBeStill()
     {
