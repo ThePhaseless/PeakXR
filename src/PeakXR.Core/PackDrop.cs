@@ -28,9 +28,16 @@ public static class PackDrop
     public const float PointDwell = 0.1f;
 
     /// <summary>Why a trigger pull at a pointed-at pack would not open it: out of reach first (walking closer is the
-    /// first fix), else the verdict a pack in reach gives (<see cref="Refusal"/>).</summary>
-    public static DenyReason PointRefusal(float eyeDistance, DenyReason inReach) =>
-        eyeDistance > PointReach ? DenyReason.OutOfReach : inReach;
+    /// first fix), then rock between the aim and the pack (<paramref name="occluded"/>, as vanilla's interact test, #144),
+    /// else the verdict a pack in reach gives (<see cref="Refusal"/>).</summary>
+    public static DenyReason PointRefusal(
+        float eyeDistance,
+        DenyReason inReach,
+        bool occluded = false
+    ) =>
+        eyeDistance > PointReach ? DenyReason.OutOfReach
+        : occluded ? DenyReason.NoPath
+        : inReach;
 
     /// <summary>Why the item cannot go in, or None. A busy hand says why first (the switch gates), then a worn pack
     /// reached from its wearer's front (<paramref name="fromBehind"/> false), then an item the wheel refuses

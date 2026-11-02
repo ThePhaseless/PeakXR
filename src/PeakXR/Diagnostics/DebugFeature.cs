@@ -1,3 +1,4 @@
+using System;
 using BepInEx.Configuration;
 using PeakXR.Framework;
 using PeakXR.UI.Settings;
@@ -43,6 +44,24 @@ public sealed class DebugFeature : Feature
             false,
             "With debug mode on, show frames per second and frame time on your off-hand wrist."
         );
+        var pingProbe = Plugin.Settings.Bind(
+            section,
+            "PingProbe",
+            false,
+            "Log what came of each ping this client receives: distance, line of sight, whether a marker exists and "
+                + "is drawn. Read only, for pings a friend did not see. Takes effect on the next launch."
+        );
+        // Both test runs read it (MP ping-seen, vr.110).
+        var args = Environment.GetCommandLineArgs();
+        if (
+            pingProbe.Value
+            || Array.IndexOf(args, Sandbox.MpTestFeature.LaunchFlag) >= 0
+            || Array.IndexOf(args, Sandbox.SelfTestFeature.LaunchFlag) >= 0
+        )
+        {
+            PingProbe.Begin();
+            Patch(typeof(PingProbe.Receive));
+        }
         DebugLog.SetVerbose(Mode.Value);
         Mode.SettingChanged += (_, _) =>
         {
@@ -66,7 +85,7 @@ public sealed class DebugFeature : Feature
         XRInputSampler.AfterSample += DebugGesture.Update;
         VRSession.Stopped += DebugGesture.OnVRStopped;
         var go = new GameObject("PeakXR_Debug");
-        Object.DontDestroyOnLoad(go);
+        UnityEngine.Object.DontDestroyOnLoad(go);
         go.AddComponent<DebugDriver>();
     }
 }

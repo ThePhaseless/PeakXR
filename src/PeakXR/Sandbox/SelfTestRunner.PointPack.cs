@@ -143,7 +143,7 @@ internal sealed partial class SelfTestRunner
     static string PointState()
     {
         var s = PackStash.Instance;
-        return $"point hand {s.PointHand}, pack {(s.PointPack != null ? s.PointPack.name : "none")}, verdict {s.PointVerdict}";
+        return $"point hand {s.PointHand}, pack {(s.PointPack != null ? s.PointPack.name : "none")}, verdict {s.PointVerdict}, holding hand over a pack {s.Over}";
     }
 
     /// <summary>The hovered slice is a pocket, not Wear or jetpack fuel. A pocket's <c>isStashSlice</c> stays false:
@@ -470,7 +470,8 @@ internal sealed partial class SelfTestRunner
     /// <summary>
     /// vr.432-point-pack-refusals: (a) a pack 3 m away gives OutOfReach (with the range hint), (b) a pack with every
     /// pocket filled (Backpack.Stash, Backpack.cs:119) gives PackFull, (c) an Apple packs refuse (its instance's
-    /// <c>UIData.canBackpack</c> off) gives CantHolster. Each pull gets the cue, no wheel and no secondary use.
+    /// <c>UIData.canBackpack</c> off) gives CantHolster, (d) a low wall between the aim and the pack gives NoPath, and a tall
+    /// one that hides it from the eye gives nothing. Each pull gets the cue, no wheel and no secondary use.
     /// </summary>
     IEnumerator PointPackRefusalsStep()
     {
@@ -497,6 +498,46 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         yield return PointRefused(spawnedPack, DenyReason.OutOfReach);
+        if (!stepOk)
+            yield break;
+        // (d) a low wall across the aim and the near pack's pivot, its top edge clear of the eye's line to the pack's top:
+        // the way is shut, and the hand hears it (#144). Hidden behind a tall one, the pack says nothing.
+        var eye = VRRig.Instance.Head.position;
+        var packAt = pointPack.Center();
+        var slab = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        try
+        {
+            slab.name = "PeakXR_TestRock";
+            slab.layer = LayerMask.NameToLayer("Map");
+            // Half way to the eye, clear of the pack, the two lines lie half the rise apart: the 0.8 m slab's top edge
+            // midway between them.
+            slab.transform.SetPositionAndRotation(
+                Vector3.Lerp(packAt, eye, 0.5f)
+                    + Vector3.up * (0.25f * PackStash.PackTopRise - 0.4f),
+                Quaternion.LookRotation(Flat(packAt - eye))
+            );
+            slab.transform.localScale = new Vector3(0.8f, 0.8f, 0.05f);
+            yield return Wait(0.1f);
+            yield return PointRefused(pointPack, DenyReason.NoPath);
+            if (!stepOk)
+                yield break;
+            slab.transform.SetPositionAndRotation(
+                Vector3.Lerp(eye, packAt, 0.65f),
+                Quaternion.LookRotation(packAt - eye)
+            );
+            PointAt(pointFree, packAt);
+            yield return Wait(0.6f);
+            if (ReferenceEquals(PackStash.Instance.PointPack, pointPack))
+            {
+                Fail("a pack the eye cannot see still took the pick");
+                stepNote = PointState();
+                yield break;
+            }
+        }
+        finally
+        {
+            Destroy(slab);
+        }
         if (!stepOk)
             yield break;
         // (b) fill every pocket of the near pack with Apples, then point a held one at it.
@@ -529,7 +570,7 @@ internal sealed partial class SelfTestRunner
         yield return PointRefused(pointPack, DenyReason.PackFull);
         if (stepOk)
             stepNote =
-                "CantHolster, OutOfReach and PackFull each refused the pull with their cue: "
+                "CantHolster, OutOfReach, NoPath and PackFull each refused the pull with their cue: "
                 + cueNote;
     }
 

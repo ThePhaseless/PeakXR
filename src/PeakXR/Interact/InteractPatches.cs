@@ -217,8 +217,10 @@ internal static class InteractPatches
     /// and send the charge a vanilla throw would need for that speed (<see cref="HandThrow"/>), never below a sticky
     /// item's <c>throwChargeRequirement</c> (:277-289, which otherwise aborts the drop). The master adds that charge's
     /// look-direction force (:391-395, :426), so the item's velocity is reduced by it first and leaves along the
-    /// hand. All clients see the throw through that RPC. A gentle release of a sticky item stays refused, as in
-    /// vanilla, with a ui.affordance cue.</summary>
+    /// hand. A backpack leaves still whatever the item's velocity (:268-272), so it keeps its charge and flies along the
+    /// look as a button throw does. No other hand throw carries spin: only the charge reaches the master's
+    /// <c>angularVelocity</c> (:429-432), and a charge means its look force (#30, #117). All clients see the throw through
+    /// that RPC. A gentle release of a sticky item stays refused, as in vanilla, with a ui.affordance cue.</summary>
     [HarmonyPatch]
     internal static class Dropping
     {
@@ -302,7 +304,14 @@ internal static class InteractPatches
                 mult,
                 minCharge
             );
-            Send(c, __instance, item, velocity.N(), charge, minCharge);
+            Send(
+                c,
+                __instance,
+                item,
+                velocity.N(),
+                charge,
+                HandThrow.ChargeKept(item is Backpack, charge, minCharge)
+            );
         }
 
         /// <summary>Leaves the throw on the held item and in the charge vanilla's DropItemRpc sends (CharacterItems.cs:295):

@@ -132,7 +132,8 @@ internal static class PhysicalInteraction
     private static readonly ButtonEdge PrimaryEdge = new();
     private static readonly ButtonEdge SecondaryEdge = new();
     private static readonly ButtonEdge DropEdge = new();
-    private static readonly MouthGesture Mouth = new();
+    private static readonly MouthGesture Mouth = new() { DwellTime = 0f };
+    private static readonly SelfUseDwell MouthUse = new() { Dwell = SelfUseDwell.MouthDwell };
     private static readonly ArmLocomotion Arms = new();
     private static readonly ClimbDebt Debt = new();
 
@@ -383,11 +384,14 @@ internal static class PhysicalInteraction
         EndAction(LeftHand, GripPressAction.SecondHand);
         EndAction(RightHand, GripPressAction.SecondHand);
         Mouth.Reset();
+        MouthUse.Reset();
         dropPending = false;
         if (item != null)
         {
             LocalHold.ItemInLeftHand =
                 now - pendingTime < PendingSeconds ? pendingLeft : VRInput.LeftHanded;
+            // Here, not in HeldGestures.Tick: that ran earlier this frame, with the hand the last item was in (#147).
+            Physical.HeldGestures.Arrive(LocalHold.ItemInLeftHand);
             var into = LocalHold.ItemInLeftHand ? LeftHand : RightHand;
             bool grabbed = into.Target is Item wanted && SameInstance(wanted, item);
             into.Armed = ReleaseArming.OnArrive(into.Grip.Held, into.Action, grabbed);
@@ -1479,6 +1483,18 @@ internal static class PhysicalInteraction
                     action != GripPressAction.Extension && !throws && GripHooks.HeldRelease(hook),
                     hand.Armed
                 );
+                if (
+                    result == GripReleaseAction.Keep
+                    && GripIntent.DropRefused(
+                        item.UIData.canDrop,
+                        hand.Armed,
+                        handVelocity.magnitude,
+                        cfg.ThrowSpeed,
+                        cfg.PhysicalThrow,
+                        cfg.ReleaseToDrop
+                    )
+                )
+                    Affordance.DenyAtHand(hand.Left, DenyReason.CantDrop, default, item);
                 // Mid-cast the game keeps the item (CharacterItems.DoDropping, CharacterItems.cs:254-258). A fist's
                 // trigger squeezed after the pickup landed starts the item's use, and opening the fist ends that cast
                 // on the game's next use read (:209-212), a frame after this release was refused as too soon: it waits
@@ -1582,6 +1598,50 @@ internal static class PhysicalInteraction
             dropPending = true;
             releaseDropAt = Time.time;
         }
+    }
+
+    /// <summary>A drop the game ignores (CharacterItems.cs:259): an item it keeps says so. With nothing in hand the
+    /// button shares the upper row with the ping on the other hand, so a player pinging with the wrong hand hears why
+    /// and sees where (#130); not where that is untrue, nor in the credits, whose skip takes any button
+    /// (<see cref="UI.RunFlow.RunFlowRuntime"/>).</summary>
+    private static void CueIgnoredDrop(Character c, VRRig rig, InteractConfig cfg)
+    {
+        var held = c.data.currentItem;
+        if (held != null)
+        {
+            if (!held.UIData.canDrop)
+                Affordance.DenyAtHand(LocalHold.ItemInLeftHand, DenyReason.CantDrop, default, held);
+            return;
+        }
+        if (
+            !UI.RunFlow.RunFlowRuntime.CreditsWaiting
+            && !Ping.PingConfig.Instance.PingButtonDown()
+            && ButtonName.TryParse(
+                cfg.DropButton,
+                VRInput.LeftHanded,
+                out bool dropLeft,
+                out var drop
+            )
+            && ControllerLabels.ForAction(
+                VRAction.Ping,
+                VRInput.LeftHanded,
+                LocalHold.ItemInLeftHand,
+                out bool pingLeft,
+                out _
+            )
+            && PingRules.EmptyDropNamesPing(
+                drop,
+                dropLeft,
+                pingLeft,
+                c.data.isClimbingAnything,
+                c.data.carriedPlayer != null
+            )
+        )
+            Affordance.DenyAtHand(
+                dropLeft,
+                DenyReason.NothingHeld,
+                DenyHint.On(rig.Hand(!dropLeft))
+            );
     }
 
     private static Hand Other(Hand hand) => hand.Left ? RightHand : LeftHand;
@@ -2532,6 +2592,34 @@ internal static class PhysicalInteraction
         Arms.Reset();
     }
 
+    /// <summary>Climbs the game ended with no mantle, stamina left and the body under control: the rock itself let go
+    /// (self-test: <c>climb</c> moves on from such a wall, #60).</summary>
+    internal static int GameLetGoCount { get; private set; }
+
+    /// <summary>SampleWall's casts, in its order (CharacterClimbing.cs:413-436): the ray to just off the sample, the ray
+    /// through it, then spheres of 0.1 to 0.4 m. For the log only.</summary>
+    private static RaycastHit NextClimbSample(Vector3 climbPos, Vector3 normal)
+    {
+        var at = climbPos + Vector3.ProjectOnPlane(Vector3.up, normal).normalized * 0.05f;
+        var from = climbPos + normal * 0.4f;
+        var through = at - normal;
+        var hit = HelperFunctions.LineCheck(
+            from,
+            at + normal * 0.5f,
+            HelperFunctions.LayerType.TerrainMap
+        );
+        if (!hit.transform)
+            hit = HelperFunctions.LineCheck(from, through, HelperFunctions.LayerType.TerrainMap);
+        for (int i = 1; i <= 4 && !hit.transform; i++)
+            hit = HelperFunctions.LineCheck(
+                from,
+                through,
+                HelperFunctions.LayerType.TerrainMap,
+                0.1f * i
+            );
+        return hit;
+    }
+
     private static void UpdateClimb(Character c, VRRig rig, InteractConfig cfg, float dt, float now)
     {
         ConfirmLunge(c, rig, cfg, now);
@@ -2561,9 +2649,19 @@ internal static class PhysicalInteraction
             )
                 ? Vector3.Angle(above.normal, Vector3.up)
                 : -1f;
+            // What the game's own sample finds a little up the wall from its last accepted climb point. Its requested
+            // spot came from the stick, so this names the likely facet, not the refused hit (#60).
+            var next = NextClimbSample(c.data.climbPos, c.data.climbNormal);
+            string sample = next.transform
+                ? System.FormattableString.Invariant(
+                    $"{Vector3.Angle(next.normal, Vector3.up):0} deg from up on {next.collider.name}"
+                )
+                : "nothing";
+            if (!mantled && c.data.outOfStaminaFor <= 0f && c.data.currentRagdollControll >= 0.25f)
+                GameLetGoCount++;
             Plugin.Log.LogInfo(
                 System.FormattableString.Invariant(
-                    $"[interact.climb] climb ended by the game: grips L {LeftHand.Action}/{LeftHand.Grip.Held} R {RightHand.Action}/{RightHand.Grip.Held}, stick y {climbInput.y:0.00}, mantled {mantled}, since jump {c.data.sinceClimbJump:0.00} s, out of stamina {c.data.outOfStaminaFor:0.00} s, ragdoll control {c.data.currentRagdollControll:0.00}, grounded {c.data.isGrounded}, use released {c.input.usePrimaryWasReleased} (forced off while climbing), face 0.5 m up {faceAbove:0} deg from up"
+                    $"[interact.climb] climb ended by the game: grips L {LeftHand.Action}/{LeftHand.Grip.Held} R {RightHand.Action}/{RightHand.Grip.Held}, stick y {climbInput.y:0.00}, mantled {mantled}, since jump {c.data.sinceClimbJump:0.00} s, out of stamina {c.data.outOfStaminaFor:0.00} s, ragdoll control {c.data.currentRagdollControll:0.00}, grounded {c.data.isGrounded}, use released {c.input.usePrimaryWasReleased} (forced off while climbing), face 0.5 m up {faceAbove:0} deg from up, last normal {Vector3.Angle(c.data.climbNormal, Vector3.up):0} deg, next sample {sample}"
                 )
             );
             physicalClimb = false;
@@ -3110,7 +3208,7 @@ internal static class PhysicalInteraction
             && mouthHand != null
         )
         {
-            bool was = Mouth.Active;
+            bool was = MouthUse.Active;
             // The item carried by the tracked grip, not the physics item: the eye sits inside the holder's own head
             // collider (a 0.38 m sphere on the Character layer, which held items collide with), so the physics item
             // never gets near the mouth. The food itself, not the fist: the game's food is big (an apple 0.42 m
@@ -3122,20 +3220,27 @@ internal static class PhysicalInteraction
                 MouthGesture.MouthPoint(head.N(), rig.Head.rotation.N(), Mouth.MouthOffset).U(),
                 head
             );
-            atMouth = Mouth.Update(
-                head.N(),
-                rig.Head.rotation.N(),
-                RealScale
-                    .Real(
-                        Physical.ItemGestures.MouthContact(
-                            c.data.currentItem,
-                            mouthHand,
-                            primaryHand.Left,
-                            mouth
-                        ),
-                        head
-                    )
-                    .N(),
+            // Food carried past the mouth does not eat: the hand has to stop there, and a slot or pack that would take
+            // it wins (an apple is big enough to reach the mouth from the shoulder slot), #147.
+            atMouth = MouthUse.Update(
+                Physical.HeldGestures.RestPoint(primaryHand.Left),
+                Mouth.Update(
+                    head.N(),
+                    rig.Head.rotation.N(),
+                    RealScale
+                        .Real(
+                            Physical.ItemGestures.MouthContact(
+                                c.data.currentItem,
+                                mouthHand,
+                                primaryHand.Left,
+                                mouth
+                            ),
+                            head
+                        )
+                        .N(),
+                    dt
+                ),
+                Inventory.BodyInventory.Instance.TakesHeld(c, primaryHand.Left),
                 dt
             );
             if (atMouth && !was)
@@ -3144,6 +3249,7 @@ internal static class PhysicalInteraction
         else
         {
             Mouth.Reset();
+            MouthUse.Reset();
         }
         PrimaryEdge.Update(primaryDown || atMouth || Physical.GestureRequests.PrimaryHeld, dt);
         // An armed pack pick takes the free trigger's whole pull (#71); called every frame so its latch sees the release.
@@ -3225,6 +3331,8 @@ internal static class PhysicalInteraction
 
         // Drop: button fallback with the game's hold-to-charge, or a one-frame press+release from a hand release.
         DropEdge.Update(cfg.DropButtonDown(), dt);
+        if (DropEdge.Pressed)
+            CueIgnoredDrop(c, rig, cfg);
         input.dropWasPressed |= DropEdge.Pressed;
         input.dropIsPressed |= DropEdge.Held;
         input.dropWasReleased |= DropEdge.Released;

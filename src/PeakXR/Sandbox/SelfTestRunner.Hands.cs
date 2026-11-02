@@ -52,6 +52,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.12-eat", 30f, EatStep());
         yield return HandStep("vr.13-throw", 25f, ThrowCheck());
         yield return HandStep("vr.249-button-throw-aim", 25f, ButtonThrowAimStep());
+        yield return HandStep("vr.463-throw-pack", 25f, ThrowPackStep());
         yield return HandStep("vr.14-two-hand", 25f, TwoHandStep());
         yield return HandStep("vr.14b-two-hand-between", 45f, TwoHandBetweenStep());
         yield return HandStep("vr.15-climb", 40f, ClimbStep());
@@ -502,6 +503,42 @@ internal sealed partial class SelfTestRunner
     /// <summary>Where the last <see cref="ThrowHeld"/> came to rest; null when it did not land.</summary>
     Vector3? lastLanding;
 
+    /// <summary>vr.463 (#117): a hard swing throws a backpack. The game sends one with no velocity
+    /// (CharacterItems.cs:268-272), so at the hand throw's charge 0 it only dropped at the feet.</summary>
+    IEnumerator ThrowPackStep()
+    {
+        Item pack = null;
+        foreach (var it in SandboxActions.Items)
+        {
+            if (it is Backpack b && b.backpackType == BackpackSlot.BackpackType.Backpack)
+                pack = it;
+        }
+        if (pack == null || !SandboxActions.GiveItem(pack))
+        {
+            stepSkip = "no backpack to give: " + SandboxActions.LastMessage;
+            yield break;
+        }
+        var c = Character.localCharacter;
+        yield return WaitFor(() => c.data.currentItem is Backpack, 2f);
+        // Given, it may go on the back: the pack slot is what the game equips it from (Backpack.cs:114).
+        if (c.data.currentItem is not Backpack)
+        {
+            c.refs.items.EquipSlot(Optionable<byte>.Some(3));
+            yield return WaitFor(() => c.data.currentItem is Backpack, 2f);
+        }
+        if (c.data.currentItem is not Backpack)
+        {
+            stepSkip = "the given pack did not reach the hand";
+            yield break;
+        }
+        ushort id = HeldItem().itemID;
+        yield return null;
+        yield return ThrowHeld();
+        var thrown = NewItem(id);
+        if (thrown != null)
+            spawned.Add(thrown.gameObject);
+    }
+
     /// <summary>The MP throw for the item already in hand: vr.13's swing along the head's level forward.</summary>
     IEnumerator ThrowHeld()
     {
@@ -527,6 +564,33 @@ internal sealed partial class SelfTestRunner
         // The swing, watching every frame for the thrown instance so the contact probe is on before it lands (vr.13).
         Item thrown = null;
         ThrowProbe probe = null;
+        // Online A's copy is moved by the master's sync and need not raise a contact (#117), so the flight's end is
+        // also read from its height over the ground.
+        Vector3? touchdown = null;
+        Vector3 flewFrom = default;
+        float thrownAt = float.PositiveInfinity;
+        // Past the release, which can start under the height; along the whole frame's travel, because 20 m/s skips it.
+        void WatchTouchdown()
+        {
+            if (touchdown != null || thrown == null)
+                return;
+            var at = thrown.Center();
+            var moved = at - flewFrom;
+            if (
+                Now - thrownAt >= TouchdownFrom
+                && (
+                    Terrain(at, Vector3.down, TouchdownHeight, out var under)
+                    || Terrain(
+                        flewFrom + Vector3.down * TouchdownHeight,
+                        moved,
+                        moved.magnitude,
+                        out under
+                    )
+                )
+            )
+                touchdown = under.point;
+            flewFrom = at;
+        }
         var swing = SwingRelease(left, windup, release);
         float end = Now + 2.5f;
         bool swinging = true;
@@ -541,6 +605,8 @@ internal sealed partial class SelfTestRunner
                 ).AddComponent<ThrowProbe>();
                 probe.Thrower = c;
                 probe.Since = Now;
+                thrownAt = Now;
+                flewFrom = thrown.Center();
             }
             yield return null;
         }
@@ -558,12 +624,17 @@ internal sealed partial class SelfTestRunner
         {
             if (thrown.rig != null)
                 seen = Mathf.Max(seen, thrown.rig.linearVelocity.magnitude);
+            WatchTouchdown();
             yield return null;
         }
         // The launch this client sent (#117): online, A's copy of the item is the master's, whose speed comes late.
         bool sent = InteractPatches.Dropping.Launches != launches;
         float launch = sent ? InteractPatches.Dropping.LastLaunch.magnitude : seen;
-        yield return Wait(0.25f);
+        for (float shotAt = Now + 0.25f; Now < shotAt; )
+        {
+            WatchTouchdown();
+            yield return null;
+        }
         yield return ShotAt("vr-13-throw", thrown != null ? thrown.Center() : HandsMid());
         float still = 0f;
         end = Now + 5f;
@@ -571,6 +642,7 @@ internal sealed partial class SelfTestRunner
         {
             float speed = thrown.rig != null ? thrown.rig.linearVelocity.magnitude : 0f;
             still = speed < 0.2f ? still + Time.unscaledDeltaTime : 0f;
+            WatchTouchdown();
             yield return null;
         }
         if (thrown == null)
@@ -587,7 +659,10 @@ internal sealed partial class SelfTestRunner
         // The clamp bounds the flight, which ends at the first contact; a roll down the slope after it is not the
         // throw's (#117: a flag touched down and slid on to 46.6 m), as in vr.13's ThrowReport.
         bool contact = probe != null && probe.Hit && !probe.OwnBody;
-        var flightEnd = contact ? probe.Point : landed;
+        var flightEnd =
+            contact ? probe.Point
+            : touchdown is { } down ? down
+            : landed;
         float flight = Vector2.Distance(
             new Vector2(from.x, from.z),
             new Vector2(flightEnd.x, flightEnd.z)
@@ -597,8 +672,12 @@ internal sealed partial class SelfTestRunner
             from.y - flightEnd.y + 1f,
             Physics.gravity.magnitude
         );
-        string firstContact = contact
-            ? F($"first contact {probe.Collider} {flight:0.0} m out")
+        string firstContact =
+            contact ? F($"first contact {probe.Collider} {flight:0.0} m out")
+            : touchdown != null
+                ? F(
+                    $"no contact on this copy, first {TouchdownHeight:0.0} m over the ground {flight:0.0} m out"
+                )
             : "no contact seen";
         var note = F(
             $"landed {distance:0.0} m away, flew {flight:0.0} m ({firstContact}), launch {launch:0.0} m/s {(sent ? "sent" : "seen")} ({seen:0.0} m/s seen on this copy, clamp {clamp:0.0}), max range {range:0.0} m"
@@ -612,6 +691,13 @@ internal sealed partial class SelfTestRunner
         else
             stepNote = note;
     }
+
+    /// <summary>A thrown item's centre this near the ground (m) has come down: its flight ends here when no contact
+    /// shows, and a roll down the slope after it is not the throw's (#117).</summary>
+    const float TouchdownHeight = 0.3f;
+
+    /// <summary>Seconds after the release before a touchdown counts: a low release starts within the height.</summary>
+    const float TouchdownFrom = 0.2f;
 
     /// <summary>Constant speed (no easing): 0.9 m in 0.15 s, the grip opening at 70 % while the hand still moves.</summary>
     IEnumerator SwingRelease(bool left, Vector3 windup, Vector3 release)
@@ -904,6 +990,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         float y0 = c.Center.y;
+        int letGoBefore = PeakXR.Interact.PhysicalInteraction.GameLetGoCount;
         yield return Shot("vr-15-climb");
         // Which stage lost a short rise (#60, run 9): the game's climb point against the body, stamina (out of it the
         // up debt is dropped), the stick the game read, and the travel still owed.
@@ -936,6 +1023,8 @@ internal sealed partial class SelfTestRunner
         bool torn = UI.Affordances.CueLog.Capture.Felt(left, CueFeel.Cancel, released, out _);
         var note =
             $"wall {Vector3.Angle(hit.normal, Vector3.up):0} deg from up, body rose {rise:0.00} m ({stages}), climbing after the pull {stillClimbing}, hand over hand {handOverNote}, after letting go {c.data.isClimbing}, torn-off cue {torn}, {sticks}; wall {WallProfile}";
+        climbLetGo =
+            rise < MinPullRise && PeakXR.Interact.PhysicalInteraction.GameLetGoCount != letGoBefore;
         if (rise < MinPullRise)
             Fail("arm pull did not lift the body: " + note);
         else if (handOverFail)

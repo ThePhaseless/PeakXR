@@ -18,6 +18,18 @@ public static class FeedZone
         var d = System.Numerics.Vector3.Abs(target - center) - extents;
         return System.Numerics.Vector3.Max(d, System.Numerics.Vector3.Zero).Length();
     }
+
+    /// <summary><see cref="Gap"/> for the box moved to where its controller puts the item: <paramref name="rig"/> is
+    /// the item's body now, <paramref name="place"/> that body's controller-held place. A friend's body can keep the
+    /// box on them while the controller is elsewhere (#119), and the body's pivot is no measure of the box: it can lie
+    /// at one end, 0.51 m from the other on a Berrynana.</summary>
+    public static float PlaceGap(
+        System.Numerics.Vector3 center,
+        System.Numerics.Vector3 extents,
+        System.Numerics.Vector3 rig,
+        System.Numerics.Vector3 place,
+        System.Numerics.Vector3 target
+    ) => Gap(center + (place - rig), extents, target);
 }
 
 /// <summary>What a held item at a friend's mouth or chest does this frame (<see cref="HandOver"/>).</summary>
@@ -26,7 +38,7 @@ public enum HandOverState : byte
     /// <summary>Out of the zone, or a trigger already held on arrival: nothing.</summary>
     None,
 
-    /// <summary>In the zone with the trigger up: show where it would go.</summary>
+    /// <summary>In the zone with the trigger up, or rested just short of it: show where it would go.</summary>
     Hint,
 
     /// <summary>The trigger was pressed in the zone: use the item on the friend (hold the game's use-on-friend).</summary>
@@ -63,8 +75,8 @@ public sealed class HandOver
     public const float MouthDwell = 0.3f;
 
     /// <summary>A healing item rests this long on a friend's chest before it is used: as long as pressing it to your
-    /// own body (interact.items' body press), issue #45.</summary>
-    public const float ChestDwell = 0.35f;
+    /// own body (<see cref="SelfUseDwell.BodyDwell"/>), issues #45 and #147.</summary>
+    public const float ChestDwell = SelfUseDwell.BodyDwell;
 
     public static float DwellAt(bool chest) => chest ? ChestDwell : MouthDwell;
 
@@ -74,6 +86,32 @@ public sealed class HandOver
 
     public static bool Still(float levelSpeed) => levelSpeed < StillSpeed;
 
+    /// <summary>Both the feeder and the friend: a friend who walks into food held out is not being fed either.</summary>
+    public static bool Still(float feederSpeed, float friendSpeed) =>
+        Still(feederSpeed) && Still(friendSpeed);
+
+    /// <summary>The feed zone (m): how near the item's nearest point comes to the mouth, and how near it would be at its
+    /// controller-held place (<see cref="FeedZone.PlaceGap"/>) for the dwell to count: the player holds it there, it did
+    /// not only come to rest there. The body weld keeps an item on a friend with the controller elsewhere (#119: 0.63 m
+    /// off, fed in 1.15 s).</summary>
+    public const float PlaceRadius = 0.22f;
+
+    /// <summary>The same two measures just outside the zone, out to where a press says "closer": a hand offering the item
+    /// there, not one whose item a friend's body keeps while it is elsewhere.</summary>
+    public const float NearPlaceRadius = 0.45f;
+
+    /// <summary>A visit to the near band ends only this far (m) past it: a wobble over its edge refuses nothing twice.</summary>
+    public const float NearExitMargin = 0.05f;
+
+    /// <summary>The near band's refusal comes with the view at most this far (degrees) off the spot.</summary>
+    public const float NearLookDegrees = 45f;
+
+    /// <summary>A friend's body holds the item off the spot its controller has reached: it cannot get closer, and
+    /// letting go would only snap it inside them (#116, #119), so it counts as there (#112: a Frisbee 0.24 m off on a
+    /// 0.22 m zone, with the hand 1.00 m short).</summary>
+    public static bool HeldOffAtSpot(bool keptByThem, float placeGap) =>
+        keptByThem && placeGap <= PlaceRadius;
+
     private bool applying;
     private float outFor;
     private float inFor;
@@ -81,19 +119,32 @@ public sealed class HandOver
     /// <summary>The dwell applied or refused on this visit to the zone.</summary>
     private bool dwelt;
 
+    /// <summary>Seconds at rest just outside the zone, and whether this visit to it or the zone has been refused.</summary>
+    private float nearFor;
+    private bool nearRefused;
+
     /// <param name="usable">The friend can take the item (canUseOnFriend).</param>
     /// <param name="ownUse">The item has a trigger use of its own (a torch, a spool): when it is not
     /// <paramref name="usable"/> there is no hand-over at all, so its trigger stays its own and nothing is refused.</param>
     /// <param name="dt">Seconds since the last update, for the <see cref="Grace"/>; 0 gives none.</param>
-    /// <param name="still">The feeder's body is nearly still (<see cref="Still"/>): the <see cref="Dwell"/> only counts
-    /// then, and starts over when they move before it is done.</param>
+    /// <param name="still">The feeder and the friend are nearly still (<see cref="Still(float, float)"/>): the
+    /// <see cref="Dwell"/> only counts then, and starts over when one moves before it is done.</param>
+    /// <param name="placeGap">The item at its controller-held place from the mouth or chest (m,
+    /// <see cref="FeedZone.PlaceGap"/>): the <see cref="Dwell"/> only counts within <see cref="PlaceRadius"/>. The
+    /// trigger does not read it.</param>
+    /// <param name="nearGap">The item from the nearest friend's mouth or chest (m): out of the zone, within
+    /// <see cref="NearPlaceRadius"/> it is just short of it (<see cref="NearStep"/>).</param>
+    /// <param name="looking">The view is on the spot (<see cref="NearLookDegrees"/>).</param>
     public HandOverState Update(
         bool inZone,
         bool trigger,
         bool usable,
         bool ownUse = false,
         float dt = 0f,
-        bool still = true
+        bool still = true,
+        float placeGap = 0f,
+        float nearGap = float.PositiveInfinity,
+        bool looking = true
     )
     {
         if (!inZone && applying && usable && (trigger || dwelt) && (outFor += dt) < Grace)
@@ -101,21 +152,51 @@ public sealed class HandOver
         outFor = 0f;
         if (!inZone || (!usable && ownUse))
         {
-            Reset();
+            EndZone();
+            if (nearGap > NearPlaceRadius + NearExitMargin)
+                nearRefused = false;
+            if (nearGap <= NearPlaceRadius && !inZone && (usable || !ownUse))
+                return NearStep(trigger, usable, dt, still && placeGap <= NearPlaceRadius, looking);
+            nearFor = 0f;
             return HandOverState.None;
         }
+        nearFor = 0f;
         var state = Step(trigger, usable);
         if (Dwell > 0f && state is HandOverState.None or HandOverState.Hint)
-            state = DwellStep(usable, state, dt, still);
+            state = DwellStep(usable, state, dt, still && placeGap <= PlaceRadius);
         applying = state == HandOverState.Apply;
+        nearRefused |= state == HandOverState.Refuse;
         return state;
     }
 
-    /// <summary>Held in the zone for <see cref="Dwell"/>: an item they can take is applied for as long as it stays;
-    /// one they cannot is refused once per visit. The feeder moving restarts a dwell not yet done.</summary>
-    private HandOverState DwellStep(bool usable, HandOverState state, float dt, bool still)
+    /// <summary>Just short of the zone with the trigger up, for <see cref="Dwell"/>: say so instead of nothing (#112).
+    /// An item they can take gets the ring on the spot for as long as it rests there; one they cannot is refused once
+    /// per visit, and only with the view on the spot: it is a cue, and an arm resting past a friend asked nothing. The
+    /// ring stays silent, so it needs no look. The trigger stays the item's own here, and its own refusal speaks
+    /// (<see cref="Context"/>).</summary>
+    private HandOverState NearStep(bool trigger, bool usable, float dt, bool counts, bool looking)
     {
-        if (still)
+        if (trigger || !counts)
+        {
+            nearFor = 0f;
+            return HandOverState.None;
+        }
+        nearFor += dt;
+        if (nearFor < Dwell)
+            return HandOverState.None;
+        if (usable)
+            return HandOverState.Hint;
+        if (nearRefused || !looking)
+            return HandOverState.None;
+        nearRefused = true;
+        return HandOverState.Refuse;
+    }
+
+    /// <summary>Held in the zone for <see cref="Dwell"/>: an item they can take is applied for as long as it stays;
+    /// one they cannot is refused once per visit. Anything but <paramref name="counts"/> restarts a dwell not yet done.</summary>
+    private HandOverState DwellStep(bool usable, HandOverState state, float dt, bool counts)
+    {
+        if (counts)
             inFor += dt;
         else if (inFor < Dwell)
             inFor = 0f;
@@ -189,6 +270,16 @@ public sealed class HandOver
     }
 
     public void Reset()
+    {
+        EndZone();
+        nearFor = 0f;
+        nearRefused = false;
+    }
+
+    /// <summary>Ends this time in the zone, its grace and any use it holds, at once: the hand reached your own slot
+    /// (#147), and a release there must not be refused as mid-use. The near band's visit is not over, so its refusal
+    /// stays spent (<see cref="Reset"/> ends both).</summary>
+    public void EndZone()
     {
         armed = false;
         refused = false;

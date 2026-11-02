@@ -76,8 +76,9 @@ internal sealed class ItemGesturesConfig
                 s,
                 "PressToBody",
                 true,
-                "Press a bandage or other healing item to your chest or your other forearm to use it, or to a "
-                    + "friend's body to use it on them. Food stays at the mouth; the trigger still works."
+                "Hold a bandage or other healing item still on your chest or your other forearm to use it, or on a "
+                    + "friend's body to use it on them. Carrying it past your body, or over a slot or pack that would "
+                    + "take it, starts nothing. Food stays at the mouth; the trigger still works."
             ),
             warmHands = file.Bind(
                 s,

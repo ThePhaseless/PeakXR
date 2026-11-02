@@ -16,7 +16,6 @@ public sealed class ContactDwell
     public float Dwell = 0.2f;
 
     private bool inside;
-    private bool armed = true;
     private float timer;
 
     public bool Active { get; private set; }
@@ -26,13 +25,10 @@ public sealed class ContactDwell
         inside = distance <= (inside ? Exit : Enter);
         if (!inside)
         {
-            armed = true;
             timer = 0f;
             Active = false;
             return false;
         }
-        if (!armed)
-            return false;
         timer += dt;
         Active = timer >= Dwell;
         return Active;
@@ -41,17 +37,8 @@ public sealed class ContactDwell
     public void Reset()
     {
         inside = false;
-        armed = true;
         timer = 0f;
         Active = false;
-    }
-
-    /// <summary>A contact that already exists counts only after it breaks once, e.g. an item drawn from a chest
-    /// slot that starts out pressed to the chest.</summary>
-    public void Disarm()
-    {
-        Reset();
-        armed = false;
     }
 }
 
@@ -114,6 +101,27 @@ public static class BodyZones
 
     /// <summary>... to this far behind it, metres.</summary>
     public const float ForearmEnd = 0.3f;
+
+    /// <summary>How far out from the torso (m) the hand itself may be for a held item resting there to count.</summary>
+    public const float HandOffTorso = 0.2f;
+
+    /// <summary>The hand itself is at the torso, not just the item it holds: an item reaches up to 0.77 m from the grip
+    /// (Aloe Vera), so by the item alone a front hold or an arm hanging beside the hip is "on the body" (#147). Fatter
+    /// than the torso but no taller, since below the belt or above the shoulders a hand is not pressing anything.</summary>
+    public static bool HandAtTorso(Vector3 hand, Vector3 head, Vector3 flatForward, float radius) =>
+        TorsoDistance(hand, head, flatForward, radius + HandOffTorso) <= 0f;
+
+    /// <summary>How far off the forearm's press radius (m) the hand itself may be, as <see cref="HandOffTorso"/>.</summary>
+    public const float HandOffForearm = 0.1f;
+
+    /// <summary>The hand itself is at the other forearm, not just the item: hands idling side by side in front are
+    /// about 0.3 m apart, and a big item reaches across that (#147).</summary>
+    public static bool HandAtForearm(
+        Vector3 hand,
+        Vector3 otherHand,
+        Vector3 otherForward,
+        float radius
+    ) => ForearmDistance(hand, otherHand, otherForward) - radius <= HandOffForearm;
 
     /// <param name="point">World point to test.</param>
     /// <param name="head">Tracked eye position.</param>

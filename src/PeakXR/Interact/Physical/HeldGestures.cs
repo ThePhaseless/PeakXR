@@ -12,8 +12,9 @@ namespace PeakXR.Interact.Physical;
 /// <list type="bullet">
 /// <item>Bugle (G5): the holding hand at the mouth holds primary, so <c>BugleSFX.UpdateTooting</c> starts the toot
 /// (BugleSFX.cs:43-61). Its pitch argument comes from the bell direction via <see cref="BeforeTooting"/>.</item>
-/// <item>Body press (G8): an item applied to the body (<see cref="UseGesture.Apply"/>) held against your own torso or
-/// other forearm holds primary. Feeding a friend's body is in <c>SocialHands</c>.</item>
+/// <item>Body press (G8): an item applied to the body (<see cref="UseGesture.Apply"/>) rested against your own torso or
+/// other forearm holds primary (<see cref="SelfUseDwell"/>: the belt sits in that zone, so a carry past it must not
+/// count, #147). Feeding a friend's body is in <c>SocialHands</c>.</item>
 /// <item>Face: the Book of Bones (<see cref="UseGesture.Read"/>, which turns its reader into a skeleton) held open at
 /// eye level, or a lethal or warping item (<see cref="UseGesture.Commune"/>) held eye to eye, holds primary for the
 /// game's own cast after a deliberate dwell, with a danger warning as it starts and the progress feel after. A bare
@@ -35,8 +36,9 @@ internal static class HeldGestures
     {
         Enter = 0f,
         Exit = 0.05f,
-        Dwell = 0.35f,
+        Dwell = 0f,
     };
+    private static readonly SelfUseDwell BodyUse = new();
 
     /// <summary>Torso radius around the spine, with the hand's own thickness (tune on headset).</summary>
     private const float TorsoRadius = 0.22f;
@@ -48,30 +50,57 @@ internal static class HeldGestures
     {
         Enter = 0f,
         Exit = 0.06f,
-        // Deliberate: both uses are dangerous, so a hand passing the face never starts one.
-        Dwell = 0.5f,
+        Dwell = 0f,
     };
+
+    // Deliberate: both uses are dangerous, so a hand passing the face never starts one.
+    private static readonly SelfUseDwell FaceUse = new() { Dwell = SelfUseDwell.FaceDwell };
 
     /// <summary>Eye to eye: the holding hand within this of a point just in front of the eyes, metres.</summary>
     private const float CommuneAhead = 0.12f;
     private const float CommuneRadius = 0.14f;
 
-    private static bool pressing;
     private static bool tooting;
     private static bool facing;
 
     public static void Reset()
     {
         Mouth.Reset();
-        Body.Reset();
-        Face.Reset();
-        pressing = false;
+        ResetBody();
+        ResetFace();
         tooting = false;
+    }
+
+    private static void ResetBody()
+    {
+        Body.Reset();
+        BodyUse.Reset();
+    }
+
+    private static void ResetFace()
+    {
+        Face.Reset();
+        FaceUse.Reset();
         facing = false;
     }
 
+    /// <summary>The held item is at your own body this frame, whether or not it counts yet (self-test vr.495).</summary>
+    public static bool AtBody => Body.Active;
+
     /// <summary>The face gesture holds primary this frame (self-test reads it).</summary>
     public static bool AtFace => facing;
+
+    /// <summary>Where a resting hand is measured (<see cref="HandStill.OnBody"/>).</summary>
+    internal static System.Numerics.Vector3 RestPoint(bool left) =>
+        HandStill.OnBody(
+            VRInput.Hand(left).Position.N(),
+            VRInput.HeadPosition.N(),
+            VRInput.HeadRotation.N()
+        );
+
+    /// <summary>An item arrived in this hand (drawn from a slot, picked up at the body): it did not come here to be used,
+    /// so the hand has to move once first.</summary>
+    internal static void Arrive(bool left) => BodyUse.Arrive(RestPoint(left));
 
     public static void Tick(VRRig rig, ItemGesturesConfig cfg, float dt)
     {
@@ -79,17 +108,19 @@ internal static class HeldGestures
         if (ItemGestures.ItemChanged)
         {
             Mouth.Reset();
-            // An item drawn from a chest slot starts at the chest: it must leave once before a press counts.
-            Body.Disarm();
-            Face.Reset();
-            pressing = tooting = facing = false;
+            ResetBody();
+            // Back from a menu with the item still in hand. A new item's hand is not known yet: TrackHeldItem runs later
+            // this frame and calls this again for the right hand.
+            Arrive(ItemGestures.HoldLeft);
+            ResetFace();
+            tooting = false;
         }
         if (hand == null || rig.Head == null || !VRInput.HeadTracked)
         {
             Mouth.Reset();
-            Body.Reset();
-            Face.Reset();
-            pressing = tooting = facing = haveBodyHand = false;
+            ResetBody();
+            ResetFace();
+            tooting = false;
             // No face to hold it to: a trigger refused for a face-only item (TriggerRefused) says so at the hand.
             bool left = ItemGestures.HoldLeft;
             if (TriggerPressed(left) && ItemGestures.TriggerRefused(ItemGestures.Held))
@@ -109,8 +140,7 @@ internal static class HeldGestures
         bool left = ItemGestures.HoldLeft;
         if (!read && !commune)
         {
-            Face.Reset();
-            facing = false;
+            ResetFace();
             MouthHint(rig, hand, left, use);
             return;
         }
@@ -128,7 +158,12 @@ internal static class HeldGestures
         // The book over bones revives (interact.world); it must never read there.
         if (read && !ReadZone.Allowed(hand.position.N(), ItemGestures.NearHips))
             distance = float.PositiveInfinity;
-        bool on = Face.Update(distance, dt);
+        bool on = FaceUse.Update(
+            RestPoint(left),
+            Face.Update(distance, dt),
+            Inventory.BodyInventory.Instance.TakesHeld(Character.localCharacter, left),
+            dt
+        );
         if (on && !facing)
         {
             // It starts: warn once that this harms (the warning's tick is the start tick), then the cast's progress.
@@ -235,9 +270,7 @@ internal static class HeldGestures
     {
         if (!cfg.PressToBody || !ItemGestures.StatusItem)
         {
-            Body.Reset();
-            pressing = false;
-            haveBodyHand = false;
+            ResetBody();
             return;
         }
         var head = rig.Head;
@@ -259,6 +292,7 @@ internal static class HeldGestures
             BodyZones.TorsoDistance(point, head.position.N(), flat.N(), TorsoRadius),
             BodyZones.TorsoDistance(itemPoint, head.position.N(), flat.N(), TorsoRadius)
         );
+        bool handThere = BodyZones.HandAtTorso(point, head.position.N(), flat.N(), TorsoRadius);
 
         // The other forearm, unless both hands are on the item.
         bool onForearm = false;
@@ -286,25 +320,62 @@ internal static class HeldGestures
             {
                 distance = Mathf.Max(arm, 0f);
                 onForearm = true;
+                handThere = BodyZones.HandAtForearm(
+                    point,
+                    otherReal,
+                    other.Fingers().N(),
+                    ForearmRadius
+                );
             }
         }
 
-        // Held still against the body, not swept past it (a throw's swing crosses the chest).
-        var tracked = VRInput.Hand(ItemGestures.HoldLeft).Position;
-        float speed = haveBodyHand && dt > 0f ? Vector3.Distance(tracked, lastBodyHand) / dt : 0f;
-        lastBodyHand = tracked;
-        haveBodyHand = true;
-        bool on = Body.Update(BodyPress.Distance(distance, speed, pressing), dt);
-        if (on && !pressing)
+        // Rested against the body, not carried past it to a slot or swung across it in a throw.
+        bool left = ItemGestures.HoldLeft;
+        bool was = BodyUse.Active;
+        bool on = BodyUse.Update(
+            RestPoint(left),
+            // The item's reach decides contact, the hand decides whether it means it; a use under way rides that out.
+            Body.Update(distance, dt) && (was || handThere),
+            Inventory.BodyInventory.Instance.TakesHeld(Character.localCharacter, left),
+            dt
+        );
+        if (BodyUse.Settling || BodyUse.NeedsStill)
+        {
+            // Nothing is spent yet, and leaving is free: say what it takes before the game's cast ring takes over. At
+            // the hand, as the chest point is inside the torso and unseen.
+            var spot = onForearm ? other.position : hand.position;
+            Affordance.Mark(left, spot, DenyReason.HappenedHere, DenyHint.At(spot), "Hold still");
+            if (BodyUse.Settling)
+                Affordance.Progress(left, BodyUse.Fraction);
+        }
+        else if (BodyUse.Parked)
+            SlotCue(rig, left);
+        if (on && !was)
         {
             // A short wrap: the holding hand, and the arm being wrapped.
             Haptics.Pulse(ItemGestures.HoldLeft, 0.35f, 0.12f);
             if (onForearm)
                 Haptics.Pulse(!ItemGestures.HoldLeft, 0.35f, 0.12f);
         }
-        pressing = on;
         if (on)
             GestureRequests.Primary();
+    }
+
+    /// <summary>A rest at a slot started nothing, on purpose (<see cref="SelfUseDwell"/>): say what the slot does instead,
+    /// which matters most with the <c>Chest</c> layout, whose slots cover most of the chest.</summary>
+    private static void SlotCue(VRRig rig, bool left)
+    {
+        var inv = Inventory.BodyInventory.Instance;
+        var c = Character.localCharacter;
+        int slot = inv.HeldSlot(c, left);
+        if (slot < 0)
+            return;
+        var at = rig.Origin.TransformPoint(inv.Anchor(slot));
+        var refusal = inv.StowRefusal(c, slot);
+        if (refusal == DenyReason.None)
+            Affordance.Mark(left, at, DenyReason.HappenedHere, DenyHint.At(at), "Let go to stow");
+        else
+            Affordance.Hover(left, at, refusal);
     }
 
     /// <summary>The chest the held item is pressed against: this far under the eyes, metres.</summary>
@@ -358,10 +429,6 @@ internal static class HeldGestures
             ? p
             : hand.position;
     }
-
-    /// <summary>The holding hand's tracked position last frame (tracking space, so walking does not count).</summary>
-    private static Vector3 lastBodyHand;
-    private static bool haveBodyHand;
 
     private static bool lookSwapped;
     private static Vector3 savedLook;

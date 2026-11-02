@@ -51,6 +51,9 @@ internal sealed class BodyInventory : IGripExtension
     private const byte OverflowSlot = 250;
     private const float WheelDeadzone = 0.06f;
 
+    /// <summary>A release finds a slot this much past its radius.</summary>
+    private const float ReleaseReach = 1.25f;
+
     private BodySlot[] slots = BodySlotLayout.Create(
         BodySlotLayout.Belt,
         BodySlotLayout.MaxHotbar,
@@ -216,21 +219,22 @@ internal sealed class BodyInventory : IGripExtension
     {
         ref var state = ref VRInput.Hand(hand == 0);
         int near = -1;
+        bool holds = c.data.currentItem != null && LocalHold.ItemInLeftHand == (hand == 0);
         if (state.Tracked)
         {
-            // Hysteresis: the slot a hand is in lets go only 10% past its radius, so an edge does not flicker.
+            // Hysteresis: the slot a hand is in lets go only 10% past its radius, so an edge does not flicker. A holding
+            // hand's slot lights exactly as far as a release stows and a rest stops a use, so the light tells the truth.
             int was = nearSlot[hand];
-            float r = was >= 0 ? slots[was].Radius * 1.1f : 0f;
+            float r = was >= 0 ? slots[was].Radius * (holds ? ReleaseReach : 1.1f) : 0f;
             near =
                 was >= 0 && NVector3.DistanceSquared(state.Position.N(), anchors[was]) <= r * r
                     ? was
-                    : Find(state.Position.N(), 1f);
+                    : Find(state.Position.N(), holds ? ReleaseReach : 1f);
         }
         if (near >= 0 && near != nearSlot[hand])
         {
             // Tick on entering a slot this hand can use: a filled one to draw, any one to put the held item in.
             var look = Look(c, near);
-            bool holds = c.data.currentItem != null && LocalHold.ItemInLeftHand == (hand == 0);
             if (look is SlotLook.Filled or SlotLook.Full || (holds && look != SlotLook.Hidden))
                 Haptics.Pulse(hand == 0, 0.15f, 0.02f);
         }
@@ -374,13 +378,65 @@ internal sealed class BodyInventory : IGripExtension
         var c = ctx.Character;
         if (!Ready(c) || !InventoryConfig.Instance.HolsterOnRelease || !ctx.ThisHandHolds)
             return false;
-        int i = Find(VRInput.Hand(ctx.Left).Position.N(), 1.25f);
+        int i = Find(VRInput.Hand(ctx.Left).Position.N(), ReleaseReach);
         if (i < 0)
             return false;
         if (slots[i].GameSlot == PackSlot)
             return ReleaseAtShoulder(c, ctx.Left);
         Holster(c, ctx.Left);
         return true;
+    }
+
+    /// <summary>Opening this hand's grip here answers for the held item: a body slot (<see cref="TryHeldRelease"/>) or a
+    /// pack that would take it. Such a place wins over any use the hand would start by resting here, even when the slot
+    /// then refuses the item, whose refusal comes on release: the player reached for the belt, and the item stays theirs
+    /// (#147).</summary>
+    internal bool TakesHeld(Character c, bool left) =>
+        PackStash.Instance.WouldTake || HeldSlot(c, left) >= 0;
+
+    /// <summary>The slot a release of this holding hand would answer at, -1 for none. None either while something other
+    /// than the item's own cast blocks switching (a climb, a rope): a stow would be refused, so the slot gives way and a
+    /// use can start there.</summary>
+    internal int HeldSlot(Character c, bool left)
+    {
+        if (
+            c == null
+            || c.data.currentItem == null
+            || !Ready(c)
+            || !InventoryConfig.Instance.HolsterOnRelease
+            || SwitchBlockedBeyondCast(c)
+        )
+            return -1;
+        int i = Find(VRInput.Hand(left).Position.N(), ReleaseReach);
+        if (i < 0 || slots[i].GameSlot != PackSlot)
+            return i;
+        var selected = c.refs.items.currentSelectedSlot;
+        return
+            InventoryConfig.Instance.BackpackOverShoulder
+            && (!c.player.backpackSlot.IsEmpty() || (selected.IsSome && selected.Value == PackSlot))
+            ? i
+            : -1;
+    }
+
+    /// <summary>What a release at <see cref="HeldSlot"/> <paramref name="i"/> would say: None when it stows, else
+    /// <see cref="Holster"/>'s or <see cref="ReleaseAtShoulder"/>'s refusal for this item.</summary>
+    internal DenyReason StowRefusal(Character c, int i)
+    {
+        var ui = c.data.currentItem.UIData;
+        var selected = c.refs.items.currentSelectedSlot;
+        bool ownSlot = selected.IsSome && selected.Value <= PackSlot;
+        if (slots[i].GameSlot != PackSlot)
+            return ownSlot && ui.canPocket ? DenyReason.None : DenyReason.CantHolster;
+        if (selected.IsSome && selected.Value == PackSlot)
+            return DenyReason.None;
+        if (FreePocket(c) < 0)
+            return DenyReason.PackFull;
+        return
+            ownSlot
+            && ui.canBackpack
+            && c.player.backpackSlot.backpackType != BackpackSlot.BackpackType.Rocketpack
+            ? DenyReason.None
+            : DenyReason.CantHolster;
     }
 
     // ------------------------------------------------------------------ actions
@@ -579,8 +635,13 @@ internal sealed class BodyInventory : IGripExtension
     internal static bool SwitchBlocked(Character c)
     {
         var item = c.data.currentItem;
-        if (item != null && (item.progress > 0f || item.lastFinishedCast + 0.1f > Time.time))
-            return true;
+        return (item != null && (item.progress > 0f || item.lastFinishedCast + 0.1f > Time.time))
+            || SwitchBlockedBeyondCast(c);
+    }
+
+    /// <summary>The gates of <see cref="SwitchBlocked"/> that stay after the held item's own cast has ended.</summary>
+    internal static bool SwitchBlockedBeyondCast(Character c)
+    {
         return !c.data.fullyConscious
             || (CanDoInput != null && !CanDoInput(c))
             || (LockedFromSwitching != null && LockedFromSwitching(c.refs.items))

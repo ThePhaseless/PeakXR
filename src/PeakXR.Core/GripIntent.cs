@@ -403,6 +403,21 @@ public static class GripIntent
             : DenyReason.None;
     }
 
+    /// <summary>A release that would have dropped or thrown (<see cref="OnRelease"/>) an item the game keeps
+    /// (<c>UIData.canDrop</c> off): the grip meant to let go and nothing happens, so it gets a refusal.</summary>
+    public static bool DropRefused(
+        bool canDrop,
+        bool armed,
+        float speed,
+        float throwSpeed,
+        bool throwEnabled,
+        bool releaseToDrop
+    ) =>
+        !canDrop
+        && armed
+        && OnRelease(true, true, speed, throwSpeed, throwEnabled, releaseToDrop)
+            != GripReleaseAction.Keep;
+
     /// <summary>How far a piton or handle stands out of the rock it is set in (metres): rock up to this much nearer
     /// than the handle's surface is the face it sits on, not a separate hold (VR run 60).</summary>
     public const float HandleDepth = 0.1f;
