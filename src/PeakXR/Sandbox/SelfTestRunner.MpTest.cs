@@ -1921,8 +1921,11 @@ internal sealed partial class SelfTestRunner
         else if (fed || used)
             Fail($"the host was {(fed ? "fed" : "getting fed")} with the controller away: {note}");
         else if (inZone < HandOver.MouthDwell)
+            // The head's collider holds a kept item about 0.29 m off its centre, outside the 0.22 m zone, so this stance can
+            // not reach the case. HandOverTests.ABagKeptOnAFriendWithTheControllerAwayIsNotAtTheMouth covers it.
             stepSkip =
-                "the head did not keep the food in the zone, so no feed proves nothing: " + note;
+                "the host's head kept the food out of the zone, so no feed proves nothing here (the gate is in HandOverTests.ABagKept...): "
+                + note;
         else
             stepNote = "no feed: " + note;
     }
