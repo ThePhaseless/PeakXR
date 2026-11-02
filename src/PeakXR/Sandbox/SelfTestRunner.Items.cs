@@ -31,7 +31,9 @@ internal sealed partial class SelfTestRunner
         yield return ItemStep("vr.400-bugle-turned", "Bugle", 25f, BugleTurnedStep);
         yield return ItemStep("vr.22-bandage", "Bandage", 30f, BandageStep);
         yield return ItemStep("vr.22b-bandage-forearm", "Bandage", 30f, ForearmBandageStep);
-        yield return ItemStep("vr.495-bandage-past-body", "Bandage", 60f, BandagePastBodyStep);
+        yield return ItemStep("vr.22c-bandage-body-steps", "Bandage", 30f, BandageBodyStepsStep);
+        yield return ItemStep("vr.495-bandage-past-body", "Bandage", 90f, BandagePastBodyStep);
+        yield return ItemStep("vr.495b-kit-past-body", "FirstAidKit", 90f, BandagePastBodyStep);
         yield return ItemStep("vr.23-parasol", "Parasol", 25f, ParasolStep);
         // A bandage: food is eaten at the mouth, not on the trigger (Interaction.TriggerEats off).
         yield return ItemStep("vr.28-use-while-pointing", "Bandage", 25f, UsePointingStep);
