@@ -18,7 +18,7 @@ internal sealed partial class SelfTestRunner
     IEnumerator WheelGapSteps()
     {
         yield return HandStep("vr.126-wheel-climbing-refused", 40f, WheelClimbingStep());
-        yield return HandStep("vr.127-thumbs-up", 20f, ThumbsUpStep());
+        yield return HandStep("vr.127-thumbs-up", 25f, ThumbsUpStep());
         yield return HandStep("vr.443-thumbs-up-no-interact", 20f, ThumbsUpNoInteractStep());
         yield return HandStep("vr.447-thumbs-up-cooldown", 20f, ThumbsUpCooldownStep());
         yield return HandStep("vr.446-posed-tap-picks-up", 20f, PosedTapStep());
@@ -187,13 +187,28 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         yield return ExpectCue(hand, DenyReason.HappenedHere, mark);
+        if (!stepOk)
+            yield break;
         notes.Add($"thumbs up: played {GestureEmotes.LastPlayed} once, confirmed: {cueNote}");
-        if (stepOk)
-            stepNote = string.Join("; ", notes);
 
-        // Bent, as a thumbs-up is held: on the nominal arm 0.4 m ahead is past Social.ReachOutStretch, a reach (#146).
-        Vector3 Out(bool left) =>
-            head + forward * 0.33f + (left ? -right : right) * 0.1f + Vector3.down * 0.2f;
+        // Further out, as many players hold it, still a thumbs-up: past vr.127's cooldown (2 s), on the longer dwell.
+        yield return Wait(2.2f);
+        yield return MoveTrack(hand, Out(hand, 0.45f), 0.3f);
+        before = GestureEmotes.PlayCount;
+        Fist(hand, forward);
+        yield return Until(
+            () => GestureEmotes.PlayCount != before,
+            2f,
+            "no thumbs-up within 2 s of the pose at 0.45 m"
+        );
+        Script(hand).Grip = 0f;
+        Script(hand).StickTouch = true;
+        if (stepOk)
+            stepNote = string.Join("; ", notes) + "; at 0.45 m: played";
+
+        // Bent, as a thumbs-up is held: the nominal arm reads about 0.77 here, under EmoteGestures.ThumbMaxStretch (#146).
+        Vector3 Out(bool left, float ahead = 0.4f) =>
+            head + forward * ahead + (left ? -right : right) * 0.1f + Vector3.down * 0.2f;
     }
 
     /// <summary>
@@ -215,7 +230,7 @@ internal sealed partial class SelfTestRunner
         Script(hand).StickTouch = true;
         yield return MoveTrack(
             hand,
-            head + forward * 0.33f + (hand ? -right : right) * 0.1f + Vector3.down * 0.2f,
+            head + forward * 0.4f + (hand ? -right : right) * 0.1f + Vector3.down * 0.2f,
             0.3f
         );
         int before = GestureEmotes.PlayCount;
@@ -263,7 +278,7 @@ internal sealed partial class SelfTestRunner
         Script(hand).StickTouch = true;
         yield return MoveTrack(
             hand,
-            head + forward * 0.33f + (hand ? -right : right) * 0.1f + Vector3.down * 0.2f,
+            head + forward * 0.4f + (hand ? -right : right) * 0.1f + Vector3.down * 0.2f,
             0.3f
         );
         int before = GestureEmotes.PlayCount;
@@ -340,7 +355,7 @@ internal sealed partial class SelfTestRunner
         Script(hand).StickTouch = true;
         yield return MoveTrack(
             hand,
-            head + forward * 0.33f + (hand ? -right : right) * 0.15f + Vector3.down * 0.25f,
+            head + forward * 0.4f + (hand ? -right : right) * 0.15f + Vector3.down * 0.25f,
             0.3f
         );
         for (float until = Now + 3f; Now < until; )

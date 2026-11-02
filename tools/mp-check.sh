@@ -211,9 +211,13 @@ def expected: ["join", "walk-to-host", "emote", "ping", "ping-seen", "scene-butt
       (if any(seen($y)[]; .local and .name == "GetFedItemRPC")
           and any(seen($y)[]; (.local | not) and .name == "SendFeedDataRPC")
        then "PASS \($x.name): B was fed by A (SendFeedDataRPC, GetFedItemRPC on B)"
-       else "FAIL \($x.name): B missed SendFeedDataRPC from A or GetFedItemRPC on itself" end)
+       else "FAIL \($x.name): B missed SendFeedDataRPC from A or GetFedItemRPC on itself" end),
+      (if $x.name == "feed-held-ahead" and (($x.note // "") | test("kept by the host.s body 0\\.0 s"))
+       then "INFO feed-held-ahead: the body of B never kept the food, so this run did not test the body keep: \($x.note)"
+       else empty end)
     elif $x.name == "feed-fetch-front" then
-      (if any(after($y)[]; .name == "SendFeedDataRPC" and .on == $x.item)
+      # seen, not after: the window after this checkpoint holds feed-held-ahead, a real feed of the same food.
+      (if any(seen($y)[]; .name == "SendFeedDataRPC" and .on == $x.item)
        then "FAIL feed-fetch-front: B got a feed RPC for the \($x.item) A only carried past it"
        else "PASS feed-fetch-front: B got no feed RPC for the \($x.item) A only carried past it" end)
     elif $x.name == "feed-refuse" then
@@ -329,8 +333,13 @@ def expected: ["join", "walk-to-host", "emote", "ping", "ping-seen", "scene-butt
     ($bcp["emote"] as $e
      | (if $e == null then [] else [seen($e)[] | .t] end) as $mine
      | [$rpcs[] | select((.local | not) and .name == "RPCA_PlayRemove" and (.t as $t | $mine | index($t) | not))
-        | .t as $t | "\(.args[0].s // "?") in \([$bcps[] | select(.t >= $t) | .name] | first // "the end")"] as $stray
-     | if $stray == [] then empty else "INFO B saw \($stray | length) emote(s) from A outside the emote step: \($stray | join(", "))" end),
+        | .t as $t | {emote: (.args[0].s // "?"), step: ([$bcps[] | select(.t >= $t) | .name] | first // "the end")}] as $stray
+     | if $stray == [] then empty else
+         "INFO B saw \($stray | length) emote(s) from A outside the emote step: \($stray | map("\(.emote) in \(.step)") | join(", "))",
+         # Its fist is a reach past the thumbs-up limit (#146): no emote here is ever meant.
+         ($stray | map(select(.step == "vr.422-reach-out-idle") | .emote) as $reach
+          | if $reach == [] then empty else "FAIL vr.422-reach-out-idle: the reach played \($reach | join(", ")) for every peer" end)
+       end),
     ([$a[] | select(.status == "skip") | .name] as $sk
      | if $sk == [] then empty else "INFO \($sk | length) of \($a | length) checkpoints skipped: \($sk | join(", "))" end),
     (if $sum.saveSame == null then "FAIL B logged no quicksave fingerprints (observer without the progress guard?)"

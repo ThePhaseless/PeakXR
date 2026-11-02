@@ -359,8 +359,10 @@ public class HandOverTests
         bool trigger = false,
         bool ownUse = false,
         bool still = true,
-        float placeGap = 0.4f
-    ) => h.Update(false, trigger, usable, ownUse, dt, still, placeGap, nearBand: true);
+        float placeGap = 0.4f,
+        float nearGap = 0.35f,
+        bool looking = true
+    ) => h.Update(false, trigger, usable, ownUse, dt, still, placeGap, nearGap, looking);
 
     [Fact]
     public void JustShortOfTheMouth_FoodGetsTheRingAfterTheDwell()
@@ -389,14 +391,79 @@ public class HandOverTests
     }
 
     [Fact]
-    public void JustShortOfTheMouth_NothingWhileMovingOrWithTheHandElsewhere()
+    public void JustShortOfTheMouth_NothingWhileMoving()
     {
         var h = Mouth();
         for (int i = 0; i < 20; i++)
-        {
             Assert.Equal(HandOverState.None, Near(h, usable: false, still: false));
+    }
+
+    [Fact]
+    public void JustShortOfTheMouth_NothingWithTheHandElsewhere()
+    {
+        var h = Mouth();
+        for (int i = 0; i < 20; i++)
             Assert.Equal(HandOverState.None, Near(h, usable: false, placeGap: 0.63f));
-        }
+    }
+
+    [Fact]
+    public void JustShortOfTheMouth_AMoveStartsTheDwellOver()
+    {
+        var h = Mouth();
+        Assert.Equal(HandOverState.None, Near(h, dt: 0.2f));
+        Assert.Equal(HandOverState.None, Near(h, dt: 0.01f, still: false));
+        Assert.Equal(HandOverState.None, Near(h, dt: 0.2f));
+        Assert.Equal(HandOverState.Hint, Near(h, dt: 0.2f));
+    }
+
+    [Fact]
+    public void JustShortOfTheMouth_AWobblePastTheBandIsTheSameVisit()
+    {
+        var h = Mouth();
+        Near(h, usable: false, dt: 0.1f);
+        Assert.Equal(HandOverState.Refuse, Near(h, usable: false, dt: 0.3f));
+        Assert.Equal(HandOverState.None, Near(h, usable: false, nearGap: 0.5f));
+        Assert.Equal(HandOverState.None, Near(h, usable: false, dt: 0.4f));
+        Assert.Equal(HandOverState.None, Near(h, usable: false, dt: 0.4f));
+    }
+
+    [Fact]
+    public void JustShortOfTheMouth_ClearlyPastTheBandIsANewVisit()
+    {
+        var h = Mouth();
+        Near(h, usable: false, dt: 0.1f);
+        Assert.Equal(HandOverState.Refuse, Near(h, usable: false, dt: 0.3f));
+        Assert.Equal(HandOverState.None, Near(h, usable: false, nearGap: 0.51f));
+        Near(h, usable: false, dt: 0.1f);
+        Assert.Equal(HandOverState.Refuse, Near(h, usable: false, dt: 0.3f));
+    }
+
+    [Fact]
+    public void JustShortOfTheMouth_ARefusalWaitsForTheLook()
+    {
+        var h = Mouth();
+        for (int i = 0; i < 20; i++)
+            Assert.Equal(HandOverState.None, Near(h, usable: false, looking: false));
+        Assert.Equal(HandOverState.Refuse, Near(h, usable: false));
+    }
+
+    [Fact]
+    public void JustShortOfTheMouth_TheRingNeedsNoLook()
+    {
+        var h = Mouth();
+        Near(h, dt: 0.1f, looking: false);
+        Assert.Equal(HandOverState.Hint, Near(h, dt: 0.3f, looking: false));
+    }
+
+    [Fact]
+    public void AtTheMouth_ARefusalNeedsNoLook()
+    {
+        var h = Mouth();
+        h.Update(true, false, false, false, 0.1f, true, 0.1f, looking: false);
+        Assert.Equal(
+            HandOverState.Refuse,
+            h.Update(true, false, false, false, 0.3f, true, 0.1f, looking: false)
+        );
     }
 
     [Fact]
@@ -431,8 +498,8 @@ public class HandOverTests
 
     [Theory]
     [InlineData(true, 0.2f, true)]
-    [InlineData(true, 0.35f, true)]
-    [InlineData(true, 0.5f, false)]
+    [InlineData(true, 0.22f, true)]
+    [InlineData(true, 0.23f, false)]
     [InlineData(false, 0.2f, false)]
     public void AFriendsBodyHoldingTheItemOffCountsWithTheControllerAtTheSpot(
         bool kept,
@@ -441,4 +508,74 @@ public class HandOverTests
     ) =>
         // #112: a Frisbee on the host's head, 0.24 m off against the 0.22 m zone, with the controller on the mouth.
         Assert.Equal(counts, HandOver.HeldOffAtSpot(kept, placeGap));
+
+    [Theory]
+    [InlineData(0.22f, true)]
+    [InlineData(0.23f, false)]
+    public void TheDwellCountsOutToThePlaceRadius(float placeGap, bool applies)
+    {
+        var h = Mouth();
+        h.Update(true, false, true, false, 0.2f, true, placeGap);
+        Assert.Equal(
+            applies ? HandOverState.Apply : HandOverState.Hint,
+            h.Update(true, false, true, false, 0.2f, true, placeGap)
+        );
+    }
+
+    [Theory]
+    [InlineData(0.45f, HandOverState.Hint)]
+    [InlineData(0.46f, HandOverState.None)]
+    public void JustShortOfTheMouth_CountsOutToTheNearPlaceRadius(
+        float placeGap,
+        HandOverState state
+    )
+    {
+        var h = Mouth();
+        Near(h, dt: 0.2f, placeGap: placeGap);
+        Assert.Equal(state, Near(h, dt: 0.2f, placeGap: placeGap));
+    }
+
+    [Fact]
+    public void ABagKeptOnAFriendWithTheControllerAwayIsNotAtTheMouth()
+    {
+        // #119, its worst case: 0.36 m from the grip to the far corner, pointing at the mouth, with the controller
+        // 0.63 m off. The friend's body keeps the box on their mouth; at the held place it is 0.27 m short.
+        var place = new Vector3(0.63f, 0f, 0f);
+        var kept = new Vector3(0.36f, 0f, 0f);
+        float gap = FeedZone.PlaceGap(
+            new Vector3(0.18f, 0f, 0f),
+            new Vector3(0.18f, 0.05f, 0.05f),
+            kept,
+            place,
+            Vector3.Zero
+        );
+        Assert.Equal(0.27f, gap, 3);
+        var h = Mouth();
+        for (int i = 0; i < 20; i++)
+            Assert.NotEqual(
+                HandOverState.Apply,
+                h.Update(true, false, true, false, 0.1f, true, gap)
+            );
+    }
+
+    [Theory]
+    [InlineData("Apple Berry Red")]
+    [InlineData("Berrynana Yellow")]
+    public void RealFoodWithItsFarEndAtTheMouthCounts(string prefab)
+    {
+        // Their pivots lie at one end of the box, 0.38 and 0.51 m from the end on the mouth: the pivot is no measure.
+        Assert.True(ItemDrawnBox.TryGet(prefab, out var lo, out var hi));
+        var place = new Vector3(0f, -lo.Y, 0f);
+        Assert.True(place.Y > 0.35f);
+        float gap = FeedZone.PlaceGap(
+            place + (lo + hi) / 2f,
+            (hi - lo) / 2f,
+            place,
+            place,
+            Vector3.Zero
+        );
+        var h = Mouth();
+        h.Update(true, false, true, false, 0.2f, true, gap);
+        Assert.Equal(HandOverState.Apply, h.Update(true, false, true, false, 0.2f, true, gap));
+    }
 }
