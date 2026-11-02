@@ -1032,8 +1032,14 @@ internal sealed partial class Observer : MonoBehaviour
         );
     }
 
-    static readonly HarmonyLib.AccessTools.FieldRef<PointPinger, GameObject> PingInstance =
-        HarmonyLib.AccessTools.FieldRefAccess<PointPinger, GameObject>("pingInstance");
+    /// <summary>Null, not a throw, when the game renames it: only the ping probe goes without it, never the observer.</summary>
+    static readonly System.Reflection.FieldInfo PingInstanceField = HarmonyLib.AccessTools.Field(
+        typeof(PointPinger),
+        "pingInstance"
+    );
+
+    static GameObject PingInstance(PointPinger pinger) =>
+        PingInstanceField != null ? PingInstanceField.GetValue(pinger) as GameObject : null;
 
     static IEnumerator WearSoon(Backpack pack, Character c)
     {
