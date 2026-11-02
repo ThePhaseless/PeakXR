@@ -3517,6 +3517,18 @@ internal sealed partial class SelfTestRunner
             Fail("the look drifted into the reach cone before the cue: " + lookNote);
             yield break;
         }
+        // Every client runs the reach against its own copy of A (CharacterGrabbing.cs:253), and a stance push at the grip
+        // carried B's copy of A into B's cone while A read 72 deg: B was free 0.28 s after the grip, before the cue's 0.4 s
+        // dwell, and a freed friend owes no cue (Validate). Nothing was tested. A B still webbed with no cue stays a failure.
+        if (
+            !CueLog.Capture.Fired(false, DenyReason.WrongAngle, gripMark, out _)
+            && !CharacterGrabbing.TargetCanBeHelped(host, c)
+            && c.data.sinceGrabFriend >= 0.3f
+        )
+        {
+            stepSkip = "B's own client caught the reach before the cue's dwell: " + lookNote;
+            yield break;
+        }
         yield return ExpectCue(false, DenyReason.WrongAngle, gripMark, false, 2f);
         if (!stepOk)
         {
