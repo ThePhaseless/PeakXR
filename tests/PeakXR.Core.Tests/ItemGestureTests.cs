@@ -213,6 +213,72 @@ public class BodyZonesTests
 
 public class LidLiftTests
 {
+    // A case 2.6 m long lying 20 degrees off level on a rock (#127). Its lid's lower face is 0.5 m up its own axis, and
+    // its render centre sits on that face. World height says nothing here: the lid's low end is under the centre, the
+    // base's high end is over it.
+    static readonly System.Numerics.Quaternion Tilt =
+        System.Numerics.Quaternion.CreateFromAxisAngle(
+            System.Numerics.Vector3.UnitZ,
+            20f * MathF.PI / 180f
+        );
+
+    static System.Numerics.Vector3 InCase(float x, float y) =>
+        System.Numerics.Vector3.Transform(new System.Numerics.Vector3(x, y, 0f), Tilt);
+
+    static System.Numerics.Vector3 CaseUp => InCase(0f, 1f);
+
+    static float TiltedLidFace() =>
+        LidLift.LowerFace(
+            InCase(0f, 0.75f),
+            InCase(1.3f, 0f),
+            InCase(0f, 0.25f),
+            System.Numerics.Vector3.UnitZ * 0.8f,
+            CaseUp
+        );
+
+    [Fact]
+    public void LowerFace_IsTheLidsUnderside_AlongTheCasesUp() =>
+        TestUtil.Near(0.5f, TiltedLidFace());
+
+    [Fact]
+    public void LowerFace_HoldsForABoxTurnedOnItsSide()
+    {
+        // The prefabs' lid boxes lie along other local axes (LidCollider z is the case's up on some).
+        float face = LidLift.LowerFace(
+            System.Numerics.Vector3.UnitY * 0.75f,
+            System.Numerics.Vector3.UnitX * 1.3f,
+            System.Numerics.Vector3.UnitZ * 0.8f,
+            System.Numerics.Vector3.UnitY * -0.25f,
+            System.Numerics.Vector3.UnitY
+        );
+        TestUtil.Near(0.5f, face);
+    }
+
+    [Fact]
+    public void OnLid_LowEndOfATiltedLid_IsOnTheLid()
+    {
+        var hand = InCase(-1.2f, 0.6f);
+        // Under the centre in world height (the old rule called this low).
+        Assert.True(hand.Y < InCase(0f, 0.5f).Y);
+        Assert.True(LidLift.OnLid(hand, TiltedLidFace(), CaseUp, 0.05f));
+    }
+
+    [Fact]
+    public void OnLid_HighEndOfATiltedBase_IsLow()
+    {
+        var hand = InCase(1.2f, 0.3f);
+        // Over the centre in world height (the old rule called this the lid).
+        Assert.True(hand.Y > InCase(0f, 0.5f).Y);
+        Assert.False(LidLift.OnLid(hand, TiltedLidFace(), CaseUp, 0.05f));
+    }
+
+    [Fact]
+    public void OnLid_TheGiveCountsAtTheSeam()
+    {
+        Assert.True(LidLift.OnLid(InCase(0f, 0.46f), TiltedLidFace(), CaseUp, 0.05f));
+        Assert.False(LidLift.OnLid(InCase(0f, 0.44f), TiltedLidFace(), CaseUp, 0.05f));
+    }
+
     [Fact]
     public void Fraction_FollowsRise()
     {

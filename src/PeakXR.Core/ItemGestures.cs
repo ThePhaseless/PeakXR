@@ -153,6 +153,25 @@ public static class BodyZones
 /// </summary>
 public static class LidLift
 {
+    /// <summary>The lowest point, measured along <paramref name="up"/>, of a box at <paramref name="centre"/> with these
+    /// half axes: a lid collider's underside along its case's own up, the seam of a case however it lies (#127).</summary>
+    public static float LowerFace(
+        Vector3 centre,
+        Vector3 halfX,
+        Vector3 halfY,
+        Vector3 halfZ,
+        Vector3 up
+    ) =>
+        Vector3.Dot(centre, up)
+        - MathF.Abs(Vector3.Dot(halfX, up))
+        - MathF.Abs(Vector3.Dot(halfY, up))
+        - MathF.Abs(Vector3.Dot(halfZ, up));
+
+    /// <summary>A hand on the lid half: at or over the lid's <paramref name="face"/> (<see cref="LowerFace"/>) along the
+    /// case's <paramref name="up"/>, less <paramref name="give"/>.</summary>
+    public static bool OnLid(Vector3 hand, float face, Vector3 up, float give) =>
+        Vector3.Dot(hand, up) >= face - give;
+
     public static float Fraction(float rise, float height) =>
         height <= 0f ? 1f : Math.Clamp(rise / height, 0f, 1f);
 

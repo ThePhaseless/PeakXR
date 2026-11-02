@@ -1,3 +1,4 @@
+using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.UI.Affordances;
 using PeakXR.VR;
@@ -25,7 +26,11 @@ internal static class LidGesture
     private static readonly bool[] OnLid = new bool[2];
     private static readonly float[] StartY = new float[2];
 
-    /// <summary>How far under the case's render centre a grip still takes the lid.</summary>
+    /// <summary>The grabbed case's lid (<see cref="LidFace"/>) along its own up, read once per grab.</summary>
+    private static readonly float[] Face = new float[2];
+    private static readonly Vector3[] CaseUp = new Vector3[2];
+
+    /// <summary>How far under the lid's lower face a grip still takes the lid.</summary>
     internal const float LidGive = 0.05f;
 
     /// <summary>The last grab on a case: where the hand was and whether it took the lid, for the self-test.</summary>
@@ -52,8 +57,8 @@ internal static class LidGesture
         },
     };
 
-    /// <summary>Height of the lid edge over the case's render centre (Luggage.Center, Luggage.cs:148); the hint
-    /// ring sits there above the low hand. Tune against the prefabs in game.</summary>
+    /// <summary>Height of the hint ring over the lid's lower face, along the case's up, above the low hand: on the
+    /// lid's edge. Tune against the prefabs in game.</summary>
     private const float LidEdgeUp = 0.1f;
 
     /// <summary>Open time (<c>timeToOpen</c>, Luggage.cs:214) from which the low-grip hint is worth showing.</summary>
@@ -121,15 +126,19 @@ internal static class LidGesture
         {
             Grabbed[h] = lug;
             var t = rig.Hand(left);
-            // The top half, with a little give: on a small case the lid edge sits only a few cm over the centre,
-            // and a grip there counted as low keeps the plain hold, which opens it unlifted (run 65, vr.82).
-            float above =
-                lug != null && t != null ? t.position.y - lug.Center().y : float.NegativeInfinity;
-            OnLid[h] = above >= -LidGive;
-            if (lug != null)
+            // The solid lid, along the case's own up, with a little give (#127): a case tilted on a rock has its lid's
+            // low end under its centre and its base's high end over it, so world height misreads both. On a small
+            // case a grip counted as low keeps the plain hold, which opens it unlifted (run 65, vr.82).
+            OnLid[h] = false;
+            if (lug != null && t != null)
+            {
+                Face[h] = LidFace(lug, out CaseUp[h]);
+                OnLid[h] = LidLift.OnLid(t.position.N(), Face[h], CaseUp[h].N(), LidGive);
+                float above = Vector3.Dot(t.position, CaseUp[h]) - Face[h];
                 LastGrab = System.FormattableString.Invariant(
-                    $"{lug.name}: {(left ? "L" : "R")} grip {above:+0.00;-0.00} m from the case centre, {(OnLid[h] ? "on the lid" : "low (plain hold)")}"
+                    $"{lug.name}: {(left ? "L" : "R")} grip {above:+0.00;-0.00} m from the lid's lower face, {(OnLid[h] ? "on the lid" : "low (plain hold)")}"
                 );
+            }
             // Tracking-space height, so walking or the body settling does not count as lifting.
             StartY[h] = state.Position.y;
             if (OnLid[h])
@@ -160,11 +169,56 @@ internal static class LidGesture
         var hand = rig.Hand(left);
         if (hand == null)
             return;
-        var lid = hand.position;
-        lid.y = lug.Center().y + LidEdgeUp;
+        var up = CaseUp[h];
+        var lid = hand.position + up * (Face[h] + LidEdgeUp - Vector3.Dot(hand.position, up));
         if (!was)
             Affordance.Inform(left, hand.position, DenyReason.AimHigher, DenyHint.At(lid));
         Affordance.Mark(left, hand.position, DenyReason.AimHigher, DenyHint.At(lid));
+    }
+
+    private static readonly System.Collections.Generic.List<BoxCollider> Boxes = new();
+
+    /// <summary>
+    /// The lower face of <paramref name="lug"/>'s closed lid, in metres along its <paramref name="up"/>. Every lidded
+    /// prefab has a solid box on or under its lid bone, named LidCollider or (LuggageCursed) Lid; LidColliderOpen is
+    /// inactive while closed. A case without one falls back on its render centre (Luggage.Center, Luggage.cs:148),
+    /// which sits within a few cm of the seam on most upright prefabs.
+    /// </summary>
+    private static float LidFace(Luggage lug, out Vector3 up)
+    {
+        var caseUp = lug.transform.up;
+        up = caseUp;
+        lug.GetComponentsInChildren(false, Boxes);
+        float face = Vector3.Dot(lug.Center(), caseUp);
+        foreach (var box in Boxes)
+        {
+            if (
+                !box.enabled
+                || box.isTrigger
+                || !box.name.StartsWith("Lid", System.StringComparison.Ordinal)
+            )
+                continue;
+            var t = box.transform;
+            var half = box.size * 0.5f;
+            face = LidLift.LowerFace(
+                t.TransformPoint(box.center).N(),
+                t.TransformVector(half.x, 0f, 0f).N(),
+                t.TransformVector(0f, half.y, 0f).N(),
+                t.TransformVector(0f, 0f, half.z).N(),
+                caseUp.N()
+            );
+            break;
+        }
+        Boxes.Clear();
+        return face;
+    }
+
+    /// <summary><paramref name="at"/> would read as a low grip on <paramref name="lug"/>, by at least
+    /// <paramref name="margin"/> metres (the self-test's aim).</summary>
+    internal static bool ReadsLow(Luggage lug, Vector3 at, float margin)
+    {
+        float face = LidFace(lug, out var up);
+        return !LidLift.OnLid(at.N(), face, up.N(), LidGive + margin);
     }
 
     /// <summary>The progress ramp on each lifting hand while the game's timer runs on this case.</summary>

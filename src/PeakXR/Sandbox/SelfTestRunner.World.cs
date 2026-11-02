@@ -1364,20 +1364,7 @@ internal sealed partial class SelfTestRunner
             );
             yield break;
         }
-        // GripOnLid reads the centre, which on LuggageClown sits over the lid (#127), so it calls a capped hand on the
-        // lid low. The aim obeys the height rule; this is the hand.
         float gripY = rig.Hand(left).position.y;
-        float lidLine = Mathf.Min(lug.Center().y, SolidTop(lug)) - LidGesture.LidGive;
-        if (gripY > lidLine)
-        {
-            yield return GripTo(left, 0f, 0.1f);
-            Fail(
-                F(
-                    $"setup: the hand gripped {lug.name} at y {gripY:0.00}, over the low grip's limit {lidLine:0.00}, so it was not low ({LidGesture.LastGrab}); grip point y {low.y:0.00}, stooped {headDrop:0.00} m"
-                )
-            );
-            yield break;
-        }
         yield return ExpectCue(left, DenyReason.AimHigher, mark, tint: false, within: 2f);
         var cue = cueNote;
         var interaction = Interaction.instance;
@@ -1484,20 +1471,17 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
-    /// vr.82b's low grip: a point of the case's near side at least <see cref="LidLowMargin"/> under the lid's give
-    /// (<see cref="LidGesture.LidGive"/>) below the lower of its centre and its solid top, which the grip's own query
-    /// touches. Run 14 (#54): aimed 0.08 m under the centre, the surface point came out 0.04 m under it, inside the
-    /// 0.05 m give, and the grip took the lid half. Runs 22-23: on LuggageClown the first such point lay off the case, so
-    /// the grip found nothing. Lower probes are tried down to 0.6 m; false when none qualifies.
+    /// vr.82b's low grip: a point of the case's near side that <see cref="LidGesture.ReadsLow"/> by at least
+    /// <see cref="LidLowMargin"/>, which the grip's own query touches. Run 14 (#54): the surface point came out inside
+    /// the 0.05 m give and the grip took the lid half. Runs 22-23: on LuggageClown the first such point lay off the case,
+    /// so the grip found nothing. Lower probes are tried down to 0.6 m; false when none qualifies.
     /// </summary>
     static bool LowGripPoint(Luggage lug, Vector3 eye, out Vector3 point)
     {
-        const float want = LidGesture.LidGive + LidLowMargin;
-        float under = Mathf.Min(lug.Center().y, SolidTop(lug)) - want;
-        for (float up = -want; up >= -0.6f; up -= 0.05f)
+        for (float up = -(LidGesture.LidGive + LidLowMargin); up >= -0.6f; up -= 0.05f)
             if (
                 NearSide(lug, eye, up, out point)
-                && point.y <= under
+                && LidGesture.ReadsLow(lug, point, LidLowMargin)
                 && GripTouch(lug, point) != null
             )
                 return true;
@@ -1546,7 +1530,7 @@ internal sealed partial class SelfTestRunner
         return bestSq < float.MaxValue;
     }
 
-    /// <summary>Top of the case's enabled solid colliders. LuggageClown's render centre sits over its lid (#127).</summary>
+    /// <summary>Top of the bounds of the case's enabled solid colliders: on a tilted case, its highest corner.</summary>
     static float SolidTop(Luggage lug)
     {
         float top = float.NegativeInfinity;
