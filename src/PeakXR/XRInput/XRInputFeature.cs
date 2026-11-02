@@ -8,7 +8,8 @@ namespace PeakXR.XRInput;
 /// <c>xr.input</c>: samples <c>UnityEngine.XR.InputDevices</c> into <see cref="VRInput"/> once per frame, before
 /// any game script reads input. Provider-agnostic (OpenXR or the OpenVR plugin): every usage is looked up by name
 /// on the connected device, so controllers that lack a value (Vive wand, WMR, Index, Touch) just leave it at its
-/// default. No Harmony patches.
+/// default. Its one Harmony patch keeps the controllers out of the game's rebinding prompt
+/// (<see cref="RebindSkipsControllersPatch"/>).
 /// </summary>
 public sealed class XRInputFeature : Feature
 {
@@ -42,6 +43,7 @@ public sealed class XRInputFeature : Feature
         DominantHand.SettingChanged += (_, _) => ApplyHands();
         XRInputSampler.Install();
         GameInputIsolation.Install();
+        Patch(typeof(RebindSkipsControllersPatch));
     }
 
     private static void ApplyHands() => VRInput.LeftHanded = DominantHand.Value == "Left";

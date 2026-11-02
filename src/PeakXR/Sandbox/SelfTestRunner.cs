@@ -242,6 +242,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             yield return VRStep("vr.260-headset-off", 760f, HeadsetOffCheck());
             yield return VRStep("vr.262-wear-sensor-off", 20f, WearSensorCheck());
             yield return VRStep("vr.360-headset-off-flat-view", 15f, FlatViewCheck());
+            yield return VRStep("vr.489-xr-state-isolated", 10f, XRStateIsolatedCheck());
             // Use steps need run-only systems (achievements, item render features), so they run in the level.
             yield return Uses();
             yield return Mobs();

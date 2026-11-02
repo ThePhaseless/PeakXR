@@ -8,6 +8,9 @@ using PeakXR.UI.Common;
 using PeakXR.VR;
 using PeakXR.XR;
 using UnityEngine;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.Controls;
+using UnityEngine.InputSystem.XR;
 using UnityEngine.Rendering.Universal;
 
 namespace PeakXR.Sandbox;
@@ -424,6 +427,53 @@ internal sealed partial class SelfTestRunner
             Fail(string.Join("; ", fails) + " | " + all);
         else
             stepNote = all;
+    }
+
+    /// <summary>
+    /// vr.489: a controller's state does not reach the game's actions. A trigger value queued on the real Input System
+    /// device, as the runtime would send it, must leave the control as it was: the game's UI module would otherwise
+    /// take every pull as a second click (#133, #134). The game's rebinding prompt still reads that event, so it must not
+    /// take the control either, and a rebind made past the patched entry point must, or the probe proved nothing. A
+    /// self-test's hands never pass through there, so no other step can see this.
+    /// </summary>
+    IEnumerator XRStateIsolatedCheck()
+    {
+        AxisControl trigger = null;
+        foreach (var device in InputSystem.devices)
+            if (device is XRController && trigger == null)
+                trigger = device.TryGetChildControl<AxisControl>("trigger");
+        if (trigger == null)
+        {
+            stepSkip = "no XR controller with a trigger among the Input System's devices";
+            yield break;
+        }
+        float before = trigger.ReadValue();
+        float probe = before > 0.5f ? 0.1f : 0.9f;
+        // Throwaway action, so nothing can land on a real binding. The long wait keeps a match from completing.
+        using var action = new InputAction("selftest-rebind", binding: "<Keyboard>/f12");
+        using var bare = new InputActionRebindingExtensions.RebindingOperation();
+        bare.WithAction(action).OnMatchWaitForAnother(5f).Start();
+        using var prompt = action.PerformInteractiveRebinding().OnMatchWaitForAnother(5f).Start();
+        InputSystem.QueueDeltaStateEvent(trigger, probe);
+        InputSystem.Update();
+        float read = trigger.ReadValue();
+        bool bareTook = bare.candidates.Contains(trigger);
+        bool promptTook = prompt.candidates.Contains(trigger);
+        bare.Cancel();
+        prompt.Cancel();
+        var note =
+            $"{trigger.path}: {before:0.00}, queued {probe:0.00}, read {read:0.00}; "
+            + $"rebind took it: bare {bareTook}, prompt {promptTook}";
+        InputSystem.QueueDeltaStateEvent(trigger, before);
+        InputSystem.Update();
+        if (Mathf.Abs(read - before) > 0.01f)
+            Fail("the game's actions still read the controller: " + note);
+        else if (promptTook)
+            Fail("the game's rebinding prompt takes the controller: " + note);
+        else if (!bareTook)
+            Fail("the probe reached no rebind, so the prompt's result says nothing: " + note);
+        else
+            Note(note);
     }
 
     /// <summary>A raycaster on a canvas ui.world converted, for vr.360.</summary>

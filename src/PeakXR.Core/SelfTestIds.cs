@@ -233,6 +233,7 @@ public static class SelfTestIds
         "vr.267-piton-close-wall",
         "vr.262-wear-sensor-off",
         "vr.360-headset-off-flat-view",
+        "vr.489-xr-state-isolated",
         "vr.261-vr-restart-mid-hang",
         "vr.25-cook-over-fire",
         "vr.257-arm-swing-jump",
