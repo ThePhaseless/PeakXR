@@ -23,8 +23,8 @@ internal sealed partial class SelfTestRunner
     /// <summary>Frames a readback may take before the check says the eye could not be read.</summary>
     private const float EyeReadSeconds = 3f;
 
-    /// <summary>vr.02c: the panel on show at the title, the connection popup offline or the title menu otherwise, is
-    /// in both eyes' pixels.</summary>
+    /// <summary>vr.02c: the panel on show at the title, the connection popup offline or the title menu with its buttons
+    /// otherwise, is in both eyes' pixels.</summary>
     IEnumerator TitleDrawnCheck()
     {
         if (SelfTestFeature.Hold)
@@ -51,6 +51,17 @@ internal sealed partial class SelfTestRunner
         {
             Fail("no world-space title panel to look for");
             yield break;
+        }
+        // Online the panel is the full menu: read it once the intro has shown the buttons, past the depth fade.
+        var stage = UI.Menu.TitleStage.Instance;
+        if (ConnectFailedPopup() == null && stage != null && stage.Active)
+        {
+            yield return TitleButtonsUp(stage.Eye, TitleReachSetting + 0.25f);
+            if (!stepOk)
+                yield break;
+            if (ConnectFailedPopup() != null)
+                root = RootCanvasOf(Zorro.UI.Modal.Modal.Instance);
+            yield return Wait(0.5f);
         }
         yield return PanelInEyes(root, "vr-02c-title");
     }
