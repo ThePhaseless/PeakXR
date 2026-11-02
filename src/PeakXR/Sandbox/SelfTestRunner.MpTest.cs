@@ -2607,6 +2607,9 @@ internal sealed partial class SelfTestRunner
         // Close enough that the item reaches the mouth with the arm short of full stretch (MP run 10: from 0.6 m the
         // hand, capped at arm's reach, held the Frisbee 0.45 m from the head, outside the 0.22 m mouth zone).
         // Not a must-arrive: the host's own body can stop the walk a little short; the reach check below decides.
+        // Carried back on the way, as feed does: held ahead, the item met the host's body first and the weld kept it
+        // there, short of the mouth, for the whole hold (#112: a Frisbee 0.24 m off with the hand 1.00 m short).
+        yield return CarryFoodBack(LocalHold.ItemInLeftHand);
         yield return WalkTo(HostCenter, 0.45f, false);
         var host = Host();
         var rig = VRRig.Instance;
