@@ -1084,9 +1084,14 @@ internal static class PhysicalInteraction
             return;
         foreach (var hand in Hands)
         {
-            if (hand.Action != GripPressAction.Interact || !hand.Injected)
+            if (!hand.Injected)
                 continue;
-            hand.Target = item;
+            // A posed tap (TapPending) presses with the grip already open: no grab to hand over, but the item still
+            // goes to the hand that tapped (#141).
+            if (hand.Action == GripPressAction.Interact)
+                hand.Target = item;
+            else if (hand.Action != GripPressAction.None)
+                continue;
             pendingLeft = hand.Left;
             pendingTime = Time.time;
             return;
