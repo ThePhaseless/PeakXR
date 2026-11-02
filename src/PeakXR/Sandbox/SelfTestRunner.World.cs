@@ -1159,7 +1159,7 @@ internal sealed partial class SelfTestRunner
     /// A Map-layer test ledge beside <paramref name="lug"/> at about its base, as <see cref="VineLedge"/> stands a body
     /// under a vine, for a case with no ground to stand on at its own height. It takes the first of the eight headings
     /// with standing room where the body lands within 0.3 m, facing the case; with none the step fails as setup,
-    /// listing the tries. Each outcome goes to <paramref name="note"/>.
+    /// listing the tries. A ledge that held goes to <paramref name="note"/> with the tries before it.
     /// </summary>
     IEnumerator LedgeBeside(Luggage lug, Action<string> note)
     {
@@ -1178,6 +1178,7 @@ internal sealed partial class SelfTestRunner
         ledge.transform.localScale = new Vector3(2f, 0.2f, 2f);
         ledge.SetActive(false);
         var from = Flat(c.Center - box.center);
+        string tried = "";
         for (int i = 0, warps = 0; i < 8 && warps < LedgeTries; i++)
         {
             var dir = Quaternion.Euler(0f, i * 45f, 0f) * from;
@@ -1185,7 +1186,10 @@ internal sealed partial class SelfTestRunner
                 Mathf.Abs(dir.x) * box.extents.x + Mathf.Abs(dir.z) * box.extents.z + 0.45f;
             var feet = new Vector3(box.center.x, floor, box.center.z) + dir * reach;
             if (!StandingRoom(feet))
+            {
+                tried += F($"heading {i + 1} of 8: no room; ");
                 continue;
+            }
             warps++;
             // Its near edge stays 0.25 m off the case's bounds: a hand low on the case must not read the ledge as rock.
             ledge.transform.SetPositionAndRotation(
@@ -1216,14 +1220,17 @@ internal sealed partial class SelfTestRunner
                     )
                 );
                 yield return Wait(0.6f);
-                note(F($"stood on a test ledge beside {lug.name}, its floor y {feet.y:0.00}; "));
+                note(
+                    tried
+                        + F($"stood on a test ledge beside {lug.name}, its floor y {feet.y:0.00}; ")
+                );
                 yield break;
             }
-            note(F($"test ledge {i + 1} of 8: landed {rise:0.00} m over it; "));
+            tried += F($"heading {i + 1} of 8: landed {rise:0.00} m over it; ");
             ledge.SetActive(false);
             Physics.SyncTransforms();
         }
-        Fail(F($"setup: no test ledge held beside {lug.name} (floor y {floor:0.00})"));
+        Fail(F($"setup: no test ledge held beside {lug.name} (floor y {floor:0.00}): {tried}"));
     }
 
     /// <summary><see cref="LedgeBeside"/>'s floor at most this far under the case's render centre: the prefabs' floors
