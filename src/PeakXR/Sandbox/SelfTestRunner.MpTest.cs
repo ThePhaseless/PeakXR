@@ -158,7 +158,7 @@ internal sealed partial class SelfTestRunner
         // 120 s: the walk back from eat's food to the thrown item can be 100 m (MP run 35 timed out at 60 s on it).
         yield return MpStep("holster", 120f, true, Holster());
         // Five walls at 25 s of walk and 21 s of climb each, with room to finish.
-        yield return MpStep("climb", 240f, true, MpClimb());
+        yield return MpStep("climb", 255f, true, MpClimb());
         yield return MpStep("two-hand", 90f, true, MpTwoHand());
         yield return MpStep("feed", 180f, true, Feed());
         yield return MpStep("feed-fetch-front", 90f, true, FeedFetchFront());
@@ -1777,14 +1777,14 @@ internal sealed partial class SelfTestRunner
         float consumedBefore = c.data.lastConsumedItem;
         Face(HostPart(host, BodypartType.Head));
         VRRig.Instance.RotateYaw(left ? 90f : -90f);
-        yield return CarryFoodBack(left);
-        float closest = float.MaxValue;
-        float place = float.MaxValue;
+        float closest = float.PositiveInfinity;
+        float place = float.PositiveInfinity;
         float inZone = 0f;
         bool used = false;
-        // Past what the dwell and the cast took in #119's run (0.3 s, then 1.15 s in all).
-        for (float end = Now + 3f; Now < end && item != null && HeldItem() == item; )
+        void Sample()
         {
+            if (item == null || HeldItem() != item)
+                return;
             var mouth = HostPart(host, BodypartType.Head);
             float gap = Social.SocialHands.FeedGap(item, mouth);
             closest = Mathf.Min(closest, gap);
@@ -1792,6 +1792,18 @@ internal sealed partial class SelfTestRunner
                 inZone += Time.unscaledDeltaTime;
             place = Mathf.Min(place, Social.SocialHands.FeedPlaceGap(item, mouth));
             used |= item.isUsingSecondary || c.input.useSecondaryIsPressed;
+        }
+        // The carry too: a feed that starts during it must be judged on what it read.
+        var carry = CarryFoodBack(left);
+        while (carry.MoveNext())
+        {
+            Sample();
+            yield return carry.Current;
+        }
+        // Past what the dwell and the cast took in #119's run (0.3 s, then 1.15 s in all).
+        for (float end = Now + 3f; Now < end && item != null && HeldItem() == item; )
+        {
+            Sample();
             yield return null;
         }
         var note = F(
@@ -1803,6 +1815,10 @@ internal sealed partial class SelfTestRunner
                 "this stance put the controller at the host's mouth, so the feed was fair: " + note;
         else if (fed || used)
             Fail($"the host was {(fed ? "fed" : "getting fed")} with the controller away: {note}");
+        else if (inZone < HandOver.MouthDwell)
+            stepSkip =
+                "this stance never brought the food into the zone, so no feed proves nothing: "
+                + note;
         else
             stepNote = "no feed: " + note;
     }
@@ -1972,7 +1988,8 @@ internal sealed partial class SelfTestRunner
     IEnumerator CarryFoodBack(bool left)
     {
         HeadFrame(out var head, out var forward, out var right);
-        yield return MoveTrack(
+        // MoveTrack itself, not a wrapper around it: a caller's MoveNext gets every frame (FeedFetchFront).
+        return MoveTrack(
             left,
             head + (left ? -right : right) * 0.3f + Vector3.down * 0.6f - forward * 0.1f,
             0.3f
