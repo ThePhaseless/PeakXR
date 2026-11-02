@@ -327,6 +327,10 @@ internal sealed class RigDriver : MonoBehaviour
     /// <summary>Self-test (vr.16): log the turn per frame while set.</summary>
     internal static float TraceTurnsUntil;
 
+    /// <summary>Self-test (vr.300): the lean trace runs on every frame and physics step until this time, which shows how
+    /// many of them a snap's peak bend lasts and what the drawn body does (#123).</summary>
+    internal static float TraceEveryStepUntil;
+
     /// <summary>Self-test (vr.45, vr.15): while set, rig.camera, avatar.local and player.locomotion log the lean
     /// chain every <see cref="LeanTraceEvery"/> s (unscaled), so a run shows which stage did not happen.</summary>
     internal static float TraceLeanUntil;
@@ -337,6 +341,8 @@ internal sealed class RigDriver : MonoBehaviour
     internal static bool LeanTraceDue(ref float next)
     {
         float now = Time.unscaledTime;
+        if (now < TraceEveryStepUntil)
+            return true;
         // Debug mode (Debug.Mode) keeps the lean trace running.
         if ((now >= TraceLeanUntil && !Diagnostics.DebugLog.Verbose) || now < next)
             return false;
@@ -548,6 +554,7 @@ internal sealed class RigDriver : MonoBehaviour
         var torso = c.Center;
         var origin = rig.Origin.position;
         var eyes = EyeOffsetNow;
+        var feet = FeetMid(c) - root;
         // The avatar's eye renderers against the eye model the stance debt uses (run 9: up to 0.12 m apart after turns).
         var seen =
             LeanEye is { } model && TryEyeRenderers(c, out var drawn)
@@ -555,7 +562,7 @@ internal sealed class RigDriver : MonoBehaviour
                 : Vector3.zero;
         Plugin.Log.LogInfo(
             System.FormattableString.Invariant(
-                $"{Tag} lean-view t{Time.unscaledTime:0.00} root ({root.x:0.000},{root.z:0.000}) root-hip f{Vector3.Dot(root - hip, f):0.000} r{Vector3.Dot(root - hip, r):0.000} torso-hip f{Vector3.Dot(torso - hip, f):0.000} r{Vector3.Dot(torso - hip, r):0.000} blend {rootBlend:0.00} viewOffset f{Vector3.Dot(ViewOffset, f):0.000} r{Vector3.Dot(ViewOffset, r):0.000} eyes f{eyes.X:0.000} u{eyes.Y:0.000} converged {massEyes.Converged} origin ({origin.x:0.000},{origin.z:0.000}) origin-y {origin.y:0.000} hip-y {hip.y:0.000} debt f{Vector3.Dot(StanceDebt, f):0.000} r{Vector3.Dot(StanceDebt, r):0.000} walking {FollowWalking} body-view f{Vector3.Dot(BodyFromView, f):0.000} r{Vector3.Dot(BodyFromView, r):0.000} view-hold {viewHoldWhy ?? "on"} {viewHold.Offset:0.000} renderers-model f{Vector3.Dot(seen, f):0.000} r{Vector3.Dot(seen, r):0.000} turn-skip f{Vector3.Dot(TurnSkipNow, f):0.000} r{Vector3.Dot(TurnSkipNow, r):0.000} view-height {(viewHeight.Holding ? "held" : "free")} {viewHeight.Offset:0.000} ground-y {groundY:0.000} lean-limit {leanLimit:0.000} settling {Locomotion.LocomotionInput.TurnSettling}"
+                $"{Tag} lean-view t{Time.unscaledTime:0.00} root ({root.x:0.000},{root.z:0.000}) root-hip f{Vector3.Dot(root - hip, f):0.000} r{Vector3.Dot(root - hip, r):0.000} torso-hip f{Vector3.Dot(torso - hip, f):0.000} r{Vector3.Dot(torso - hip, r):0.000} blend {rootBlend:0.00} viewOffset f{Vector3.Dot(ViewOffset, f):0.000} r{Vector3.Dot(ViewOffset, r):0.000} eyes f{eyes.X:0.000} u{eyes.Y:0.000} converged {massEyes.Converged} origin ({origin.x:0.000},{origin.z:0.000}) origin-y {origin.y:0.000} hip-y {hip.y:0.000} debt f{Vector3.Dot(StanceDebt, f):0.000} r{Vector3.Dot(StanceDebt, r):0.000} walking {FollowWalking} body-view f{Vector3.Dot(BodyFromView, f):0.000} r{Vector3.Dot(BodyFromView, r):0.000} view-hold {viewHoldWhy ?? "on"} {viewHold.Offset:0.000} renderers-model f{Vector3.Dot(seen, f):0.000} r{Vector3.Dot(seen, r):0.000} turn-skip f{Vector3.Dot(TurnSkipNow, f):0.000} r{Vector3.Dot(TurnSkipNow, r):0.000} view-height {(viewHeight.Holding ? "held" : "free")} {viewHeight.Offset:0.000} ground-y {groundY:0.000} lean-limit {leanLimit:0.000} feet f{Vector3.Dot(feet, f):0.000} r{Vector3.Dot(feet, r):0.000} settling {Locomotion.LocomotionInput.TurnSettling} frame {Time.frameCount}"
             )
         );
     }
@@ -762,7 +769,7 @@ internal sealed class RigDriver : MonoBehaviour
             var line =
                 $"{Tag} Eyes {sample.X:0.00} m ahead of the body's mass centre and {sample.Y:0.00} m above the hip, "
                 + $"{eye.y - ground:0.00} m above the ground on the first still stand; the player's calibrated "
-                + $"eyes {RigMath.TrackedEyeHeight(rig.HeightOffset):0.00} m";
+                + $"eyes {RigMath.TrackedEyeHeight(rig.HeightOffset):0.00} m, idle {(c.refs.animations != null && CameraPatches.AnimIdle != null ? CameraPatches.AnimIdle(c.refs.animations) : -1)}";
             if (blink)
             {
                 // Logged when it lands, once the view is black.

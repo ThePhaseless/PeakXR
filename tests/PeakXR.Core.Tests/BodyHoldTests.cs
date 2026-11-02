@@ -32,6 +32,16 @@ public class BodyHoldTests
     }
 
     [Fact]
+    public void AnchorOffset_ReadsTheCentreFromTheAnchor()
+    {
+        var h = new BodyHold();
+        h.Update(Start, Vector2.Zero, true, true, Dt);
+        h.Update(Start + new Vector2(0.04f, 0f), Vector2.Zero, true, true, Dt);
+        Assert.True(h.Holding);
+        TestUtil.Near(0.04f, h.AnchorOffset, 1e-3f);
+    }
+
+    [Fact]
     public void Leaning_DampsTheCreepSpeed()
     {
         var h = new BodyHold();

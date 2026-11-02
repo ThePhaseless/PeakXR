@@ -241,6 +241,12 @@ public sealed class StanceWalk
     float _steppedYaw = float.NaN;
     bool _noLead;
 
+    /// <summary>The current or last push's direction, in the frame of the debt, for the trace.</summary>
+    public Vector2 Heading => _heading;
+
+    /// <summary>The heading (degrees) the gait last stepped the feet at, for the trace.</summary>
+    public float SteppedYaw => _steppedYaw;
+
     /// <summary>The walk's phase this update.</summary>
     public StanceWalkPhase State { get; private set; }
 

@@ -806,6 +806,18 @@ public class StanceWalkTests
     }
 
     [Fact]
+    public void Heading_IsAlongThePush()
+    {
+        var w = new StanceWalk();
+        var debt = new Vector2(0.3f, 0f);
+        for (float t = 0f; t < w.Delay + 3f * Dt; t += Dt)
+            w.Update(debt, Vector2.Zero, 0f, canWalk: true, Dt);
+        Assert.Equal(StanceWalkPhase.Push, w.State);
+        TestUtil.Near(1f, w.Heading.X, 1e-5f);
+        TestUtil.Near(0f, w.Heading.Y, 1e-5f);
+    }
+
+    [Fact]
     public void ATurnBeforeTheWalk_LeavesTheFeetLeadWhole()
     {
         // Run 20, vr.300: a stand read before the turn, in world axes, said the feet were 0.15 m ahead when the push

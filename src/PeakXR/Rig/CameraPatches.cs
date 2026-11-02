@@ -26,12 +26,25 @@ internal static class CameraPatches
     /// <summary>Character.GetBodypart(BodypartType) (Character.cs:1298, internal).</summary>
     internal static Func<Character, BodypartType, Bodypart> GetBodypart;
 
+    /// <summary>CharacterAnimations._idle (CharacterAnimations.cs:27, private; set at :458), the idle pose, for the
+    /// eye sample's trace line (#123: the first eye sample reads 0.21 m or 0.113 m between runs).</summary>
+    internal static AccessTools.FieldRef<CharacterAnimations, int> AnimIdle;
+
     public static void Resolve()
     {
         CamOverride = GameMember.Field<MainCamera, CameraOverride>("camOverride");
         Cam = GameMember.Field<MainCamera, Camera>("cam");
         IsRocketing = GameMember.Field<MainCameraMovement, bool>("isRocketing");
         VoiceListener = GameMember.Field<CharacterVoiceHandler, AudioListener>("_audioListener");
+        // Trace only: a rename must not roll the camera back for a log field.
+        try
+        {
+            AnimIdle = GameMember.Field<CharacterAnimations, int>("_idle");
+        }
+        catch (MissingFieldException)
+        {
+            AnimIdle = null;
+        }
         GetBodypart = GameMember.Delegate<Func<Character, BodypartType, Bodypart>>(
             typeof(Character),
             "GetBodypart",

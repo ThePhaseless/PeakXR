@@ -130,6 +130,11 @@ internal sealed partial class SelfTestRunner
     /// unbent eye model), and the lean brought the drawn eyes within <see cref="MaxDrawnEyeOff"/> of the view.</summary>
     static void JudgeSettled(Character c, string at, float off, List<string> fails)
     {
+        if (stanceTimedOut)
+        {
+            fails.Add(F($"{at}: the walk was still running at the judge"));
+            return;
+        }
         if (!(off <= MaxStanceLeftover))
             fails.Add(
                 F(
@@ -141,6 +146,19 @@ internal sealed partial class SelfTestRunner
             fails.Add(
                 F(
                     $"{at}: the avatar's drawn eyes {drawn:0.000} m off the view, want {MaxDrawnEyeOff:0.00} m"
+                )
+            );
+    }
+
+    /// <summary>The last <see cref="Settle"/>'s peak bend. A judge frame misses it: VR2's vr.45b passed on a 15.9 degree
+    /// peak (#123). The look has stopped by then, so a bend past <see cref="MaxStanceLean"/> is under a still head.</summary>
+    static void JudgePeakBend(string at, List<string> fails, List<string> notes)
+    {
+        notes.Add(F($"{at}: peak bend {settlePeakBend:0.0} deg"));
+        if (settlePeakBend > MaxStanceLean)
+            fails.Add(
+                F(
+                    $"{at}: the body bent {settlePeakBend:0.0} deg under a still head after the look stopped"
                 )
             );
     }
@@ -198,13 +216,17 @@ internal sealed partial class SelfTestRunner
                 }
             }
             else
+            {
+                RigDriver.TraceEveryStepUntil = Time.unscaledTime + 0.5f;
                 rig.RotateYaw(45f);
+            }
             var origin = new Bounds(rig.Origin.position, Vector3.zero);
             float t1 = Now;
             yield return Settle(rig, origin, _ => { });
             // Settle tracks the origin; the eye is what a turn must hold, so sample it over the same time.
             eye.Encapsulate(Vector3.ProjectOnPlane(rig.Head.position, Vector3.up));
             JudgeEyes(c, name, fails, notes);
+            JudgePeakBend(name, fails, notes);
             notes.Add(F($"{name} settled in {Now - t1:0.0} s"));
         }
         ReleaseHead();
@@ -285,7 +307,10 @@ internal sealed partial class SelfTestRunner
     /// <summary>
     /// <c>vr.302-glance-still</c>: the scripted head looks 70 degrees aside and back within a second, then holds still
     /// 2 s. A glance returns before the stance walk's delay, so the body must not step (peers saw it shuffle, #50):
-    /// no stance walk may start, and the mass centre may move at most 0.05 m level.
+    /// no stance walk may start, the mass centre may move at most 0.05 m level, and the rig origin, which only the head
+    /// may move, at most <see cref="MaxLeanDrift"/> level, also over 3 s more, once
+    /// <see cref="PeakXR.Core.BodyHold.MaxAfterLean"/> has let the body go. What the body does in those 3 s (a late slide,
+    /// a walk) is only a note: #50's open decision, accept it or step the feet instead of holding them.
     /// </summary>
     IEnumerator GlanceStillStep()
     {
@@ -302,32 +327,63 @@ internal sealed partial class SelfTestRunner
         var level = Quaternion.LookRotation(Flat(VRInput.HeadRotation * Vector3.forward));
         var forward = level * Vector3.forward;
         var root = new Bounds(RigDriver.ViewRoot(c), Vector3.zero);
+        var origin = new Bounds(rig.Origin.position, Vector3.zero);
+        var lastOrigin = rig.Origin.position;
+        float viewStep = 0f;
+        void ReadView()
+        {
+            var now = rig.Origin.position;
+            origin.Encapsulate(now);
+            viewStep = Mathf.Max(
+                viewStep,
+                Vector3.ProjectOnPlane(now - lastOrigin, Vector3.up).magnitude
+            );
+            lastOrigin = now;
+        }
         bool walked = false;
         float t0 = Now;
+        RigDriver.TraceEveryStepUntil = Time.unscaledTime + 3f;
         while (Now - t0 < 3f)
         {
-            float t = Now - t0;
-            // Out over 0.35 s, held 0.3 s, back over 0.35 s; the eyes swing on a 0.1 m neck as in vr.45b.
-            float k =
-                t < 0.35f ? t / 0.35f
-                : t < 0.65f ? 1f
-                : t < 1f ? 1f - (t - 0.65f) / 0.35f
-                : 0f;
-            var q = Quaternion.Euler(0f, 70f * Mathf.SmoothStep(0f, 1f, k), 0f);
-            ScriptHead(home + (q * forward - forward) * NeckSwing, q * level);
+            ScriptGlance(home, level, forward, Now - t0);
             yield return null;
             walked |= RigDriver.FollowWalking;
             root.Encapsulate(RigDriver.ViewRoot(c));
+            ReadView();
+        }
+        float moved = FlatSize(root);
+        var after = new Bounds(RigDriver.ViewRoot(c), Vector3.zero);
+        bool walkedLate = false;
+        t0 = Now;
+        while (Now - t0 < 3f)
+        {
+            yield return null;
+            walkedLate |= RigDriver.FollowWalking;
+            after.Encapsulate(RigDriver.ViewRoot(c));
+            ReadView();
         }
         ReleaseHead();
-        float moved = FlatSize(root);
+        float view = FlatSize(origin);
         var note = F(
-            $"glance: stance walk {(walked ? "started" : "never started")}, body moved {moved:0.000} m"
+            $"glance: stance walk {(walked ? "started" : "never started")}, body moved {moved:0.000} m; 3 s later the body moved {FlatSize(after):0.000} m more, {(walkedLate ? "with a walk" : "no walk")}; view moved {ViewMoved(origin)} over all 6 s, largest step {viewStep:0.000} m"
         );
-        if (walked || moved > 0.05f)
+        if (walked || moved > 0.05f || view > MaxLeanDrift)
             Fail(note);
         else
             stepNote = note;
+    }
+
+    /// <summary>The scripted head of a glance <paramref name="t"/> seconds in: out over 0.35 s, held 0.3 s, back over
+    /// 0.35 s, at 70 degrees; the eyes swing on a 0.1 m neck as in vr.45b.</summary>
+    void ScriptGlance(Vector3 home, Quaternion level, Vector3 forward, float t)
+    {
+        float k =
+            t < 0.35f ? t / 0.35f
+            : t < 0.65f ? 1f
+            : t < 1f ? 1f - (t - 0.65f) / 0.35f
+            : 0f;
+        var q = Quaternion.Euler(0f, 70f * Mathf.SmoothStep(0f, 1f, k), 0f);
+        ScriptHead(home + (q * forward - forward) * NeckSwing, q * level);
     }
 
     /// <summary>
@@ -404,6 +460,205 @@ internal sealed partial class SelfTestRunner
             Fail(note);
         else
             stepNote = note;
+    }
+
+    /// <summary>Wind's reach, as <c>WindChillZone.forceRadius</c> (WindChillZone.cs:39).</summary>
+    const float WindRadius = 2f;
+
+    /// <summary>The storm's full force per part (<c>WindChillZone.windForce</c>, WindChillZone.cs:52), and a weak one: the
+    /// range a hold capped at 2 m/s^2 could matter over.</summary>
+    const float WindFull = 15f;
+    const float WindWeak = 1f;
+
+    /// <summary>How long a pass blows (s), and its ramp up, as <c>currentForceMult</c> (WindChillZone.cs:167).</summary>
+    const float WindSeconds = 3f;
+    const float WindRampSeconds = 1f;
+
+    /// <summary>Seconds after the last force before a pass reads its travel, so the view's lag has closed.</summary>
+    const float WindTailSeconds = 1f;
+
+    /// <summary>Seconds after the first force <see cref="BodyHold"/> may still read an open gate: the marker reaches the
+    /// gate on the next rendered frame, and then the next physics step, at 25 fps up to 0.06 s.</summary>
+    const float WindGateSeconds = 0.15f;
+
+    /// <summary>What one <see cref="WindPass"/> read.</summary>
+    sealed class WindRun
+    {
+        public float Body;
+        public float Apart;
+        public float View;
+        public int Held;
+        public bool Marked;
+        public bool Walked;
+        public bool Down;
+    }
+
+    /// <summary>
+    /// <c>vr.305-wind-through-glance</c>: wind moves body and view together at any strength, with the head still or
+    /// looking around (#139). Wind-like impulses (<c>Character.RPCA_AddForceAtPosition</c>, Character.cs:458, every physics
+    /// step as WindChillZone.cs:250 sends them, so the outside marker sees them) blow for 3 s, at a weak level and at the
+    /// storm's full one, once with the head still and once with vr.302's glance repeating, from the same spot. The body's
+    /// travel with the glance must be within max(0.05 m, 15%) of its travel with the head still; after the first force
+    /// <see cref="BodyHold"/> must not hold; body and view must end within 0.05 m; no stance walk may start. A run knocked
+    /// down rides a ragdoll, so its travel and view aren't compared. A last pass sends zero force through the same RPC with
+    /// the glance, as a storm does in shelter (#140): that is no outside force, so the rig origin stays within
+    /// <see cref="MaxLeanDrift"/> level.
+    /// </summary>
+    IEnumerator WindThroughGlanceStep()
+    {
+        Character c = null;
+        yield return StanceSetup(x => c = x);
+        if (c == null)
+            yield break;
+        var start = c.Center;
+        var along = Flat(VRRig.Instance.Head.forward);
+        bodyRestore += () =>
+        {
+            if (c != null)
+                c.photonView.RPC("WarpPlayerRPC", Photon.Pun.RpcTarget.All, start, false);
+        };
+        var fails = new List<string>();
+        var notes = new List<string>();
+        foreach (var (level, impulse) in new[] { ("weak", WindWeak), ("full", WindFull) })
+        {
+            WindRun still = null;
+            WindRun glancing = null;
+            yield return WindPass(c, start, along * impulse, false, r => still = r);
+            yield return WindPass(c, start, along * impulse, true, r => glancing = r);
+            JudgeWind(level, still, glancing, fails, notes);
+        }
+        WindRun zero = null;
+        yield return WindPass(c, start, Vector3.zero, true, r => zero = r);
+        notes.Add(F($"zero force: view moved {zero.View:0.000} m, body {zero.Body:0.000} m"));
+        if (zero.Marked)
+            fails.Add("zero force: marked as an outside force");
+        if (zero.View > MaxLeanDrift)
+            fails.Add(
+                F(
+                    $"zero force: the view moved {zero.View:0.000} m through the glance, want {MaxLeanDrift:0.00} m"
+                )
+            );
+        Verdict(fails, notes);
+    }
+
+    /// <summary>One <see cref="WindThroughGlanceStep"/> pass from <paramref name="start"/>: placed there and recentered,
+    /// <paramref name="wind"/> ramps up and blows, the head still or glancing, then the tail.</summary>
+    IEnumerator WindPass(
+        Character c,
+        Vector3 start,
+        Vector3 wind,
+        bool glance,
+        Action<WindRun> done
+    )
+    {
+        var run = new WindRun();
+        done(run);
+        var rig = VRRig.Instance;
+        var driver = AvatarPoseDriver.Of(c);
+        c.photonView.RPC("WarpPlayerRPC", Photon.Pun.RpcTarget.All, start, false);
+        yield return Wait(0.5f);
+        yield return WaitFor(
+            () =>
+                !c.warping
+                && c.data.fullyConscious
+                && c.data.isGrounded
+                && !LocomotionInput.OutsideNow,
+            ViewHoldGate.OutsideSeconds + 3f
+        );
+        if (LocomotionInput.OutsideNow)
+            Fail("the last pass's outside force never ended");
+        yield return RecenterHead(rig);
+        var home = new Vector3(
+            rig.RoomAnchor.X,
+            RigMath.TrackedEyeHeight(rig.HeightOffset),
+            rig.RoomAnchor.Y
+        );
+        var level = Quaternion.LookRotation(Flat(VRInput.HeadRotation * Vector3.forward));
+        var forward = level * Vector3.forward;
+        ScriptHead(home, level);
+        yield return Wait(0.5f);
+        var body0 = Vector3.ProjectOnPlane(RigDriver.ViewRoot(c), Vector3.up);
+        var origin0 = Vector3.ProjectOnPlane(rig.Origin.position, Vector3.up);
+        var origin = new Bounds(rig.Origin.position, Vector3.zero);
+        var tick = new WaitForFixedUpdate();
+        float t0 = Now;
+        float gateBy = float.PositiveInfinity;
+        while (Now - t0 < WindSeconds + WindTailSeconds)
+        {
+            float t = Now - t0;
+            if (t < WindSeconds)
+            {
+                var force = wind * Mathf.Clamp01(t / WindRampSeconds);
+                c.photonView.RPC(
+                    "RPCA_AddForceAtPosition",
+                    Photon.Pun.RpcTarget.All,
+                    force,
+                    c.Center,
+                    WindRadius
+                );
+                if (float.IsPositiveInfinity(gateBy) && force.sqrMagnitude > 1e-6f)
+                    gateBy = t + WindGateSeconds;
+                if (glance)
+                    ScriptGlance(home, level, forward, t % 1f);
+            }
+            else if (glance)
+                ScriptGlance(home, level, forward, 1f);
+            // Once a physics step, as wind pushes (WindChillZone.FixedUpdate, WindChillZone.cs:164, :250).
+            yield return tick;
+            run.Marked |= LocomotionInput.OutsideNow;
+            run.Walked |= RigDriver.FollowWalking;
+            run.Down |= c.data.fallSeconds > 0f;
+            if (t >= gateBy && driver != null && driver.BodyHeld)
+                run.Held++;
+            origin.Encapsulate(rig.Origin.position);
+        }
+        var body = Vector3.ProjectOnPlane(RigDriver.ViewRoot(c), Vector3.up) - body0;
+        var view = Vector3.ProjectOnPlane(rig.Origin.position, Vector3.up) - origin0;
+        run.Body = body.magnitude;
+        run.Apart = (view - body).magnitude;
+        run.View = FlatSize(origin);
+    }
+
+    /// <summary>Adds one wind level's verdict: each run's, and the glance's travel against the still head's.</summary>
+    static void JudgeWind(
+        string level,
+        WindRun still,
+        WindRun glancing,
+        List<string> fails,
+        List<string> notes
+    )
+    {
+        foreach (var (name, run) in new[] { ("still", still), ("glance", glancing) })
+        {
+            string what = level + " " + name;
+            notes.Add(
+                F(
+                    $"{what}: body {run.Body:0.000} m ({run.Apart:0.000} m from the view), hold on {run.Held} steps{(run.Down ? ", knocked down" : "")}"
+                )
+            );
+            if (!run.Marked)
+                fails.Add(what + ": the outside marker never saw the force");
+            if (run.Held > 0)
+                fails.Add(F($"{what}: the hold held {run.Held} steps after the first force"));
+            if (run.Walked)
+                fails.Add(what + ": a stance walk started");
+            if (!run.Down && run.Apart > 0.05f)
+                fails.Add(F($"{what}: body and view {run.Apart:0.000} m apart, want 0.05 m"));
+        }
+        if (still.Down || glancing.Down)
+        {
+            notes.Add(level + ": knocked down, travel not compared");
+            return;
+        }
+        float most = Mathf.Max(0.05f, 0.15f * still.Body);
+        if (Mathf.Abs(glancing.Body - still.Body) > most)
+            fails.Add(
+                F(
+                    $"{level}: the glance moved the body {glancing.Body:0.000} m, the still head {still.Body:0.000} m, want within {most:0.000} m"
+                )
+            );
+        if (level == "full" && still.Body < 0.05f)
+            fails.Add(F($"full: moved the body {still.Body:0.000} m, too little to judge"));
     }
 
     /// <summary>Most the drawn eyes may lead the view while walking forward (m, along the walk): the view trails a
@@ -695,6 +950,12 @@ internal sealed partial class SelfTestRunner
             }
             ScriptHead(home, to);
             yield return Settle(rig, origin, b => origin = b);
+            if (stanceTimedOut)
+            {
+                ReleaseHead();
+                Fail(F($"look {-pitch:0} deg: the walk was still running at the judge"));
+                yield break;
+            }
             var belt = Vector3.zero;
             int n = 0;
             for (int i = 0; i < inv.Count; i++)

@@ -65,6 +65,9 @@ public sealed class BodyHold
     public Vector2 Anchor { get; private set; }
     public bool Holding { get; private set; }
 
+    /// <summary>The centre's distance from <see cref="Anchor"/> (m) as this update began, 0 when not holding, for the trace.</summary>
+    public float AnchorOffset { get; private set; }
+
     const float Never = float.MaxValue;
 
     float _quiet;
@@ -128,6 +131,7 @@ public sealed class BodyHold
         float lookRate = 0f
     )
     {
+        AnchorOffset = Holding ? Vector2.Distance(centre, Anchor) : 0f;
         if (!float.IsFinite(centre.X) || !float.IsFinite(centre.Y))
         {
             Holding = false;
