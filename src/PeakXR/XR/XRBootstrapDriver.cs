@@ -14,7 +14,15 @@ namespace PeakXR.XR;
 /// types only, never package types).</summary>
 static class XRRuntimeInfo
 {
-    public static XRDisplaySubsystem Display;
+    /// <summary>The running display, or null. A subsystem is a plain object: once OpenXR shuts down the reference stays
+    /// set and every native call on it throws, and only <c>running</c> stays safe (#135).</summary>
+    public static XRDisplaySubsystem Display
+    {
+        get => display != null && display.running ? display : null;
+        set => display = value;
+    }
+
+    static XRDisplaySubsystem display;
     public static XRInputSubsystem Input;
 
     /// <summary>True when the tracking space has its origin on the floor (eye height is measurable).</summary>
