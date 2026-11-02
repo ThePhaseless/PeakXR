@@ -107,4 +107,29 @@ public class HandThrowTests
         float charge = 0f;
         Assert.Equal(Launch, HandThrow.Release(Launch, Look, 0f, ref charge, 0.5f));
     }
+
+    [Fact]
+    public void ABackpackKeepsItsCharge_ItHasNoOtherWayToFly()
+    {
+        // CharacterItems.cs:268-272 sends a backpack with no velocity: at charge 0 a hard swing dropped it (#117).
+        float charge = HandThrow.Charge(20f, Min, Max, 1f, 0f);
+        Assert.True(charge > 0.15f, "BackpackStabilizer reads under 0.15 as a drop");
+        Assert.Equal(charge, HandThrow.ChargeKept(true, charge, 0f));
+        float sent = charge;
+        HandThrow.Release(
+            new System.Numerics.Vector3(0f, 0f, 20f),
+            System.Numerics.Vector3.UnitZ,
+            20f,
+            ref sent,
+            HandThrow.ChargeKept(true, charge, 0f)
+        );
+        Assert.Equal(charge, sent);
+    }
+
+    [Fact]
+    public void AnyOtherItemKeepsOnlyItsStickyCharge()
+    {
+        Assert.Equal(0f, HandThrow.ChargeKept(false, 0.8f, 0f));
+        Assert.Equal(0.3f, HandThrow.ChargeKept(false, 0.8f, 0.3f));
+    }
 }

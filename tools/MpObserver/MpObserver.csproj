@@ -28,6 +28,7 @@
     <Compile Include="../../src/PeakXR.Core/MpTestFiles.cs" Link="Shared/MpTestFiles.cs" />
     <Compile Include="../../src/PeakXR.Core/FileFingerprint.cs" Link="Shared/FileFingerprint.cs" />
     <Compile Include="../../src/PeakXR.Core/MpPoseCheck.cs" Link="Shared/MpPoseCheck.cs" />
+    <Compile Include="../../src/PeakXR.Core/PingVisibility.cs" Link="Shared/PingVisibility.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -99,4 +99,28 @@ public class PingRulesTests
         // Blocked input never shows it.
         Assert.False(p.Update(true, false, 0f, longPress, allowed: false));
     }
+
+    [Theory]
+    // The default: the dominant upper button drops, the other hand's pings.
+    [InlineData(VRControl.Secondary, false, true, false, false, true)]
+    [InlineData(VRControl.Secondary, true, false, false, false, true)]
+    // "Ping on the other hand" would be false: the drop sits on another button, or on the hand that pings.
+    [InlineData(VRControl.Primary, false, true, false, false, false)]
+    [InlineData(VRControl.StickClick, false, true, false, false, false)]
+    [InlineData(VRControl.Secondary, true, true, false, false, false)]
+    // A thumb slipping from a jump mid-climb, and the drop that lets go of a friend: no refusal.
+    [InlineData(VRControl.Secondary, false, true, true, false, false)]
+    [InlineData(VRControl.Secondary, false, true, false, true, false)]
+    public void AnEmptyDropOnlyNamesPingWhereThatIsTrue(
+        VRControl drop,
+        bool dropLeft,
+        bool pingLeft,
+        bool climbing,
+        bool carrying,
+        bool cue
+    ) =>
+        Assert.Equal(
+            cue,
+            PingRules.EmptyDropNamesPing(drop, dropLeft, pingLeft, climbing, carrying)
+        );
 }

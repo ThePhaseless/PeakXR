@@ -5,6 +5,24 @@ public class SelfTestChecksTests
     static readonly Vector3 Head = new(0f, 1.6f, 0f);
     static readonly Vector3 Forward = new(0f, 0f, 1f);
 
+    [Theory]
+    // PEAK walks up to 50 degrees (CharacterMovement.cs:132): 0.5 m out takes a rise of up to 0.59 m.
+    [InlineData(0f, 0.5f, true)]
+    [InlineData(0.55f, 0.5f, true)]
+    [InlineData(0.65f, 0.5f, false)]
+    [InlineData(-1f, 0.5f, true)]
+    [InlineData(-2f, 0.5f, false)]
+    public void WalkableStep_LimitsARiseAndAFall(float rise, float run, bool expected) =>
+        Assert.Equal(expected, SelfTestChecks.WalkableStep(rise, run));
+
+    [Theory]
+    [InlineData(1f, true)]
+    [InlineData(0.1f, true)]
+    [InlineData(-1.84f, false)]
+    [InlineData(1.9f, false)]
+    public void OnLip_ReadsTheTorsoOverTheLipsGround(float over, bool expected) =>
+        Assert.Equal(expected, SelfTestChecks.OnLip(over));
+
     [Fact]
     public void PanelStraightAhead_IsInFront()
     {

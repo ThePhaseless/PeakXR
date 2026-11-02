@@ -31,6 +31,9 @@ internal sealed partial class SelfTestRunner
         yield return ItemStep("vr.400-bugle-turned", "Bugle", 25f, BugleTurnedStep);
         yield return ItemStep("vr.22-bandage", "Bandage", 30f, BandageStep);
         yield return ItemStep("vr.22b-bandage-forearm", "Bandage", 30f, ForearmBandageStep);
+        yield return ItemStep("vr.22c-bandage-body-steps", "Bandage", 30f, BandageBodyStepsStep);
+        yield return ItemStep("vr.495-bandage-past-body", "Bandage", 90f, BandagePastBodyStep);
+        yield return ItemStep("vr.495b-kit-past-body", "FirstAidKit", 90f, BandagePastBodyStep);
         yield return ItemStep("vr.23-parasol", "Parasol", 25f, ParasolStep);
         // A bandage: food is eaten at the mouth, not on the trigger (Interaction.TriggerEats off).
         yield return ItemStep("vr.28-use-while-pointing", "Bandage", 25f, UsePointingStep);
@@ -902,6 +905,16 @@ internal sealed partial class SelfTestRunner
         yield return GiveAndHold(prefab);
         if (!stepOk)
             yield break;
+        yield return BandageHeld(
+            prefab,
+            forearm,
+            forearm ? "vr-22b-bandage-forearm" : "vr-22-bandage"
+        );
+    }
+
+    /// <summary>The body of vr.22 for the item already in hand.</summary>
+    IEnumerator BandageHeld(Item prefab, bool forearm, string shotName)
+    {
         var c = Character.localCharacter;
         var item = HeldItem();
         bool left = LocalHold.ItemInLeftHand;
@@ -961,10 +974,7 @@ internal sealed partial class SelfTestRunner
             {
                 // The hold ring sits above the acting hand, which is at the chest, under the view.
                 shot = true;
-                yield return ShotAt(
-                    forearm ? "vr-22b-bandage-forearm" : "vr-22-bandage",
-                    VRRig.Instance.Hand(left).position
-                );
+                yield return ShotAt(shotName, VRRig.Instance.Hand(left).position);
                 continue;
             }
             yield return null;
@@ -1944,6 +1954,7 @@ internal sealed partial class SelfTestRunner
         float hungerBefore = food ? afflictions.GetCurrentStatus(status) : 0f;
         float consumedBefore = c.data.lastConsumedItem;
         int usesBefore = UsesLeft(held);
+        int deniedBefore = Affordance.Count;
         var lantern = held.GetComponent<Lantern>();
         var flare = held.GetComponent<Flare>();
         var ropeShooter = held.GetComponent<RopeShooter>();
@@ -1953,12 +1964,18 @@ internal sealed partial class SelfTestRunner
         if (shooter)
         {
             shotsBefore = ropeShooter != null ? Ids<RopeAnchorProjectile>() : Ids<JungleVine>();
-            yield return AimHeld(c, left, ShooterPitches, AllYaws, () => held.CanUsePrimary());
+            yield return AimHeld(
+                c,
+                left,
+                ShooterPitches,
+                AllYaws,
+                () => held.CanUsePrimary() && (vineShooter == null || VinePathClear(vineShooter))
+            );
             if (!aimFound)
             {
                 float range = ropeShooter != null ? ropeShooter.maxLength : vineShooter.maxLength;
                 Fail(
-                    $"no terrain within {range:0} m that {held.name} would attach to (its WillAttach refused every aim; grounded {c.data.isGrounded})"
+                    $"no terrain within {range:0} m that {held.name} would attach to (its WillAttach refused every aim{(vineShooter != null ? ", or terrain blocked the vine's path" : "")}; grounded {c.data.isGrounded})"
                 );
                 ResetFlatLook(c, vr);
                 yield return DropHeld();
@@ -2049,7 +2066,8 @@ internal sealed partial class SelfTestRunner
         if (flare != null)
             note += $", flame {flame}";
         if (shooter)
-            note += $", {(ropeShooter != null ? "rope anchor" : "vine")} spawned {shot != null}";
+            note +=
+                $", {(ropeShooter != null ? "rope anchor" : "vine")} spawned {shot != null}, refused {(Affordance.Count != deniedBefore ? Affordance.LastReason.ToString() : "never")}";
         if (ropeShooter != null && shot != null)
             note += $", rope {ropeMissing ?? "spawned anchored to it"}";
         if (!started)
@@ -2078,6 +2096,29 @@ internal sealed partial class SelfTestRunner
             stepNote = note;
         // Eaten or spent items leave the hand on their own.
         yield return DropHeld();
+    }
+
+    /// <summary>
+    /// The vine shooter's aim is one its shot builds on: <c>WillAttach</c> says nothing of the path, and all ten
+    /// <c>CheckVinePath</c> tries can fail (VineShooter.cs:47-58, NoPath; #143: 17 m out, downhill, over a rise). The
+    /// last try hangs 0, so this straight line is that try, from where the game starts it.
+    /// </summary>
+    static bool VinePathClear(VineShooter shooter)
+    {
+        var cam = MainCamera.instance.transform;
+        if (!Interact.HandAim.TryHeld(out var origin, out var rotation))
+        {
+            origin = cam.position;
+            rotation = cam.rotation;
+        }
+        var forward = rotation * Vector3.forward;
+        var mask = HelperFunctions.GetMask(HelperFunctions.LayerType.TerrainMap);
+        if (!Physics.Raycast(origin, forward, out var hit, shooter.maxLength, mask))
+            return false;
+        var start = Physics.Raycast(origin + forward, Vector3.down, out var ground, 4f, mask)
+            ? ground.point + Vector3.up * 1.5f
+            : origin - Vector3.up * 0.2f;
+        return JungleVine.CheckVinePath(start, hit.point, 0f, out _);
     }
 
     /// <summary>Why the give logs a vanilla NullReferenceException in <c>ItemRenderFeatureManager.setFeatureActive</c>

@@ -16,7 +16,6 @@ public sealed class ContactDwell
     public float Dwell = 0.2f;
 
     private bool inside;
-    private bool armed = true;
     private float timer;
 
     public bool Active { get; private set; }
@@ -26,13 +25,10 @@ public sealed class ContactDwell
         inside = distance <= (inside ? Exit : Enter);
         if (!inside)
         {
-            armed = true;
             timer = 0f;
             Active = false;
             return false;
         }
-        if (!armed)
-            return false;
         timer += dt;
         Active = timer >= Dwell;
         return Active;
@@ -41,17 +37,8 @@ public sealed class ContactDwell
     public void Reset()
     {
         inside = false;
-        armed = true;
         timer = 0f;
         Active = false;
-    }
-
-    /// <summary>A contact that already exists counts only after it breaks once, e.g. an item drawn from a chest
-    /// slot that starts out pressed to the chest.</summary>
-    public void Disarm()
-    {
-        Reset();
-        armed = false;
     }
 }
 
@@ -115,6 +102,53 @@ public static class BodyZones
     /// <summary>... to this far behind it, metres.</summary>
     public const float ForearmEnd = 0.3f;
 
+    /// <summary>How far out from the torso (m) the hand itself may be for a held item resting there to count.</summary>
+    public const float HandOffTorso = 0.2f;
+
+    /// <summary>The hand itself is at the torso, not just the item it holds: an item reaches up to 0.77 m from the grip
+    /// (Aloe Vera), so by the item alone a front hold or an arm hanging beside the hip is "on the body" (#147). Fatter
+    /// than the torso but no taller, since below the belt or above the shoulders a hand is not pressing anything.</summary>
+    public static bool HandAtTorso(Vector3 hand, Vector3 head, Vector3 flatForward, float radius) =>
+        TorsoDistance(hand, head, flatForward, radius + HandOffTorso) <= 0f;
+
+    /// <summary>How far off the forearm's press radius (m) the hand itself may be, as <see cref="HandOffTorso"/>.</summary>
+    public const float HandOffForearm = 0.1f;
+
+    /// <summary>The hand itself is at the other forearm, not just the item: hands idling side by side in front are
+    /// about 0.3 m apart, and a big item reaches across that (#147).</summary>
+    public static bool HandAtForearm(
+        Vector3 hand,
+        Vector3 otherHand,
+        Vector3 otherForward,
+        float radius
+    ) => ForearmDistance(hand, otherHand, otherForward) - radius <= HandOffForearm;
+
+    /// <summary>Which part a held item rests on, how far off it is (m), and whether the hand itself means it.</summary>
+    /// <param name="torso">The item's distance from the torso.</param>
+    /// <param name="arm">The item's distance from the other forearm's press radius, negative when overlapping it;
+    /// <see cref="float.PositiveInfinity"/> with no arm in play.</param>
+    /// <param name="handAtTorso"><see cref="HandAtTorso"/>.</param>
+    /// <param name="handAtArm"><see cref="HandAtForearm"/>.</param>
+    /// <param name="handThere">The hand is at either: the arm being nearer never takes the torso's answer away (#147).</param>
+    /// <param name="onForearm">The press is a wrap of that arm, for its cue and its pulse.</param>
+    public static float Rest(
+        float torso,
+        float arm,
+        bool handAtTorso,
+        bool handAtArm,
+        out bool handThere,
+        out bool onForearm
+    )
+    {
+        handThere = handAtTorso;
+        onForearm = false;
+        if (arm >= torso)
+            return torso;
+        handThere = handAtTorso || handAtArm;
+        onForearm = handAtArm;
+        return MathF.Max(arm, 0f);
+    }
+
     /// <param name="point">World point to test.</param>
     /// <param name="head">Tracked eye position.</param>
     /// <param name="flatForward">Head forward with the pitch removed (unit length, Y = 0).</param>
@@ -147,12 +181,59 @@ public static class BodyZones
 }
 
 /// <summary>
+/// A hollow case's solid box, in the case's own frame. Nothing stops a tracked hand going into a case, and an overlap
+/// sphere in its hollow meets nothing, so the box stands in for the hollow. It has to be the case's own frame: a
+/// world-axis box round a yawed or tilted case reaches about a metre past its walls, into air and rock (#54).
+/// </summary>
+public struct CaseBox
+{
+    private bool any;
+
+    public Vector3 Min { get; private set; }
+    public Vector3 Max { get; private set; }
+
+    /// <summary>Grows the box round a collider's box at <paramref name="centre"/> with these half axes, all in the
+    /// case's frame; each half axis's size per case axis adds up to the same box as the 8 corners.</summary>
+    public void Add(Vector3 centre, Vector3 halfX, Vector3 halfY, Vector3 halfZ)
+    {
+        var reach = Vector3.Abs(halfX) + Vector3.Abs(halfY) + Vector3.Abs(halfZ);
+        Min = any ? Vector3.Min(Min, centre - reach) : centre - reach;
+        Max = any ? Vector3.Max(Max, centre + reach) : centre + reach;
+        any = true;
+    }
+
+    /// <summary><paramref name="point"/>, in the case's frame, is inside the box or within
+    /// <paramref name="radius"/> of it. Never with nothing added.</summary>
+    public readonly bool Within(Vector3 point, float radius) =>
+        any && Vector3.Distance(point, Vector3.Clamp(point, Min, Max)) <= radius;
+}
+
+/// <summary>
 /// Lid lift for luggage: maps the hand's rise onto the game's hold-to-open timer. The timer still runs on time
 /// (<c>Interaction.currentInteractableHeldTime</c>), so a lift never opens faster than holding the button; the lid
 /// only caps how far it may go, and only a fully raised lid lets it finish.
 /// </summary>
 public static class LidLift
 {
+    /// <summary>The lowest point, measured along <paramref name="up"/>, of a box at <paramref name="centre"/> with these
+    /// half axes: a lid collider's underside along its case's own up, the seam of a case however it lies (#127).</summary>
+    public static float LowerFace(
+        Vector3 centre,
+        Vector3 halfX,
+        Vector3 halfY,
+        Vector3 halfZ,
+        Vector3 up
+    ) =>
+        Vector3.Dot(centre, up)
+        - MathF.Abs(Vector3.Dot(halfX, up))
+        - MathF.Abs(Vector3.Dot(halfY, up))
+        - MathF.Abs(Vector3.Dot(halfZ, up));
+
+    /// <summary>A hand on the lid half: at or over the lid's <paramref name="face"/> (<see cref="LowerFace"/>) along the
+    /// case's <paramref name="up"/>, less <paramref name="give"/>.</summary>
+    public static bool OnLid(Vector3 hand, float face, Vector3 up, float give) =>
+        Vector3.Dot(hand, up) >= face - give;
+
     public static float Fraction(float rise, float height) =>
         height <= 0f ? 1f : Math.Clamp(rise / height, 0f, 1f);
 

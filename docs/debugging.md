@@ -28,6 +28,8 @@ The frame-time line (`[render.fixes] frames:`, with frame-time percentiles, GPU 
 
 `Debug.ShowFrameStats` (off) adds frames per second and frame time on your off-hand wrist while debug mode is on.
 
+`Debug.PingProbe` (off, read at launch) logs one `[debug.ping]` line a few frames after each ping this client receives: who pinged, how far apart the heads are, whether terrain blocks the line, whether the game's distance check keeps the marker, whether a marker exists and whether it is drawn (renderer on, layer in the camera's mask, scale, `renderer.isVisible`, in the view, clear line from the camera). It only reads. Turn it on when a friend's ping does not show. The self-test and the two-client test turn it on themselves.
+
 Debug mode costs a little frame time, so turn it on, reproduce the bug, save a report and turn it off again. You can switch it in the VR tab or in `BepInEx/config/com.thephaseless.peakxr.cfg` under `[Debug]`.
 
 ## Where the files go

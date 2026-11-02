@@ -18,7 +18,7 @@ internal sealed partial class SelfTestRunner
     IEnumerator WheelGapSteps()
     {
         yield return HandStep("vr.126-wheel-climbing-refused", 40f, WheelClimbingStep());
-        yield return HandStep("vr.127-thumbs-up", 20f, ThumbsUpStep());
+        yield return HandStep("vr.127-thumbs-up", 30f, ThumbsUpStep());
         yield return HandStep("vr.443-thumbs-up-no-interact", 20f, ThumbsUpNoInteractStep());
         yield return HandStep("vr.447-thumbs-up-cooldown", 20f, ThumbsUpCooldownStep());
         yield return HandStep("vr.446-posed-tap-picks-up", 20f, PosedTapStep());
@@ -155,6 +155,22 @@ internal sealed partial class SelfTestRunner
         Script(holdLeft).Grip = 0f;
         yield return Wait(0.3f);
 
+        // Negative: the pose in the same place with a thumb long off the buttons, a reach that stopped (#146).
+        yield return MoveTrack(hand, Out(hand), 0.3f);
+        Script(hand).StickTouch = false;
+        yield return Wait(EmoteGestures.ThumbLiftWindow + 0.2f);
+        Fist(hand, forward);
+        yield return Wait(EmoteGestures.ThumbFarDwell + 0.3f);
+        Script(hand).Grip = 0f;
+        Script(hand).StickTouch = true;
+        notes.Add($"fist with a thumb long off: {GestureEmotes.PlayCount - before} emotes");
+        if (GestureEmotes.PlayCount != before)
+        {
+            Fail($"a fist with a thumb long off played '{GestureEmotes.LastPlayed}'");
+            yield break;
+        }
+        yield return Wait(0.3f);
+
         // Positive: the deliberate pose, held still out in front.
         yield return MoveTrack(hand, Out(hand), 0.3f);
         float mark = CueMark();
@@ -187,12 +203,28 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         yield return ExpectCue(hand, DenyReason.HappenedHere, mark);
+        if (!stepOk)
+            yield break;
         notes.Add($"thumbs up: played {GestureEmotes.LastPlayed} once, confirmed: {cueNote}");
-        if (stepOk)
-            stepNote = string.Join("; ", notes);
 
-        Vector3 Out(bool left) =>
-            head + forward * 0.4f + (left ? -right : right) * 0.1f + Vector3.down * 0.2f;
+        // Further out, as many players hold it, still a thumbs-up: past vr.127's cooldown (2 s), on the longer dwell.
+        yield return Wait(2.2f);
+        yield return MoveTrack(hand, Out(hand, 0.45f), 0.3f);
+        before = GestureEmotes.PlayCount;
+        Fist(hand, forward);
+        yield return Until(
+            () => GestureEmotes.PlayCount != before,
+            2f,
+            "no thumbs-up within 2 s of the pose at 0.45 m"
+        );
+        Script(hand).Grip = 0f;
+        Script(hand).StickTouch = true;
+        if (stepOk)
+            stepNote = string.Join("; ", notes) + "; at 0.45 m: played";
+
+        // Bent, as a thumbs-up is held: the nominal arm reads about 0.77 here, under EmoteGestures.ThumbMaxStretch (#146).
+        Vector3 Out(bool left, float ahead = 0.4f) =>
+            head + forward * ahead + (left ? -right : right) * 0.1f + Vector3.down * 0.2f;
     }
 
     /// <summary>
@@ -311,7 +343,9 @@ internal sealed partial class SelfTestRunner
     /// vr.446 (issue #82): a quick grip tap in the thumbs-up pose, with an Apple on the head's interact ray, is a gaze
     /// grab. The pose holds the interact back (Core <c>GripIntent.GestureInteractAt</c>, 0.25 s), and a grip opened
     /// sooner pressed nothing; now the release presses it once (<c>GripIntent.ReleaseTaps</c>). The fist closes for
-    /// 0.1 s: the press frame must be posed (<c>GestureEmotes.ThumbPosed</c>), and the Apple must reach the hand.
+    /// 0.1 s: the press frame must be posed (<c>GestureEmotes.ThumbPosed</c>), and the Apple must reach the hand that
+    /// tapped. The hand stands 0.4 m out like the other thumb steps: at 0.3 m it sat on <c>EmoteGestures.ThumbReach</c>
+    /// and float rounding decided the pose (#141).
     /// </summary>
     IEnumerator PosedTapStep()
     {
@@ -339,7 +373,7 @@ internal sealed partial class SelfTestRunner
         Script(hand).StickTouch = true;
         yield return MoveTrack(
             hand,
-            head + forward * 0.3f + (hand ? -right : right) * 0.15f + Vector3.down * 0.25f,
+            head + forward * 0.4f + (hand ? -right : right) * 0.1f + Vector3.down * 0.2f,
             0.3f
         );
         for (float until = Now + 3f; Now < until; )
@@ -356,6 +390,9 @@ internal sealed partial class SelfTestRunner
         }
         bool posed = false,
             pressed = false;
+        var real = Rig.RealScale.Real(VRRig.Instance.Hand(hand).position, headT.position);
+        float ahead = Vector3.Dot(real - headT.position, Flat(headT.forward));
+        float under = headT.position.y - real.y;
         Fist(hand, forward);
         for (float until = Now + 0.1f; Now < until; )
         {
@@ -374,13 +411,18 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         bool holding = c.data.currentItem != null;
+        // One Update so PhysicalInteraction.TrackHeldItem has picked the holding hand.
+        yield return null;
+        bool inTappingHand = LocalHold.ItemInLeftHand == hand;
         var note = F(
-            $"posed {posed}, pressed while closed {early}, grip interact pressed {pressed}, holding {holding}"
+            $"posed {posed} ({ahead:0.000} m ahead of the eyes, {under:0.000} m under them), pressed while closed {early}, grip interact pressed {pressed}, holding {holding}, in the tapping hand {inTappingHand}"
         );
         if (!posed)
             Fail("the tap was not in the thumbs-up pose, so the step proves nothing: " + note);
         else if (!holding)
             Fail("the quick posed tap picked nothing up: " + note);
+        else if (!inTappingHand)
+            Fail("the quick posed tap's item landed in the other hand: " + note);
         else
             Note(note);
         yield return DropHeld();

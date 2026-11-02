@@ -31,6 +31,59 @@ internal static class HandAim
         return true;
     }
 
+    private static readonly RaycastHit[] AimHits = new RaycastHit[32];
+
+    /// <summary>The hits vanilla's interact ray considers (Interaction.cs:224): not your own body, the held item or an
+    /// arrow stuck in you. A hand's ray starts inside your own arm's colliders, so a plain raycast stops there.</summary>
+    public static bool Counts(Character c, in RaycastHit hit)
+    {
+        var col = hit.collider;
+        // Your own body: vanilla checks the ragdoll's collider list (internal); its parent Character is the same test.
+        if (col == null || col.GetComponentInParent<Character>() == c)
+            return false;
+        if (
+            Item.TryGetItemFromCollider(col, out var item)
+            && item != null
+            && item == c.data.currentItem
+        )
+            return false;
+        var parent = col.transform.parent;
+        return parent == null || !parent.TryGetComponent<global::Peak.ArrowOnMe>(out _);
+    }
+
+    /// <summary>The nearest hit an aim ray of <paramref name="length"/> metres meets that <see cref="Counts"/>, by default
+    /// with triggers, as the game's interact ray does (#55). A raycast and a parent lookup per hit.</summary>
+    public static bool FirstHit(
+        Character c,
+        Vector3 origin,
+        Vector3 dir,
+        float length,
+        out RaycastHit first,
+        QueryTriggerInteraction triggers = QueryTriggerInteraction.Collide
+    )
+    {
+        first = default;
+        int n = Physics.RaycastNonAlloc(
+            origin,
+            dir,
+            AimHits,
+            length,
+            HelperFunctions.GetMask(HelperFunctions.LayerType.AllPhysical),
+            triggers
+        );
+        bool found = false;
+        for (int i = 0; i < n; i++)
+        {
+            if ((!found || AimHits[i].distance < first.distance) && Counts(c, AimHits[i]))
+            {
+                first = AimHits[i];
+                found = true;
+            }
+            AimHits[i] = default;
+        }
+        return found;
+    }
+
     /// <summary>Aim of the local player's held item. A launcher fires along its own barrel as the player sees it, and
     /// a piton goes in along its blade (<see cref="TryBarrel"/>). Anything else aims from the holding hand, along the two-hand axis while the
     /// free hand supports it (<see cref="LocalHold.TwoHand"/>, which feeds <c>AvatarPose.TwoHandHold</c>).</summary>

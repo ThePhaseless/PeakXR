@@ -258,6 +258,8 @@ internal sealed partial class SelfTestRunner
             yield break;
         var host = Host();
         LookAtPoint(host.Center);
+        // The scripted thumb stays off the buttons on purpose: a neutral reach reads as a lifted thumb, and a fist
+        // stopped there, at any stretch, must not be the thumbs-up every peer sees (#146; mp-check fails on any).
         try
         {
             yield return ReachOutHold(false, () => host.Center, 0.5f, 0.5f, 0f, true);
@@ -304,9 +306,17 @@ internal sealed partial class SelfTestRunner
         yield return FreeHands();
         if (!stepOk)
             yield break;
-        // Any item at hand, passing over one the walk cannot reach (MP run 15b: the walk to the nearest stuck 1.1 m short).
+        // Any plain item at hand, passing over one the walk cannot reach (MP run 15b: the walk to the nearest stuck 1.1 m
+        // short). An armed reach beats a one-hand item's second grip now (GripIntent.OnPress, #149), so only a
+        // needs-both-hands item would still join.
+        var info = new ItemHoldInfo();
         yield return GrabReachable(
-            _ => true,
+            i =>
+                i.name.StartsWith(MpPlainItem, StringComparison.Ordinal)
+                || (
+                    info.Bind(i)
+                    && !ItemHoldTable.AcceptsSecondHand(info.Profile.Handedness, !i.rightHandOnly)
+                ),
             null,
             NearItems,
             3,
@@ -331,6 +341,10 @@ internal sealed partial class SelfTestRunner
         bool free = !LocalHold.ItemInLeftHand;
         var host = Host();
         LookAtPoint(host.Center);
+        // The holding hand low on its own side, clear of the arm, so this asks about a hand with nothing beside it; the
+        // passing case is GripIntentTests.ReachingOutPastAOneHandItem (#149: controllers 0.46 m apart with the Compass
+        // drawn between them).
+        yield return CarryFoodBack(!free);
         bool refused = false;
         for (float end = Now + 1f; Now < end && !refused; )
         {
@@ -471,7 +485,9 @@ internal sealed partial class SelfTestRunner
         // which can be at the edge (MP run 17, #95: the walk to the point ended 2.29 m under it, off the lip).
         var behind = Vector3.zero;
         float missed = 0f;
-        for (int i = 0; i < 3; i++)
+        // Three lips at 15 s a walk with three detours overran the step's budget, which then said only "timeout" (#95).
+        float giveUp = Now + LedgeSearchSeconds;
+        for (int i = 0; i < 3 && Now < giveUp; i++)
         {
             yield return FindLedge(c, tried);
             if (!ledgeFound)
@@ -480,9 +496,15 @@ internal sealed partial class SelfTestRunner
             outward = ledgeOutward;
             behind = stand - outward * LedgeBack;
             tried.Add(stand);
-            yield return MpWalkAround(() => behind, 0.2f, 15f);
+            yield return MpWalkAround(
+                () => behind,
+                0.2f,
+                Mathf.Min(15f, Mathf.Max(giveUp - Now, 1f)),
+                1
+            );
             missed = FlatDistance(c.Center, behind);
-            if (missed <= 0.6f)
+            // Under the lip is no arrival: a level distance also reads small at the foot of its face (#95).
+            if (missed <= 0.6f && SelfTestChecks.OnLip(c.Center.y - stand.y))
                 break;
         }
         if (tried.Count == 0)
@@ -495,7 +517,7 @@ internal sealed partial class SelfTestRunner
         if (missed > 0.6f)
         {
             stepSkip = F(
-                $"the walk stopped {missed:0.0} m short of the last of {tried.Count} lip(s) tried"
+                $"the walk stopped {missed:0.0} m short of the last of {tried.Count} lip(s) tried (a straight walkable line to it: {ledgeWalkable})"
             );
             yield break;
         }
@@ -512,10 +534,10 @@ internal sealed partial class SelfTestRunner
         float atLip = FlatDistance(c.Center, behind);
         // On the lip's own ground too: the torso stands about 1 m over the feet, so well above that is A on something
         // higher next to it.
-        if (atLip > LedgeStandBy || c.Center.y - stand.y > 1.4f || c.Center.y < stand.y)
+        if (atLip > LedgeStandBy || !SelfTestChecks.OnLip(c.Center.y - stand.y))
         {
             stepSkip = F(
-                $"A stands {atLip:0.00} m from the spot {LedgeBack:0.0} m behind the lip ({c.Center.y - stand.y:0.00} m over the lip's ground), not at it"
+                $"A stands {atLip:0.00} m from the spot {LedgeBack:0.0} m behind the lip ({c.Center.y - stand.y:0.00} m over the lip's ground), not at it (a straight walkable line to it: {ledgeWalkable})"
             );
             yield break;
         }
@@ -651,44 +673,93 @@ internal sealed partial class SelfTestRunner
     {
         ledgeFound = false;
         ledgeStand = ledgeOutward = default;
-        float best = float.MaxValue;
         var home = c.Center;
         int mask = HelperFunctions.terrainMapMask;
-        for (float x = -LedgeRadius; x <= LedgeRadius; x += 1f)
+        // First a lip A can walk straight up onto, then any: the nearest lip was often the top of a face A stood under
+        // (#95: A at its foot, 1.84 m under the lip's ground, and a walk stopped 1.0 m short against it).
+        for (int pass = 0; pass < 2 && !ledgeFound; pass++)
         {
-            for (float z = -LedgeRadius; z <= LedgeRadius; z += 1f)
+            float best = float.MaxValue;
+            for (float x = -LedgeRadius; x <= LedgeRadius; x += 1f)
             {
-                float sq = x * x + z * z;
-                if (sq > LedgeRadius * LedgeRadius || sq >= best)
-                    continue;
-                if (
-                    !Physics.Raycast(
-                        home + new Vector3(x, 30f, z),
-                        Vector3.down,
-                        out var ground,
-                        60f,
-                        mask,
-                        QueryTriggerInteraction.Ignore
-                    )
-                    || ground.normal.y < 0.8f
-                    || Tried(tried, ground.point)
-                )
-                    continue;
-                for (int o = 0; o < 8; o++)
+                for (float z = -LedgeRadius; z <= LedgeRadius; z += 1f)
                 {
-                    var dir = Quaternion.Euler(0f, o * 45f, 0f) * Vector3.forward;
-                    if (!Lip(ground.point, dir, mask))
+                    float sq = x * x + z * z;
+                    if (sq > LedgeRadius * LedgeRadius || sq >= best)
                         continue;
-                    best = sq;
-                    ledgeStand = ground.point;
-                    ledgeOutward = dir;
-                    ledgeFound = true;
-                    break;
+                    if (
+                        !Physics.Raycast(
+                            home + new Vector3(x, 30f, z),
+                            Vector3.down,
+                            out var ground,
+                            60f,
+                            mask,
+                            QueryTriggerInteraction.Ignore
+                        )
+                        || ground.normal.y < 0.8f
+                        || Tried(tried, ground.point)
+                    )
+                        continue;
+                    for (int o = 0; o < 8; o++)
+                    {
+                        var dir = Quaternion.Euler(0f, o * 45f, 0f) * Vector3.forward;
+                        if (
+                            !Lip(ground.point, dir, mask)
+                            || (pass == 0 && !WalkableLine(home, ground.point, mask))
+                        )
+                            continue;
+                        best = sq;
+                        ledgeStand = ground.point;
+                        ledgeOutward = dir;
+                        ledgeFound = true;
+                        ledgeWalkable = pass == 0;
+                        break;
+                    }
                 }
+                yield return null;
             }
-            yield return null;
         }
     }
+
+    /// <summary>The ground from A's centre to <paramref name="to"/>, sampled every <see cref="WalkSample"/> m on the
+    /// level, has no step a body cannot walk (Core <see cref="SelfTestChecks.WalkableStep"/>).</summary>
+    static bool WalkableLine(Vector3 from, Vector3 to, int mask)
+    {
+        var flat = to - from;
+        flat.y = 0f;
+        float length = flat.magnitude;
+        if (length < 1e-3f)
+            return true;
+        var along = flat / length;
+        float top = Mathf.Max(from.y, to.y) + 30f;
+        float last = float.NaN;
+        for (float d = 0f; d < length + WalkSample; d += WalkSample)
+        {
+            var at = from + along * Mathf.Min(d, length);
+            at.y = top;
+            if (
+                !Physics.Raycast(
+                    at,
+                    Vector3.down,
+                    out var hit,
+                    60f,
+                    mask,
+                    QueryTriggerInteraction.Ignore
+                )
+            )
+                return false;
+            if (!float.IsNaN(last) && !SelfTestChecks.WalkableStep(hit.point.y - last, WalkSample))
+                return false;
+            last = hit.point.y;
+        }
+        return true;
+    }
+
+    /// <summary>How often (m) <see cref="WalkableLine"/> samples the ground.</summary>
+    const float WalkSample = 0.5f;
+
+    /// <summary>The last <see cref="FindLedge"/>'s lip has a walkable straight line from A.</summary>
+    bool ledgeWalkable;
 
     static bool Tried(List<Vector3> tried, Vector3 at)
     {
@@ -699,6 +770,10 @@ internal sealed partial class SelfTestRunner
         }
         return false;
     }
+
+    /// <summary>How long (s) the lip search and its walks may take, leaving the step's 120 s room for the reach and to bring
+    /// the host back.</summary>
+    const float LedgeSearchSeconds = 45f;
 
     /// <summary>How far from A the lip search looks (m), on a 1 m grid: a lip is within 0.7 m of a grid point, so the
     /// 2 m grid of MP run 12 stepped over most edges and found none within 40 m of the beach spawn.</summary>

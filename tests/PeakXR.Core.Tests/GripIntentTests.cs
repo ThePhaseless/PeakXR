@@ -360,6 +360,48 @@ public class GripIntentTests
     }
 
     [Fact]
+    public void ReachingOutPastAOneHandItem_DoesNotTakeItAsASecondGrip()
+    {
+        // #149: a hand stretched at a friend, passing a held Compass, closed on the Compass and no HandsFull came.
+        var c = Empty();
+        c.HoldingItem = true;
+        c.HeldHandedness = Handedness.OneHand;
+        c.HeldBothHandsInGame = true;
+        c.AtSecondGrip = true;
+        c.NearHeldItem = true;
+        c.ReachingOut = true;
+        c.ExtensionClaim = true;
+        Assert.Equal(GripPressAction.Extension, GripIntent.OnPress(c));
+    }
+
+    [Fact]
+    public void ReachingOutRightOnTheSecondGrip_StillJoins()
+    {
+        var c = Empty();
+        c.HoldingItem = true;
+        c.HeldHandedness = Handedness.OneHand;
+        c.HeldBothHandsInGame = true;
+        c.AtSecondGrip = true;
+        c.AtSecondGripTight = true;
+        c.ReachingOut = true;
+        c.ExtensionClaim = true;
+        Assert.Equal(GripPressAction.SecondHand, GripIntent.OnPress(c));
+    }
+
+    [Fact]
+    public void ReachingOutPastATwoHandedItem_StillJoins()
+    {
+        // It cannot be used one-handed, and a free hand beside it is there for it.
+        var c = Empty();
+        c.HoldingItem = true;
+        c.HeldHandedness = Handedness.TwoHanded;
+        c.AtSecondGrip = true;
+        c.ReachingOut = true;
+        c.ExtensionClaim = true;
+        Assert.Equal(GripPressAction.SecondHand, GripIntent.OnPress(c));
+    }
+
+    [Fact]
     public void ExtensionClaim_WorksWithPhysicalTogglesOff()
     {
         var c = new GripContext { ExtensionClaim = true };
@@ -716,4 +758,26 @@ public class GestureInteractTests
         at = GripIntent.GestureInteractAt(at, posed: true, gripAt: 1f, now: 1.5f);
         Assert.False(GripIntent.ReleaseTaps(at, 1f, 1.5f, gestureTook: false));
     }
+
+    [Theory]
+    // A throw's speed or a release that would drop, on an item the game keeps: say so.
+    [InlineData(false, true, 5f, false, true)]
+    [InlineData(false, true, 0.5f, true, true)]
+    // A slow release with ReleaseToDrop off keeps any item.
+    [InlineData(false, true, 0.5f, false, false)]
+    // A grip that never closed on it was not trying.
+    [InlineData(false, false, 5f, true, false)]
+    // The item may be dropped: nothing refused.
+    [InlineData(true, true, 5f, true, false)]
+    public void DropRefused_OnlyWhereTheGripMeantToLetGo(
+        bool canDrop,
+        bool armed,
+        float speed,
+        bool releaseToDrop,
+        bool refused
+    ) =>
+        Assert.Equal(
+            refused,
+            GripIntent.DropRefused(canDrop, armed, speed, 2f, true, releaseToDrop)
+        );
 }

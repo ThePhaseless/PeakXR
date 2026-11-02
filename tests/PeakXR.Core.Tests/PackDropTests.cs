@@ -106,4 +106,22 @@ public class PackDropTests
         // The game's interact distance itself is in reach (Interaction.distance, 2 m).
         Assert.Equal(inReach, PackDrop.PointRefusal(PackDrop.PointReach, inReach));
     }
+
+    [Fact]
+    public void APackBehindRockSaysSo_ReachStillFirst()
+    {
+        // #144: a near-miss aim at a pack with terrain before its pivot got nothing at all.
+        Assert.Equal(
+            DenyReason.NoPath,
+            PackDrop.PointRefusal(1.5f, DenyReason.None, occluded: true)
+        );
+        Assert.Equal(
+            DenyReason.OutOfReach,
+            PackDrop.PointRefusal(3f, DenyReason.None, occluded: true)
+        );
+        Assert.Equal(
+            DenyReason.None,
+            PackDrop.PointRefusal(1.5f, DenyReason.None, occluded: false)
+        );
+    }
 }

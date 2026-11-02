@@ -131,6 +131,9 @@ public struct GripContext
     /// <summary>What the hand's aim ray hits within the game's interact reach.</summary>
     public AimedTarget Aimed;
 
+    /// <summary>This arm is stretched at a friend it would reach for, ring and all (<see cref="ReachOut"/>).</summary>
+    public bool ReachingOut;
+
     /// <summary>Pointing at an item taker: a deliberate aim with the item it takes in hand, which beats a
     /// climbable in reach and a body-slot claim (only those).</summary>
     public readonly bool PointedAtTaker => Pointing && Aimed == AimedTarget.ItemTaker;
@@ -192,10 +195,14 @@ public static class GripIntent
             c.Candidate == GrabCandidate.Interactible
             && c.HeldHandedness != Handedness.TwoHanded
             && !c.AtSecondGripTight;
+        // Nor a hand stretched at a friend, passing it: the friend is what it aims at, and HandsFull says why not (#149).
+        bool reachWins =
+            c.ReachingOut && c.HeldHandedness != Handedness.TwoHanded && !c.AtSecondGripTight;
         if (
             c.HoldingItem
             && !c.ThisHandHolds
             && ItemHoldTable.AcceptsSecondHand(c.HeldHandedness, c.HeldBothHandsInGame)
+            && !reachWins
             && (
                 (c.AtSecondGrip && !aimsElsewhere && !interactibleWins)
                 // A hand closing on the item's body joins it unless it points at a taker: a scripted or relaxed
@@ -402,6 +409,21 @@ public static class GripIntent
             ? DenyReason.CantThrow
             : DenyReason.None;
     }
+
+    /// <summary>A release that would have dropped or thrown (<see cref="OnRelease"/>) an item the game keeps
+    /// (<c>UIData.canDrop</c> off): the grip meant to let go and nothing happens, so it gets a refusal.</summary>
+    public static bool DropRefused(
+        bool canDrop,
+        bool armed,
+        float speed,
+        float throwSpeed,
+        bool throwEnabled,
+        bool releaseToDrop
+    ) =>
+        !canDrop
+        && armed
+        && OnRelease(true, true, speed, throwSpeed, throwEnabled, releaseToDrop)
+            != GripReleaseAction.Keep;
 
     /// <summary>How far a piton or handle stands out of the rock it is set in (metres): rock up to this much nearer
     /// than the handle's surface is the face it sits on, not a separate hold (VR run 60).</summary>

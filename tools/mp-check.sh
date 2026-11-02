@@ -119,8 +119,8 @@ def moddedb:
      else "INFO PeakXR warned \($px.warnings) time(s) on B: \($px.firstWarnings | map(.e) | join(" | "))" end)
     end;
 # Every checkpoint MpScript writes (SelfTestRunner.MpTest.cs); one A never wrote means its script stopped early.
-def expected: ["join", "walk-to-host", "emote", "ping", "scene-button", "board", "regroup", "luggage", "grab",
-  "drop", "pickup", "throw", "eat", "holster", "climb", "two-hand", "feed", "feed-refuse", "reach-deny", "reach-look", "reach",
+def expected: ["join", "walk-to-host", "emote", "scene-button", "board", "regroup", "ping", "ping-seen", "luggage", "grab",
+  "drop", "pickup", "throw", "eat", "holster", "climb", "two-hand", "feed", "feed-fetch-front", "feed-held-ahead", "feed-refuse", "reach-deny", "reach-look", "reach",
   "vr.421-reach-out-cone", "vr.422-reach-out-idle", "vr.423-reach-out-hands-full", "vr.424-reach-out-far",
   "kick-mode", "carry", "pack", "vr.330-pack-stash", "vr.434-point-friend-pack", "pal-jump", "vr.420-reach-out-ledge", "campfire-far", "spectate",
   "save-untouched"];
@@ -149,11 +149,28 @@ def expected: ["join", "walk-to-host", "emote", "ping", "scene-button", "board",
         elif any($got[]; letters | contains($want)) then "PASS emote: B saw A play \($want)"
         else "FAIL emote: A played \($want), B saw \($got)" end
     elif $x.name == "ping" then
-      [seen($y)[] | from_a | select(.name == "ReceivePoint_Rpc") | .args[0]] as $pts
+      ([seen($y)[] | from_a | select(.name == "ReceivePoint_Rpc") | .args[0]] as $pts
       | if $pts == [] then "FAIL ping: B got no ReceivePoint_Rpc from A"
         elif $x.ping == null then "FAIL ping: A logged no ping point"
         else ([$pts[] | dist(.; $x.ping)] | min) as $d
-          | "\(if $d <= $land then "PASS" else "FAIL" end) ping: B got the point \($d | r2) m from where A saw it" end
+          | "\(if $d <= $land then "PASS" else "FAIL" end) ping: B got the point \($d | r2) m from where A saw it" end),
+      # The RPC finishing says nothing of a marker: its distance check can drop it (PointPinger.cs:91, #130).
+      ([$b[] | select(.type == "ping-probe" and (.local | not) and .t > prevT($y) and .t <= $y.t + $lag)] | last) as $pr
+      | if $pr == null then "FAIL ping marker: B logged no ping probe for ping from A (old observer?)"
+        elif ($pr.expected | not) then "FAIL ping marker: the game on B drops it at \($pr.distance | r2) m (line blocked \($pr.blocked))"
+        else
+          (if $pr.marker and $pr.rendererOn and $pr.layerSeen then "PASS ping marker: B has the marker of A, renderer on, in the camera mask, scale \($pr.scale | r2)"
+           else "FAIL ping marker: marker \($pr.marker), renderer on \($pr.rendererOn), in the camera mask \($pr.layerSeen)" end),
+          (if $pr.visible and $pr.inView then "PASS ping visible: B draws it in view, clear line from its camera \($pr.clearLine)"
+           else "FAIL ping visible: renderer visible \($pr.visible), in the view \($pr.inView), clear line \($pr.clearLine)" end)
+        end
+    elif $x.name == "ping-seen" then
+      (if any(seen($y)[]; .local and .name == "ReceivePoint_Rpc") then "PASS ping-seen: B sent its ping, and A saw the marker"
+       else "FAIL ping-seen: B logged no ReceivePoint_Rpc of its own" end),
+      (([$b[] | select(.type == "ping-probe" and .local and .t > prevT($y) and .t <= $y.t + $lag)] | last) as $pr
+       | if $pr == null then "FAIL ping-seen: B logged no ping probe for its own ping (old observer?)"
+         elif $pr.marker and $pr.rendererOn then "PASS ping-seen: B has its own marker, visible \($pr.visible)"
+         else "FAIL ping-seen: own marker \($pr.marker), renderer on \($pr.rendererOn)" end)
     elif $x.name == "board" then
       (if $y.scene != null and $y.scene != "Airport" and $y.scene == $x.scene then "PASS board: B is on \($y.scene) too"
        else "FAIL board: A on \($x.scene), B on \($y.scene)" end),
@@ -189,11 +206,20 @@ def expected: ["join", "walk-to-host", "emote", "ping", "scene-button", "board",
     elif $x.name == "climb" then
       (if any(seen($y)[]; (.local | not) and .name == "StartClimbRpc") then "PASS climb: B got StartClimbRpc from A"
        else "FAIL climb: B got no StartClimbRpc from A" end)
-    elif $x.name == "feed" then
+      ,(if ($x.note // "") | test("passed over") then "INFO climb: \($x.note)" else empty end)
+    elif $x.name == "feed" or $x.name == "feed-held-ahead" then
       (if any(seen($y)[]; .local and .name == "GetFedItemRPC")
           and any(seen($y)[]; (.local | not) and .name == "SendFeedDataRPC")
-       then "PASS feed: B was fed by A (SendFeedDataRPC, GetFedItemRPC on B)"
-       else "FAIL feed: B missed SendFeedDataRPC from A or GetFedItemRPC on itself" end)
+       then "PASS \($x.name): B was fed by A (SendFeedDataRPC, GetFedItemRPC on B)"
+       else "FAIL \($x.name): B missed SendFeedDataRPC from A or GetFedItemRPC on itself" end),
+      (if $x.name == "feed-held-ahead" and (($x.note // "") | test("kept by the host.s body 0\\.0 s"))
+       then "INFO feed-held-ahead: the body of B never kept the food, so this run did not test the body keep: \($x.note)"
+       else empty end)
+    elif $x.name == "feed-fetch-front" then
+      # seen, not after: the window after this checkpoint holds feed-held-ahead, a real feed of the same food.
+      (if any(seen($y)[]; .name == "SendFeedDataRPC" and .on == $x.item)
+       then "FAIL feed-fetch-front: B got a feed RPC for the \($x.item) A only carried past it"
+       else "PASS feed-fetch-front: B got no feed RPC for the \($x.item) A only carried past it" end)
     elif $x.name == "feed-refuse" then
       # A feed starts with SendFeedDataRPC on the item fed: count only those on the refused item. The window also
       # holds the end of the feed step before it (GetFedItemRPC and Consume arrive about 0.1 s after that checkpoint).
@@ -307,8 +333,13 @@ def expected: ["join", "walk-to-host", "emote", "ping", "scene-button", "board",
     ($bcp["emote"] as $e
      | (if $e == null then [] else [seen($e)[] | .t] end) as $mine
      | [$rpcs[] | select((.local | not) and .name == "RPCA_PlayRemove" and (.t as $t | $mine | index($t) | not))
-        | .t as $t | "\(.args[0].s // "?") in \([$bcps[] | select(.t >= $t) | .name] | first // "the end")"] as $stray
-     | if $stray == [] then empty else "INFO B saw \($stray | length) emote(s) from A outside the emote step: \($stray | join(", "))" end),
+        | .t as $t | {emote: (.args[0].s // "?"), step: ([$bcps[] | select(.t >= $t) | .name] | first // "the end")}] as $stray
+     | if $stray == [] then empty else
+         "INFO B saw \($stray | length) emote(s) from A outside the emote step: \($stray | map("\(.emote) in \(.step)") | join(", "))",
+         # Its fist is a reach past the thumbs-up limit (#146): no emote here is ever meant.
+         ($stray | map(select(.step == "vr.422-reach-out-idle") | .emote) as $reach
+          | if $reach == [] then empty else "FAIL vr.422-reach-out-idle: the reach played \($reach | join(", ")) for every peer" end)
+       end),
     ([$a[] | select(.status == "skip") | .name] as $sk
      | if $sk == [] then empty else "INFO \($sk | length) of \($a | length) checkpoints skipped: \($sk | join(", "))" end),
     (if $sum.saveSame == null then "FAIL B logged no quicksave fingerprints (observer without the progress guard?)"

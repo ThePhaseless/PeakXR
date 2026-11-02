@@ -57,6 +57,13 @@ public static class HandThrow
         );
     }
 
+    /// <summary>The charge a throw has to keep (the floor <see cref="Release"/> takes): a sticky item's
+    /// requirement, and for an item vanilla sends with no velocity (<paramref name="sentStill"/>, a backpack,
+    /// CharacterItems.cs:268-272) all of it. With none it only drops, and BackpackStabilizer reads a charge under 0.15 as
+    /// a drop too (#117).</summary>
+    public static float ChargeKept(bool sentStill, float charge, float stickyCharge) =>
+        sentStill ? charge : stickyCharge;
+
     /// <summary>
     /// The velocity to leave on the held item, and the charge to send, so a throw leaves at <paramref name="launch"/>.
     /// For any charge the master adds <paramref name="lookSpeed"/> along its own copy of the thrower's look

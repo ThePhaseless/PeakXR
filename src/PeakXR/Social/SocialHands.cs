@@ -22,7 +22,7 @@ internal sealed class SocialHands : IGripExtension
     public static readonly SocialHands Instance = new();
 
     /// <summary>How near (m) the held item's nearest point must come to a friend's head to feed them.</summary>
-    internal const float FeedRadius = 0.22f;
+    internal const float FeedRadius = HandOver.PlaceRadius;
 
     /// <summary>A friend already in the feed zone stays in it out to this (m): a squeeze meant to be outside the zone
     /// must be past this, not only past <see cref="FeedRadius"/>.</summary>
@@ -669,6 +669,10 @@ internal sealed class SocialHands : IGripExtension
 
     /// <summary>The friend this hand's reach-out has armed, or else picked; null none.</summary>
     internal Character ReachOutFriend(bool left) => reachOutChar[left ? 0 : 1];
+
+    /// <summary>This arm is stretched at a friend, ready to reach: the grip is meant for them, not for what it passes.</summary>
+    internal bool ReachOutArmed(bool left) =>
+        SocialConfig.Instance.ReachOut && !KickMode && reachPick[left ? 0 : 1].ArmedFriend >= 0;
 
     /// <summary>Why the game's reach would not catch <see cref="ReachOutFriend"/>, or None.</summary>
     internal DenyReason ReachOutWhy(bool left) => reachOutWhy[left ? 0 : 1];
@@ -1351,10 +1355,18 @@ internal sealed class SocialHands : IGripExtension
     /// Feed or heal as a hand-over (<see cref="HandOver"/>): a canUseOnFriend item held at another player's mouth, or a
     /// healing item on their torso, for the zone's dwell (<see cref="HandOver.DwellAt"/>), or the holding hand's
     /// trigger squeezed there, holds the game's use-on-friend (Item.StartUseSecondary, Item.cs:977, its cast and ring)
-    /// while it stays. Passing close never spends one (external review row 9): the item has to rest there, and at the
-    /// mouth the feeder must stand nearly still for the dwell (#93: walking up with food at chest height fed them). A teal ring marks the
-    /// mouth or chest while in range and through the cast. An item they cannot take is refused at the mouth after the
-    /// dwell or on the squeeze (CharacterInteractible.HasItemCanUseOnFriend, :90), and so is a bot (:128).
+    /// while it stays. Passing close never spends one (external review row 9): the item has to rest there and would be
+    /// there at its controller-held place too (<see cref="FeedZone.PlaceGap"/>), the feeder, the friend and the feeder's
+    /// hand must be nearly still for the dwell (#93: walking up with food at chest height fed them; #119: a friend's body
+    /// held the food on them with the controller 0.63 m off; #147: a hand on its way to the belt healed whoever stood
+    /// close), and your own slot or pack in reach wins, unless the trigger says otherwise. A friend's copy has a live velocity: their own client's <c>averageVelocity</c> arrives in every sync package
+    /// (CharacterSyncer.cs:116-117) and their ragdoll simulates here between them (CharacterMovement.cs:295, :683-697). A
+    /// teal ring marks the mouth or chest while in range and through the cast. An item they cannot take is refused at
+    /// the mouth after the dwell or on the squeeze (CharacterInteractible.HasItemCanUseOnFriend, :90), and so is a bot (:128).
+    /// Rested just short of the zone (<see cref="NearFriendRadius"/>), the ring comes too, or the refusal with the view on
+    /// them (#112), and a refused item resting there or at the mouth keeps a silent red ring at the item, so it is never
+    /// left with nothing, while a squeeze at the mouth refuses again in full. A
+    /// friend's body holding the item off the spot its controller has reached counts as there.
     /// </summary>
     private bool UpdateFeed(Character c, float dt)
     {
@@ -1373,27 +1385,46 @@ internal sealed class SocialHands : IGripExtension
                 : BodypartType.Head;
         float grow = part == BodypartType.Torso ? 0.08f : 0f;
         var box = ItemBounds(item);
-        var near = NearestPart(c, part, box, NearFriendRadius + grow);
-        nearFriendMouth = near != null;
-        nearFriendSpot = near != null ? PartPosition(near, part, point) : null;
+        // Out to the near band's exit: a wobble over its edge is the same visit (HandOver.NearExitMargin).
+        var near = NearestPart(c, part, box, NearFriendRadius + HandOver.NearExitMargin + grow);
+        var nearSpot = near != null ? PartPosition(near, part, point) : point;
+        float nearGap = near != null ? Gap(box, nearSpot) - grow : float.PositiveInfinity;
+        nearFriendMouth = nearGap <= NearFriendRadius;
+        nearFriendSpot = nearFriendMouth ? nearSpot : null;
         // The friend being fed stays the target through a short wobble out of the zone (HandOver.Grace).
         var friend = feedCandidate;
         if (
             friend != null
             && (
                 !friend.gameObject.activeInHierarchy
-                || !NearPart(friend, part, box, FeedExitRadius + grow)
+                || (
+                    !NearPart(friend, part, box, FeedExitRadius + grow)
+                    && !HeldOffAtSpot(c, friend, item, box, part, point, grow)
+                )
             )
         )
             feedCandidate = null;
         if (feedCandidate == null)
             feedCandidate = NearestPart(c, part, box, FeedRadius + grow);
+        if (feedCandidate == null)
+        {
+            // The body keep does not let go here: it would snap the item inside them (#116, #119). It counts instead.
+            var driver = Avatar.AvatarPoseDriver.Of(c);
+            var body = driver != null ? driver.HeldBackBody : null;
+            if (body != null && HeldOffAtSpot(c, body, item, box, part, point, grow))
+                feedCandidate = body;
+        }
         bool inZone = feedCandidate != null;
         var who = inZone ? feedCandidate : friend;
+        // Rested just short of the zone it still says something (#112).
         if (who == null || !who.gameObject.activeInHierarchy)
+            who = near;
+        if (who == null)
         {
             handOver.Reset();
             atFriendMouth = false;
+            feedLogged = false;
+            FeedState = HandOverState.None;
             return false;
         }
         bool left = LocalHold.ItemInLeftHand;
@@ -1402,22 +1433,39 @@ internal sealed class SocialHands : IGripExtension
         atFriendMouth = inZone && !usable;
         // Food held at their mouth feeds as at your own, a bandage on their chest as on your own body.
         handOver.Dwell = HandOver.DwellAt(chest: part == BodypartType.Torso);
-        var v = c.data.avarageVelocity;
-        // Food fed by the mouth dwell only when the feeder stands nearly still (#93): never on the walk up.
-        bool still = part == BodypartType.Torso || HandOver.Still(new Vector2(v.x, v.z).magnitude);
+        var spot = PartPosition(who, part, point);
+        float feederSpeed = LevelSpeed(c);
+        float friendSpeed = LevelSpeed(who);
+        float placeGap = PlaceGap(c, item, box, spot);
+        bool trigger = VRInput.Hand(left).Trigger > HandOverTrigger;
+        bool putAway = !trigger && Inventory.BodyInventory.Instance.TakesHeld(c, left);
+        var eye = VRRig.Instance != null ? VRRig.Instance.Head : null;
+        bool looking =
+            eye != null
+            && Vector3.Angle(eye.forward, spot - eye.position) <= HandOver.NearLookDegrees;
+        // Your own slot ends a use on a friend now, not after the grace: the release there must not be refused as mid-use.
+        if (putAway)
+            handOver.EndZone();
         var state = handOver.Update(
-            inZone,
-            VRInput.Hand(left).Trigger > HandOverTrigger,
+            inZone && !putAway,
+            trigger,
             usable,
             item.CanUsePrimary(),
             dt,
-            still
+            // Never on the walk up, as a friend walks into it, or with the hand on its way somewhere (#93, #119, #147). A
+            // real nearGap, not an infinite one: that would end the near band's visit and repeat its refusal.
+            feedHand.Update(Interact.Physical.HeldGestures.RestPoint(left))
+                && !putAway
+                && HandOver.Still(feederSpeed, friendSpeed),
+            placeGap - grow,
+            nearGap,
+            looking
         );
+        FeedState = state;
         if (!inZone && state == HandOverState.Apply)
             feedCandidate = who;
         if (usable && (inZone || state == HandOverState.Apply))
             FeedTarget = who.refs.interactible;
-        var spot = PartPosition(who, part, point);
         switch (state)
         {
             case HandOverState.Hint:
@@ -1426,19 +1474,99 @@ internal sealed class SocialHands : IGripExtension
             case HandOverState.Refuse:
                 Affordance.Deny(left, point, DenyReason.CantUse, default, item);
                 return false;
+            case HandOverState.Refused:
+                Affordance.Hover(left, point, DenyReason.CantUse);
+                return false;
             case HandOverState.Apply:
                 // The friend stays marked while the game's feed cast fills its ring at the hand.
                 Affordance.Mark(left, spot, DenyReason.NeedsFriend, DenyHint.At(spot));
+                LogApplied(c, item, spot, left, placeGap, feederSpeed, friendSpeed);
                 return FeedTarget != null;
             default:
+                feedLogged = false;
                 return false;
         }
+    }
+
+    private bool feedLogged;
+
+    /// <summary>What the hand-over did this frame (self-test: the ring just short of the mouth, #112).</summary>
+    internal HandOverState FeedState { get; private set; }
+
+    /// <summary><paramref name="friend"/>'s body keeps the item in the hand with its controller at their mouth or chest
+    /// (<see cref="HandOver.HeldOffAtSpot"/>).</summary>
+    private static bool HeldOffAtSpot(
+        Character c,
+        Character friend,
+        Item item,
+        Bounds box,
+        BodypartType part,
+        Vector3 point,
+        float grow
+    )
+    {
+        var driver = Avatar.AvatarPoseDriver.Of(c);
+        return driver != null
+            && HandOver.HeldOffAtSpot(
+                ReferenceEquals(driver.HeldBackBody, friend),
+                PlaceGap(c, item, box, PartPosition(friend, part, point)) - grow
+            );
+    }
+
+    private static float LevelSpeed(Character ch)
+    {
+        var v = ch.data.avarageVelocity;
+        return new Vector2(v.x, v.z).magnitude;
+    }
+
+    /// <summary>The drawn item at its controller-held place from <paramref name="spot"/> (m,
+    /// <see cref="FeedZone.PlaceGap"/>); with no hand-carried pose, infinite: nothing says the player holds it there.</summary>
+    private static float PlaceGap(Character c, Item item, Bounds box, Vector3 spot)
+    {
+        var driver = Avatar.AvatarPoseDriver.Of(c);
+        return driver != null && driver.HeldItemGap >= 0f
+            ? FeedZone.PlaceGap(
+                box.center.N(),
+                box.extents.N(),
+                item.rig.position.N(),
+                driver.HeldItemPlace.N(),
+                spot.N()
+            )
+            : float.PositiveInfinity;
+    }
+
+    /// <summary><see cref="PlaceGap"/> for the local player's held <paramref name="item"/>. For the MP test.</summary>
+    internal static float FeedPlaceGap(Item item, Vector3 target) =>
+        PlaceGap(Character.localCharacter, item, Instance.ItemBounds(item), target);
+
+    /// <summary>Once per hand-over, as it applies: where the item is, how far it lags its controller, and the gates the
+    /// dwell read, which tells food held to the mouth from food a friend's body held there (#119).</summary>
+    private void LogApplied(
+        Character c,
+        Item item,
+        Vector3 spot,
+        bool left,
+        float placeGap,
+        float feederSpeed,
+        float friendSpeed
+    )
+    {
+        if (feedLogged)
+            return;
+        feedLogged = true;
+        var driver = Avatar.AvatarPoseDriver.Of(c);
+        Plugin.Log.LogInfo(
+            System.FormattableString.Invariant(
+                $"[interact.social] hand-over applies: {item.name} {FeedGap(item, spot):0.00} m from the spot, {(driver != null ? driver.HeldItemGap : -1f):0.00} m from its place on the controller, drawn at that place {placeGap:0.00} m from the spot, trigger {VRInput.Hand(left).Trigger:0.00}, feeder {feederSpeed:0.00} m/s, friend {friendSpeed:0.00} m/s"
+            )
+        );
     }
 
     /// <summary>Trigger value that counts as the hand-over squeeze.</summary>
     private const float HandOverTrigger = 0.6f;
 
     private readonly HandOver handOver = new();
+    private readonly HandStill feedHand = new();
 
     /// <summary>The hand-over owns the holding hand's trigger this frame (<see cref="HandOver.SuppressPrimary"/>).</summary>
     public bool HandOverOwnsTrigger => handOver.SuppressPrimary;
@@ -1478,7 +1606,7 @@ internal sealed class SocialHands : IGripExtension
     /// feed zone so a squeeze just off it still counts): the own-mouth eat refusal says "closer" at their mouth there.</summary>
     private bool nearFriendMouth;
 
-    internal const float NearFriendRadius = 0.45f;
+    internal const float NearFriendRadius = HandOver.NearPlaceRadius;
 
     private void ResetFeed()
     {
@@ -1487,6 +1615,8 @@ internal sealed class SocialHands : IGripExtension
         nearFriendSpot = null;
         feedCandidate = null;
         handOver.Reset();
+        feedLogged = false;
+        FeedState = HandOverState.None;
     }
 
     private static bool NearPart(Character ch, BodypartType part, Bounds box, float radius)

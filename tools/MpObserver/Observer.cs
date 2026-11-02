@@ -532,6 +532,8 @@ internal sealed partial class Observer : MonoBehaviour
                 return WearPack(c, out note);
             case MpRequest.SpawnItem:
                 return SpawnItem(line, out note);
+            case MpRequest.Ping:
+                return Ping(c, line, out note);
             default:
                 note = "unknown request";
                 return false;
@@ -566,6 +568,8 @@ internal sealed partial class Observer : MonoBehaviour
     {
         rpcCounts.TryGetValue(method, out int n);
         rpcCounts[method] = n + 1;
+        if (at is PointPinger pinger && args != null && args.Length > 0 && args[0] is Vector3 point)
+            StartCoroutine(PingProbeLine(pinger, point));
         var c = at != null ? at.GetComponentInParent<Character>() : null;
         if (c == null && at is Item item)
             c = item.holderCharacter;
@@ -926,16 +930,119 @@ internal sealed partial class Observer : MonoBehaviour
                 QueryTriggerInteraction.Ignore
             )
         )
-            at = hit.point + Vector3.up * 0.3f;
+            at = hit.point + Vector3.up * 0.15f;
         var go = PhotonNetwork.InstantiateItemRoom(prefab.gameObject.name, at, Quaternion.identity);
         if (go == null)
         {
             note = "spawning " + prefabName + " failed";
             return false;
         }
+        // Held still until picked up, as a level's own items lie: on a slope an Apple rolled 11.7 m off and the walk after
+        // it stopped short (#119), and an item sliding under the reach missed the grip (#100). Item.cs:1179.
+        go.GetComponent<Item>().SetKinematicNetworked(true, at, Quaternion.identity);
         note = "spawned " + prefabName + " in front of " + vr.characterName;
         return true;
     }
+
+    /// <summary>The RPC PointPinger.DoPing sends for a hit (PointPinger.cs:71), at the point A asked for: DoPing aims
+    /// through the screen, which nobody steers here.</summary>
+    static bool Ping(Character c, string line, out string note)
+    {
+        if (!MpRequest.TryReadPoint(line, out double x, out double y, out double z))
+        {
+            note = "no point to ping";
+            return false;
+        }
+        var at = new Vector3((float)x, (float)y, (float)z);
+        if (
+            !Physics.Raycast(
+                at + Vector3.up * 2f,
+                Vector3.down,
+                out var hit,
+                6f,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+        )
+        {
+            note = "no ground at the point to ping";
+            return false;
+        }
+        c.refs.view.RPC("ReceivePoint_Rpc", RpcTarget.All, hit.point, hit.normal);
+        note = "pinged";
+        return true;
+    }
+
+    /// <summary>What a received ping became on this client, one <c>ping-probe</c> line: the marker the RPC left
+    /// (PointPinger.pingInstance, :14) and whether it is drawn, read a few frames later (<c>isVisible</c> is set when a
+    /// camera culls). Same fields as PeakXR's Debug.PingProbe, for a vanilla B too. Read only.</summary>
+    IEnumerator PingProbeLine(PointPinger pinger, Vector3 point)
+    {
+        var who = pinger.character;
+        var viewer = Character.localCharacter;
+        var prefab =
+            pinger.pointPrefab != null ? pinger.pointPrefab.GetComponent<PointPing>() : null;
+        if (who == null || viewer == null || prefab == null)
+            yield break;
+        bool blocked = Physics.Linecast(who.Head, viewer.Head, HelperFunctions.terrainMapMask);
+        float distance = Vector3.Distance(who.Head, viewer.Head);
+        bool expected = PingVisibility.Shown(
+            distance,
+            blocked,
+            prefab.visibilityFullNoneNoLos.x,
+            prefab.visibilityFullNoneNoLos.y,
+            prefab.NoLosVisibilityMul
+        );
+        bool local = who.IsLocal;
+        yield return null;
+        var marker = PingInstance(pinger);
+        bool fresh = marker != null && (marker.transform.position - point).sqrMagnitude < 0.01f;
+        var ping = fresh ? marker.GetComponent<PointPing>() : null;
+        var rend = ping != null ? ping.renderer : null;
+        for (int i = 0; i < 5; i++)
+            yield return null;
+        var cam = Camera.main;
+        bool alive = rend != null && cam != null;
+        var at = alive ? rend.transform.position : point;
+        var view = alive ? cam.WorldToViewportPoint(at) : default;
+        Write(
+            new JsonLine()
+                .Str("type", "ping-probe")
+                .Num("t", Unix)
+                .Bool("local", local)
+                .Num("distance", distance)
+                .Bool("blocked", blocked)
+                .Bool("expected", expected)
+                .Bool("marker", fresh)
+                .Bool("rendererOn", alive && rend.enabled)
+                .Bool("layerSeen", alive && (cam.cullingMask & (1 << rend.gameObject.layer)) != 0)
+                .Num("scale", alive ? rend.transform.lossyScale.x : 0f)
+                .Bool("visible", alive && rend.isVisible)
+                .Bool(
+                    "inView",
+                    alive && view.z > 0f && view.x is >= 0f and <= 1f && view.y is >= 0f and <= 1f
+                )
+                .Bool(
+                    "clearLine",
+                    alive
+                        && !Physics.Linecast(
+                            cam.transform.position,
+                            at + Vector3.up * 0.3f,
+                            HelperFunctions.GetMask(HelperFunctions.LayerType.AllPhysical),
+                            QueryTriggerInteraction.Ignore
+                        )
+                )
+        );
+    }
+
+    /// <summary>Null, not a throw, when the game renames it: only the ping probe goes without it, never the observer.</summary>
+    static readonly System.Reflection.FieldInfo PingInstanceField = HarmonyLib.AccessTools.Field(
+        typeof(PointPinger),
+        "pingInstance"
+    );
+
+    static GameObject PingInstance(PointPinger pinger) =>
+        PingInstanceField != null ? PingInstanceField.GetValue(pinger) as GameObject : null;
 
     static IEnumerator WearSoon(Backpack pack, Character c)
     {

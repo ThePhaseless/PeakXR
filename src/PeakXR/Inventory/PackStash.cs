@@ -45,6 +45,9 @@ internal sealed class PackStash : IGripExtension
         public Character Wearer;
         public Vector3 At;
         public int Id;
+
+        /// <summary>Terrain before the pack's pivot (<see cref="Occluded"/>): pointed at, it says so (#144).</summary>
+        public bool Blocked;
     }
 
     private static readonly Pick NoPick = new() { Id = -1 };
@@ -111,6 +114,12 @@ internal sealed class PackStash : IGripExtension
 
     /// <summary>The holding hand is in a pack this frame (self-test).</summary>
     public bool Over { get; private set; }
+
+    /// <summary>The pack the hand is in takes the item, or will as soon as the item's own cast ends: a use under way
+    /// counts as no refusal here, or a use could never be carried into a pack (#147).</summary>
+    public bool WouldTake => Over && verdictPastCast == DenyReason.None;
+
+    private DenyReason verdictPastCast;
 
     public bool ClaimPress(in GripHookContext ctx) => false;
 
@@ -279,13 +288,14 @@ internal sealed class PackStash : IGripExtension
         walkBestAngle = float.MaxValue;
         walkRayId = -1;
         // shortcut: one ray against solid colliders; a worn pack with only trigger colliders falls back to its angle.
+        // Past the player's own arm, which the ray starts in; a friend's worn pack still counts and your own is no target.
         if (
-            Physics.Raycast(
+            HandAim.FirstHit(
+                c,
                 from,
                 dir,
-                out var hit,
                 PackDrop.PointSearch + 1f,
-                HelperFunctions.GetMask(HelperFunctions.LayerType.AllPhysical),
+                out var hit,
                 QueryTriggerInteraction.Ignore
             )
         )
@@ -372,10 +382,19 @@ internal sealed class PackStash : IGripExtension
         // The pack the ray hits is the pick whatever its centre's angle (a big pack seen close).
         bool onRay = ReferenceEquals(rayTarget, target);
         float angle = onRay ? 0f : ReachOut.AimDegrees(from.N(), (from + dir).N(), pick.At.N());
-        if (angle > PackDrop.PointHold || (!onRay && Occluded(from, pick.At, target)))
+        if (angle > PackDrop.PointHold)
             return;
-        // All in range: the aim picks, never the distance (OutOfReach shows on the aimed pack).
-        t.Offer(pick.Id, angle, true);
+        // The aim picks, never the distance (OutOfReach shows on the aimed pack); a pack with the way open beats one
+        // behind rock, which still takes the pick when it is the only one, so the hand hears why (#144). Only a pack the
+        // eye can see, by its pivot or its top: a red ring for a pack hidden behind a wall says nothing a player can use.
+        pick.Blocked = !onRay && Occluded(from, pick.At, target);
+        if (
+            pick.Blocked
+            && Occluded(eye, pick.At, target)
+            && Occluded(eye, pick.At + Vector3.up * PackTopRise, target)
+        )
+            return;
+        t.Offer(pick.Id, angle, !pick.Blocked);
         if (onRay)
             walkRayId = pick.Id;
         if (pick.Id == t.Friend)
@@ -386,6 +405,10 @@ internal sealed class PackStash : IGripExtension
             walkBest = pick;
         }
     }
+
+    /// <summary>A pack's top above its pivot (m): under the Backpack box's 0.45 m from centre to top
+    /// (Core <see cref="ItemDrawnBox"/>), so it stays on the pack as it lies or is worn.</summary>
+    internal const float PackTopRise = 0.4f;
 
     /// <summary>Vanilla's occlusion test (Interaction.cs:257): terrain or map between, unless the hit is the pack.</summary>
     private static bool Occluded(Vector3 from, Vector3 to, IInteractible target)
@@ -410,7 +433,8 @@ internal sealed class PackStash : IGripExtension
         packAt = p.At;
         return PackDrop.PointRefusal(
             Vector3.Distance(c.Head, packAt),
-            Refusal(c, c.data.currentItem, packAt, out _)
+            Refusal(c, c.data.currentItem, packAt, out _),
+            p.Blocked
         );
     }
 
@@ -589,10 +613,18 @@ internal sealed class PackStash : IGripExtension
             !fromBehind ? Behind(visuals.transform)
             : spotted && pocket >= 0 ? PocketSpots[pocket]
             : packAt;
+        bool canBackpack = held.UIData.canBackpack && selected.IsSome;
+        verdictPastCast = PackDrop.Refusal(
+            BodyInventory.SwitchBlockedBeyondCast(c),
+            DenyReason.CantSwitch,
+            canBackpack,
+            pocket,
+            fromBehind
+        );
         return PackDrop.Refusal(
             blocked,
             blocked ? BodyInventory.BlockReason(c) : DenyReason.None,
-            held.UIData.canBackpack && selected.IsSome,
+            canBackpack,
             pocket,
             fromBehind
         );

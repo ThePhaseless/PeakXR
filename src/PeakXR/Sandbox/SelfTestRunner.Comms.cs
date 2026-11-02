@@ -42,6 +42,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.123-ping-dotted", 20f, PingDottedStep());
         yield return HandStep("vr.124-button-ping-preview", 25f, ButtonPingPreviewStep());
         yield return HandStep("vr.461-point-squeeze-no-ping", 20f, PointSqueezeNoPingStep());
+        yield return HandStep("vr.462-empty-drop-cue", 15f, EmptyDropCueStep());
         yield return HandStep("vr.448-ping-aim-open-point", 25f, PingAimOpenPointStep());
         // ---- WP6 gap round: wheels
         yield return WheelGapSteps();
@@ -252,6 +253,78 @@ internal sealed partial class SelfTestRunner
             Fail("pointing and squeezing the trigger still pings: " + note);
         else
             stepNote = note;
+    }
+
+    /// <summary>
+    /// vr.462 (#130): a tap on the drop button with nothing in hand. The game ignores it (CharacterItems.cs:259), and
+    /// it is the same button as the other hand's ping, so it gets NothingHeld at that hand, and no ping goes out. An
+    /// item with <c>UIData.canDrop</c> off gets CantDrop and stays in the hand.
+    /// </summary>
+    IEnumerator EmptyDropCueStep()
+    {
+        ClearStrayItems();
+        var pinger = LocalPinger();
+        if (pinger == null || PingInput.LastPinged == null)
+        {
+            stepSkip = "no PointPinger or interact.ping not installed";
+            yield break;
+        }
+        if (HeldItem() != null)
+        {
+            stepSkip = "a hand holds something";
+            yield break;
+        }
+        if (
+            !ButtonName.TryParse(
+                Interact.InteractConfig.Instance.DropButton,
+                VRInput.LeftHanded,
+                out bool left,
+                out var control
+            )
+            || control != VRControl.Secondary
+        )
+        {
+            stepSkip = "Interaction.DropButton is not an upper button";
+            yield break;
+        }
+        yield return PingCooldownOver(pinger);
+        float before = PingInput.LastPinged(pinger);
+        Affordance.ResetGate();
+        LookAtHand(left);
+        yield return Wait(0.3f);
+        float mark = CueMark();
+        yield return TapDrop();
+        yield return ExpectCue(left, DenyReason.NothingHeld, mark);
+        EndGlance();
+        if (stepOk && PingInput.LastPinged(pinger) != before)
+            Fail("the tap on the drop button pinged");
+        if (!stepOk)
+            yield break;
+        string emptyNote = cueNote;
+        // An item the game will not drop: said too, and still in the hand. No stock item is known to have it off.
+        yield return GiveAndHold(FindItem(SandboxActions.Items, AppleFragment));
+        if (!stepOk)
+            yield break;
+        var kept = HeldItem();
+        bool hold = LocalHold.ItemInLeftHand;
+        kept.UIData.canDrop = false;
+        try
+        {
+            Affordance.ResetGate();
+            mark = CueMark();
+            yield return TapDrop();
+            yield return ExpectCue(hold, DenyReason.CantDrop, mark, tint: true);
+        }
+        finally
+        {
+            if (kept != null)
+                kept.UIData.canDrop = true;
+        }
+        if (stepOk && HeldItem() != kept)
+            Fail("the item the game keeps left the hand: " + cueNote);
+        else if (stepOk)
+            stepNote = emptyNote + "; an item the game keeps: " + cueNote;
+        yield return DropHeld();
     }
 
     /// <summary>
@@ -771,8 +844,8 @@ internal sealed partial class SelfTestRunner
         yield return ButtonAim(left, aim, 0.5f);
         bool shown = PingPreview.DotShown && !PingPreview.DotRed;
         float off = Vector3.Distance(PingPreview.DotPosition, aim);
-        yield return ShotAt("vr-110-ping", aim);
         Affordance.ResetGate();
+        Diagnostics.PingProbe.Last = null;
         float mark = CueMark();
         float gameMark = Time.time;
         var oldMarker = PingMarker(pinger);
@@ -785,6 +858,10 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         var landing = PingLanding(pinger, oldMarker, aim, left, out float landed);
+        // While the marker is up (2 s, PointPinger.cs:104): #130 had never seen one drawn.
+        yield return ShotAt("vr-110-ping", aim);
+        yield return WaitFor(() => Diagnostics.PingProbe.Last != null, 0.5f);
+        string drawn = Diagnostics.PingProbe.Last?.Line ?? "probe wrote nothing";
         yield return ExpectFeel(left, CueFeel.Contact, mark);
         string feel = cueNote;
         yield return ExpectNoCue(left, mark, 0.5f);
@@ -801,7 +878,7 @@ internal sealed partial class SelfTestRunner
             Fail($"the ping tap picked up {held.name} instead of only pinging");
         else
             stepNote =
-                $"preview dot {off:0.00} m from the aim, ping marker {landed:0.00} m; {feel}";
+                $"preview dot {off:0.00} m from the aim, ping marker {landed:0.00} m; {feel}; {drawn}";
     }
 
     /// <summary>

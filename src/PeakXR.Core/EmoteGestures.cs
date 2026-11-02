@@ -39,6 +39,31 @@ public static class EmoteGestures
     /// <summary>How long the pose is held before the emote plays.</summary>
     public const float ThumbDwell = 0.6f;
 
+    /// <summary>...at most this much of the arm out (shoulder to hand, against the measured arm, never under the
+    /// nominal one): past it a still fist is a reach (#146). Fixed, whatever the reach-out's own settings: a limit on
+    /// them closed the window, and a fist past it lost the pose and pressed interact at once (#82).</summary>
+    public const float ThumbMaxStretch = 0.9f;
+
+    /// <summary>Past this much of the arm the hold is <see cref="ThumbFarDwell"/>: a fist stalled mid-reach goes to
+    /// every peer, and a real thumbs-up there can take the wait.</summary>
+    public const float ThumbFarStretch = 0.75f;
+
+    /// <summary>Under <see cref="GripIntent.GestureMaxWait"/>, or the fist's interact comes due first.</summary>
+    public const float ThumbFarDwell = 1f;
+
+    /// <summary>How long the pose is held at <paramref name="stretch"/> of the arm before the emote plays.</summary>
+    public static float ThumbDwellAt(float stretch) =>
+        stretch > ThumbFarStretch ? ThumbFarDwell : ThumbDwell;
+
+    /// <summary>A thumbs-up lifts the thumb: it was on a button at most this long ago (s), which covers raising the fist
+    /// and the longer dwell. A fist in the same place whose thumb has long been off is a reach that stopped, and a false
+    /// emote goes to every peer (#146).</summary>
+    public const float ThumbLiftWindow = 2.5f;
+
+    /// <summary>The thumb came off a button <paramref name="sinceTouch"/> seconds ago, recently enough to mean it. Never
+    /// on a controller that has reported no thumb touch: without the sensor every fist reads as a lifted thumb.</summary>
+    public static bool ThumbJustLifted(float sinceTouch) => sinceTouch <= ThumbLiftWindow;
+
     /// <summary>
     /// The body is doing something with its hands (climbing, on a rope or vine, carrying a friend, a grip that took or
     /// started something, struggling free of a web or fly trap): any hand pose now is part of that, not an emote.
@@ -60,31 +85,35 @@ public static class EmoteGestures
         midGrab || atRock || climbRing || grabGlow;
 
     /// <summary>
-    /// A deliberate thumbs-up this frame: the <see cref="ThumbsUp"/> pose, on a controller that reports thumb touch
-    /// (<paramref name="thumbSensed"/>; without the sensor every fist reads as a lifted thumb), no item held, the body
+    /// A deliberate thumbs-up this frame: the <see cref="ThumbsUp"/> pose with a thumb that just came off a button
+    /// (<paramref name="thumbJustLifted"/>, <see cref="ThumbJustLifted"/>), no item held, the body
     /// not <see cref="Busy"/>, the hand held out in front (<paramref name="forward"/> metres ahead of the eyes,
-    /// <paramref name="belowEyes"/> metres under them) and still (<paramref name="speed"/> m/s).
+    /// <paramref name="belowEyes"/> metres under them, <paramref name="stretch"/> of the arm,
+    /// <see cref="ThumbOutFront"/>) and still (<paramref name="speed"/> m/s).
     /// </summary>
     public static bool ThumbIntent(
         bool pose,
-        bool thumbSensed,
+        bool thumbJustLifted,
         bool holdingItem,
         bool busy,
         float forward,
         float belowEyes,
-        float speed
+        float speed,
+        float stretch
     ) =>
         pose
-        && thumbSensed
+        && thumbJustLifted
         && !holdingItem
         && !busy
-        && ThumbOutFront(forward, belowEyes)
+        && ThumbOutFront(forward, belowEyes, stretch)
         && speed <= StillSpeed;
 
     /// <summary>Where a thumbs-up is held: <paramref name="forward"/> metres ahead of the eyes (flat) and
-    /// <paramref name="belowEyes"/> metres under them, out in front at chest height or above.</summary>
-    public static bool ThumbOutFront(float forward, float belowEyes) =>
-        forward >= ThumbReach && belowEyes <= ThumbDrop;
+    /// <paramref name="belowEyes"/> metres under them, out in front at chest height or above, and no further out than
+    /// <see cref="ThumbMaxStretch"/> of the arm. A reach's neutral wrist has the thumb side up and a thumb that is off
+    /// the buttons reads as lifted, so a false one goes to every peer (#146).</summary>
+    public static bool ThumbOutFront(float forward, float belowEyes, float stretch) =>
+        forward >= ThumbReach && belowEyes <= ThumbDrop && stretch <= ThumbMaxStretch;
 
     /// <summary>
     /// Why the game will not open the emote wheel (GUIManager.UpdateEmoteWheel, A/GUIManager.cs:561-569, and

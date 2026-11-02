@@ -132,7 +132,8 @@ internal static class PhysicalInteraction
     private static readonly ButtonEdge PrimaryEdge = new();
     private static readonly ButtonEdge SecondaryEdge = new();
     private static readonly ButtonEdge DropEdge = new();
-    private static readonly MouthGesture Mouth = new();
+    private static readonly MouthGesture Mouth = new() { DwellTime = 0f };
+    private static readonly SelfUseDwell MouthUse = new() { Dwell = SelfUseDwell.MouthDwell };
     private static readonly ArmLocomotion Arms = new();
     private static readonly ClimbDebt Debt = new();
 
@@ -383,11 +384,14 @@ internal static class PhysicalInteraction
         EndAction(LeftHand, GripPressAction.SecondHand);
         EndAction(RightHand, GripPressAction.SecondHand);
         Mouth.Reset();
+        MouthUse.Reset();
         dropPending = false;
         if (item != null)
         {
             LocalHold.ItemInLeftHand =
                 now - pendingTime < PendingSeconds ? pendingLeft : VRInput.LeftHanded;
+            // Here, not in HeldGestures.Tick: that ran earlier this frame, with the hand the last item was in (#147).
+            Physical.HeldGestures.Arrive(LocalHold.ItemInLeftHand);
             var into = LocalHold.ItemInLeftHand ? LeftHand : RightHand;
             bool grabbed = into.Target is Item wanted && SameInstance(wanted, item);
             into.Armed = ReleaseArming.OnArrive(into.Grip.Held, into.Action, grabbed);
@@ -600,17 +604,7 @@ internal static class PhysicalInteraction
         if (aim == null || cam == null || interaction == null)
             return AimedTarget.None;
         float reach = interaction.distance - Vector3.Distance(cam.transform.position, aim.position);
-        if (
-            reach <= 0f
-            || !Physics.Raycast(
-                aim.position,
-                aim.forward,
-                out var hit,
-                reach,
-                HelperFunctions.GetMask(HelperFunctions.LayerType.AllPhysical),
-                QueryTriggerInteraction.Collide
-            )
-        )
+        if (reach <= 0f || !HandAim.FirstHit(c, aim.position, aim.forward, reach, out var hit))
             return AimedTarget.None;
         var target = hit.collider.GetComponentInParent<IInteractible>();
         var kind = Classify(target, c);
@@ -786,6 +780,7 @@ internal static class PhysicalInteraction
         ctx.Aimed = AimedAt(hand.Left, ctx.Pointing, rig, c, cfg, out var aimedTarget);
         // Right at the held item's second grip, within the grab radius: the one place a pointing hand still joins it.
         ctx.AtSecondGripTight = holding && !thisHolds && AtSecondGrip(pos, cfg.GrabRadius);
+        ctx.ReachingOut = !thisHolds && Social.SocialHands.Instance.ReachOutArmed(hand.Left);
         if (cfg.PhysicalClimb)
         {
             d.Hold = ProbeHold(c, rig, pos, t, cfg, d.Held);
@@ -1061,6 +1056,16 @@ internal static class PhysicalInteraction
     {
         var other = Other(hand);
         var interaction = Interaction.instance;
+        // A grab the game already took (the other hand's rope) keeps interact down while its grip stays closed, and the
+        // game takes a press only after interact was up (Interaction.cs:109-124): up for a frame, or this grab is lost.
+        if (
+            other.Action == GripPressAction.GrabInteractible
+            && (interaction == null || interaction.currentHeldInteractible == null)
+        )
+        {
+            interactGap = true;
+            return;
+        }
         if (
             other.Action != GripPressAction.Interact
             || (interaction != null && interaction.currentHeldInteractible != null)
@@ -1084,9 +1089,14 @@ internal static class PhysicalInteraction
             return;
         foreach (var hand in Hands)
         {
-            if (hand.Action != GripPressAction.Interact || !hand.Injected)
+            if (!hand.Injected)
                 continue;
-            hand.Target = item;
+            // A posed tap (TapPending) presses with the grip already open: no grab to hand over, but the item still
+            // goes to the hand that tapped (#141).
+            if (hand.Action == GripPressAction.Interact)
+                hand.Target = item;
+            else if (hand.Action != GripPressAction.None)
+                continue;
             pendingLeft = hand.Left;
             pendingTime = Time.time;
             return;
@@ -1484,6 +1494,18 @@ internal static class PhysicalInteraction
                     action != GripPressAction.Extension && !throws && GripHooks.HeldRelease(hook),
                     hand.Armed
                 );
+                if (
+                    result == GripReleaseAction.Keep
+                    && GripIntent.DropRefused(
+                        item.UIData.canDrop,
+                        hand.Armed,
+                        handVelocity.magnitude,
+                        cfg.ThrowSpeed,
+                        cfg.PhysicalThrow,
+                        cfg.ReleaseToDrop
+                    )
+                )
+                    Affordance.DenyAtHand(hand.Left, DenyReason.CantDrop, default, item);
                 // Mid-cast the game keeps the item (CharacterItems.DoDropping, CharacterItems.cs:254-258). A fist's
                 // trigger squeezed after the pickup landed starts the item's use, and opening the fist ends that cast
                 // on the game's next use read (:209-212), a frame after this release was refused as too soon: it waits
@@ -1587,6 +1609,50 @@ internal static class PhysicalInteraction
             dropPending = true;
             releaseDropAt = Time.time;
         }
+    }
+
+    /// <summary>A drop the game ignores (CharacterItems.cs:259): an item it keeps says so. With nothing in hand the
+    /// button shares the upper row with the ping on the other hand, so a player pinging with the wrong hand hears why
+    /// and sees where (#130); not where that is untrue, nor in the credits, whose skip takes any button
+    /// (<see cref="UI.RunFlow.RunFlowRuntime"/>).</summary>
+    private static void CueIgnoredDrop(Character c, VRRig rig, InteractConfig cfg)
+    {
+        var held = c.data.currentItem;
+        if (held != null)
+        {
+            if (!held.UIData.canDrop)
+                Affordance.DenyAtHand(LocalHold.ItemInLeftHand, DenyReason.CantDrop, default, held);
+            return;
+        }
+        if (
+            !UI.RunFlow.RunFlowRuntime.CreditsWaiting
+            && !Ping.PingConfig.Instance.PingButtonDown()
+            && ButtonName.TryParse(
+                cfg.DropButton,
+                VRInput.LeftHanded,
+                out bool dropLeft,
+                out var drop
+            )
+            && ControllerLabels.ForAction(
+                VRAction.Ping,
+                VRInput.LeftHanded,
+                LocalHold.ItemInLeftHand,
+                out bool pingLeft,
+                out _
+            )
+            && PingRules.EmptyDropNamesPing(
+                drop,
+                dropLeft,
+                pingLeft,
+                c.data.isClimbingAnything,
+                c.data.carriedPlayer != null
+            )
+        )
+            Affordance.DenyAtHand(
+                dropLeft,
+                DenyReason.NothingHeld,
+                DenyHint.On(rig.Hand(!dropLeft))
+            );
     }
 
     private static Hand Other(Hand hand) => hand.Left ? RightHand : LeftHand;
@@ -1868,9 +1934,12 @@ internal static class PhysicalInteraction
     private static readonly System.Collections.Generic.List<Collider> SunkColliders = new();
 
     /// <summary>The hovered interactible (Interaction.cs:15, :95) when the hand is inside, or within the grab radius of,
-    /// the bounds of one of its enabled solid concave mesh colliders. Nothing stops a tracked hand going into a case, and an overlap
-    /// sphere inside a concave mesh's hollow meets no triangle (VR runs 75 and 77's vr.82b: grip "Interact on nothing"
-    /// with LuggageAncient hovered). Only the hovered one, which the game's own ray found, so nothing behind a wall.</summary>
+    /// the bounds of one of its enabled solid concave mesh colliders, or of a case's own box (<see cref="CaseBox"/>).
+    /// Nothing stops a tracked hand going into a case, and an overlap sphere in its hollow meets nothing: no triangle of
+    /// a concave mesh (VR runs 75 and 77's vr.82b: grip "Interact on nothing" with LuggageAncient hovered), no thin wall
+    /// of a box-built case (LuggageClown, Big, Epic, Small, Trick: #54). Only the hovered one, which the game's own ray
+    /// found. The revival statue (RespawnChest.cs:6) is a Luggage but no case: it is solid (a convex mesh on every instance),
+    /// and a grip taking it from thin air holds its cast at 0 with no cue (<see cref="StatueTouch.HoldsAtZero"/>).</summary>
     private static IInteractible SunkInto(Character c, Vector3 pos, float radius)
     {
         var interaction = Interaction.instance;
@@ -1885,23 +1954,55 @@ internal static class PhysicalInteraction
             return null;
         comp.GetComponentsInChildren(false, SunkColliders);
         IInteractible found = null;
+        bool hollow = it is Luggage and not RespawnChest;
+        var root = comp.transform;
+        var box = default(CaseBox);
         foreach (var col in SunkColliders)
         {
-            // Only a concave mesh: the overlap sphere already finds a hand inside or at any primitive or convex
+            if (!col.enabled || col.isTrigger)
+                continue;
+            if (hollow)
+                AddToCase(ref box, root, col);
+            // A concave mesh: the overlap sphere already finds a hand inside or at any other primitive or convex
             // collider, and a box around those reached well past the item's shape.
-            if (
-                col.enabled
-                && !col.isTrigger
-                && !ExactShape(col)
-                && col.bounds.SqrDistance(pos) <= radius * radius
-            )
+            else if (!ExactShape(col) && col.bounds.SqrDistance(pos) <= radius * radius)
             {
                 found = it;
                 break;
             }
         }
+        if (hollow && box.Within(root.InverseTransformPoint(pos).N(), radius))
+            found = it;
         SunkColliders.Clear();
         return found;
+    }
+
+    /// <summary>Grows <paramref name="box"/>, in <paramref name="root"/>'s frame, round a box or a mesh's bounds. Every
+    /// case prefab and instance has world scale 1, so the frame is in metres, and only those two collider types.</summary>
+    internal static void AddToCase(ref CaseBox box, Transform root, Collider col)
+    {
+        Vector3 centre,
+            half;
+        switch (col)
+        {
+            case BoxCollider b:
+                centre = b.center;
+                half = b.size * 0.5f;
+                break;
+            case MeshCollider { sharedMesh: { } mesh }:
+                centre = mesh.bounds.center;
+                half = mesh.bounds.extents;
+                break;
+            default:
+                return;
+        }
+        var t = col.transform;
+        box.Add(
+            root.InverseTransformPoint(t.TransformPoint(centre)).N(),
+            root.InverseTransformVector(t.TransformVector(half.x, 0f, 0f)).N(),
+            root.InverseTransformVector(t.TransformVector(0f, half.y, 0f)).N(),
+            root.InverseTransformVector(t.TransformVector(0f, 0f, half.z)).N()
+        );
     }
 
     /// <summary>The last grab search's interactible colliders in reach, and how many of them the eye could not see
@@ -2502,6 +2603,34 @@ internal static class PhysicalInteraction
         Arms.Reset();
     }
 
+    /// <summary>Climbs the game ended with no mantle, stamina left and the body under control: the rock itself let go
+    /// (self-test: <c>climb</c> moves on from such a wall, #60).</summary>
+    internal static int GameLetGoCount { get; private set; }
+
+    /// <summary>SampleWall's casts, in its order (CharacterClimbing.cs:413-436): the ray to just off the sample, the ray
+    /// through it, then spheres of 0.1 to 0.4 m. For the log only.</summary>
+    private static RaycastHit NextClimbSample(Vector3 climbPos, Vector3 normal)
+    {
+        var at = climbPos + Vector3.ProjectOnPlane(Vector3.up, normal).normalized * 0.05f;
+        var from = climbPos + normal * 0.4f;
+        var through = at - normal;
+        var hit = HelperFunctions.LineCheck(
+            from,
+            at + normal * 0.5f,
+            HelperFunctions.LayerType.TerrainMap
+        );
+        if (!hit.transform)
+            hit = HelperFunctions.LineCheck(from, through, HelperFunctions.LayerType.TerrainMap);
+        for (int i = 1; i <= 4 && !hit.transform; i++)
+            hit = HelperFunctions.LineCheck(
+                from,
+                through,
+                HelperFunctions.LayerType.TerrainMap,
+                0.1f * i
+            );
+        return hit;
+    }
+
     private static void UpdateClimb(Character c, VRRig rig, InteractConfig cfg, float dt, float now)
     {
         ConfirmLunge(c, rig, cfg, now);
@@ -2531,9 +2660,19 @@ internal static class PhysicalInteraction
             )
                 ? Vector3.Angle(above.normal, Vector3.up)
                 : -1f;
+            // What the game's own sample finds a little up the wall from its last accepted climb point. Its requested
+            // spot came from the stick, so this names the likely facet, not the refused hit (#60).
+            var next = NextClimbSample(c.data.climbPos, c.data.climbNormal);
+            string sample = next.transform
+                ? System.FormattableString.Invariant(
+                    $"{Vector3.Angle(next.normal, Vector3.up):0} deg from up on {next.collider.name}"
+                )
+                : "nothing";
+            if (!mantled && c.data.outOfStaminaFor <= 0f && c.data.currentRagdollControll >= 0.25f)
+                GameLetGoCount++;
             Plugin.Log.LogInfo(
                 System.FormattableString.Invariant(
-                    $"[interact.climb] climb ended by the game: grips L {LeftHand.Action}/{LeftHand.Grip.Held} R {RightHand.Action}/{RightHand.Grip.Held}, stick y {climbInput.y:0.00}, mantled {mantled}, since jump {c.data.sinceClimbJump:0.00} s, out of stamina {c.data.outOfStaminaFor:0.00} s, ragdoll control {c.data.currentRagdollControll:0.00}, grounded {c.data.isGrounded}, use released {c.input.usePrimaryWasReleased} (forced off while climbing), face 0.5 m up {faceAbove:0} deg from up"
+                    $"[interact.climb] climb ended by the game: grips L {LeftHand.Action}/{LeftHand.Grip.Held} R {RightHand.Action}/{RightHand.Grip.Held}, stick y {climbInput.y:0.00}, mantled {mantled}, since jump {c.data.sinceClimbJump:0.00} s, out of stamina {c.data.outOfStaminaFor:0.00} s, ragdoll control {c.data.currentRagdollControll:0.00}, grounded {c.data.isGrounded}, use released {c.input.usePrimaryWasReleased} (forced off while climbing), face 0.5 m up {faceAbove:0} deg from up, last normal {Vector3.Angle(c.data.climbNormal, Vector3.up):0} deg, next sample {sample}"
                 )
             );
             physicalClimb = false;
@@ -2972,8 +3111,10 @@ internal static class PhysicalInteraction
                     // lid (left came first and kept it). Never over a running hold interaction, which that would end.
                     if (pending && !heldInteraction)
                         GrabTarget = hand.Target;
-                    else
-                        GrabTarget ??= hand.Target;
+                    // A line a hand already took stops being interactible (RopeSegment.cs:49-56, JungleVine.cs:96-108), so
+                    // the other hand's next line is the target.
+                    else if (GrabTarget == null || !GrabTarget.IsInteractible(c))
+                        GrabTarget = hand.Target;
                     break;
                 case GripPressAction.Interact:
                     if (now < hand.InteractAt)
@@ -3080,7 +3221,7 @@ internal static class PhysicalInteraction
             && mouthHand != null
         )
         {
-            bool was = Mouth.Active;
+            bool was = MouthUse.Active;
             // The item carried by the tracked grip, not the physics item: the eye sits inside the holder's own head
             // collider (a 0.38 m sphere on the Character layer, which held items collide with), so the physics item
             // never gets near the mouth. The food itself, not the fist: the game's food is big (an apple 0.42 m
@@ -3092,20 +3233,27 @@ internal static class PhysicalInteraction
                 MouthGesture.MouthPoint(head.N(), rig.Head.rotation.N(), Mouth.MouthOffset).U(),
                 head
             );
-            atMouth = Mouth.Update(
-                head.N(),
-                rig.Head.rotation.N(),
-                RealScale
-                    .Real(
-                        Physical.ItemGestures.MouthContact(
-                            c.data.currentItem,
-                            mouthHand,
-                            primaryHand.Left,
-                            mouth
-                        ),
-                        head
-                    )
-                    .N(),
+            // Food carried past the mouth does not eat: the hand has to stop there, and a slot or pack that would take
+            // it wins (an apple is big enough to reach the mouth from the shoulder slot), #147.
+            atMouth = MouthUse.Update(
+                Physical.HeldGestures.RestPoint(primaryHand.Left),
+                Mouth.Update(
+                    head.N(),
+                    rig.Head.rotation.N(),
+                    RealScale
+                        .Real(
+                            Physical.ItemGestures.MouthContact(
+                                c.data.currentItem,
+                                mouthHand,
+                                primaryHand.Left,
+                                mouth
+                            ),
+                            head
+                        )
+                        .N(),
+                    dt
+                ),
+                Inventory.BodyInventory.Instance.TakesHeld(c, primaryHand.Left),
                 dt
             );
             if (atMouth && !was)
@@ -3114,6 +3262,7 @@ internal static class PhysicalInteraction
         else
         {
             Mouth.Reset();
+            MouthUse.Reset();
         }
         PrimaryEdge.Update(primaryDown || atMouth || Physical.GestureRequests.PrimaryHeld, dt);
         // An armed pack pick takes the free trigger's whole pull (#71); called every frame so its latch sees the release.
@@ -3195,6 +3344,8 @@ internal static class PhysicalInteraction
 
         // Drop: button fallback with the game's hold-to-charge, or a one-frame press+release from a hand release.
         DropEdge.Update(cfg.DropButtonDown(), dt);
+        if (DropEdge.Pressed)
+            CueIgnoredDrop(c, rig, cfg);
         input.dropWasPressed |= DropEdge.Pressed;
         input.dropIsPressed |= DropEdge.Held;
         input.dropWasReleased |= DropEdge.Released;

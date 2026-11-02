@@ -29,6 +29,16 @@ public enum PingAimHand : byte
 /// </summary>
 public static class PingRules
 {
+    /// <summary>The drop button with nothing in hand says "ping on the other hand" (#130) only where that is true: on
+    /// the upper button, with the ping on the other hand, and not while the hand is busy with something else.</summary>
+    public static bool EmptyDropNamesPing(
+        VRControl dropControl,
+        bool dropLeft,
+        bool pingLeft,
+        bool climbing,
+        bool carrying
+    ) => dropControl == VRControl.Secondary && dropLeft != pingLeft && !climbing && !carrying;
+
     public static PingVerdict Press(
         bool fullyConscious,
         float now,

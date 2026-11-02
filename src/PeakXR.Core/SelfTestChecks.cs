@@ -60,6 +60,18 @@ public static class SelfTestChecks
     public static float MaxThrowRange(float speed, float height, float gravity) =>
         speed / gravity * MathF.Sqrt(speed * speed + 2f * gravity * MathF.Max(0f, height));
 
+    /// <summary>The ground changes by <paramref name="rise"/> over <paramref name="run"/> m (level) in a way a body can
+    /// walk: up no steeper than the game's 50 degrees (CharacterMovement.cs:132), down no more than a short drop.</summary>
+    public static bool WalkableStep(float rise, float run) =>
+        rise <= run * WalkableSlope && rise >= -MaxWalkDrop;
+
+    const float WalkableSlope = 1.19f;
+    const float MaxWalkDrop = 1.5f;
+
+    /// <summary>A's torso stands <paramref name="over"/> m over a lip's ground, so A stands on that ground: the torso is
+    /// about 1 m over the feet. Under it is A at the foot of the face (#95); well above is A on something next to it.</summary>
+    public static bool OnLip(float over) => over is >= 0f and <= 1.4f;
+
     /// <summary>Fixed slack on every game duration (s): frame hitches, a network round trip, the step's own polls.</summary>
     public const float GameMargin = 1f;
 
