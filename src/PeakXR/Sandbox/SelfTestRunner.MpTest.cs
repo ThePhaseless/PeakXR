@@ -3476,6 +3476,9 @@ internal sealed partial class SelfTestRunner
         Face(visuals.transform.position);
         bool free = !LocalHold.ItemInLeftHand;
         yield return GripTo(!free, 1f, 0.1f);
+        // The fetch leaves the holding hand low and ahead, close enough to the pack's low transform to count as in it
+        // (PackStash.Reach), and a held item in a pack turns the free hand's point off (TickPoint; #144).
+        yield return CarryFoodBack(!free);
         PointAt(free, visuals.transform.position);
         yield return Until(
             () => Points(free, visuals, DenyReason.None),
@@ -3558,6 +3561,7 @@ internal sealed partial class SelfTestRunner
         yield return MpWalkBounded(() => front, 0.3f, MpPackWalkSeconds);
         Face(visuals.transform.position);
         free = !LocalHold.ItemInLeftHand;
+        yield return CarryFoodBack(!free);
         PointAt(free, visuals.transform.position);
         yield return Until(
             () => Points(free, visuals, DenyReason.WrongAngle),

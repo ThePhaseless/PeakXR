@@ -143,7 +143,7 @@ internal sealed partial class SelfTestRunner
     static string PointState()
     {
         var s = PackStash.Instance;
-        return $"point hand {s.PointHand}, pack {(s.PointPack != null ? s.PointPack.name : "none")}, verdict {s.PointVerdict}";
+        return $"point hand {s.PointHand}, pack {(s.PointPack != null ? s.PointPack.name : "none")}, verdict {s.PointVerdict}, holding hand over a pack {s.Over}";
     }
 
     /// <summary>The hovered slice is a pocket, not Wear or jetpack fuel. A pocket's <c>isStashSlice</c> stays false:
