@@ -194,6 +194,8 @@ internal sealed partial class SelfTestRunner
         if ((!r.Passed || r.Skipped) && HeldItem() != null)
             yield return Guard(TapDrop(), Now + 1f, _ => { });
         if (vr)
+            yield return HandClearOfBodies();
+        if (vr)
             yield return HoldingHandSettled();
         WriteCheckpoint(
             id,
@@ -451,6 +453,20 @@ internal sealed partial class SelfTestRunner
                     $"hand not settled after {Now - start:0.00} s (own bone {Gap():0.00} m off its tracked hand, off the weld {driver.HeldReleased})"
                 )
         );
+    }
+
+    /// <summary>A's held item pressed on someone's body keeps A's hand short of its controller (AvatarPoseDriver's body
+    /// keep), which only A's copy knows: B draws that hand from the tracked pose and its own copy of the item (#145: 0.39 m
+    /// apart with a Passport pressed on the host, 0.02 m at the other checkpoints). The checkpoint compares hands at
+    /// rest, so the hand comes back to the side first, and the note says it did.</summary>
+    IEnumerator HandClearOfBodies()
+    {
+        var c = Character.localCharacter;
+        var driver = c != null ? AvatarPoseDriver.Of(c) : null;
+        if (driver == null || c.data.currentItem == null || driver.HeldBackBody == null)
+            yield break;
+        Extra("kept", true);
+        yield return CarryFoodBack(driver.Pose.ItemInLeftHand);
     }
 
     void WriteCheckpoint(string id, string status, string note)
@@ -1154,6 +1170,18 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         yield return GrabWorld(item);
+        // A can rolls off under the reach (#100, vanilla B: 1.25 m down a 7 degree slope): a player reaches again.
+        if (!stepOk && OnGround(mpItem) is { } rolled)
+        {
+            string first = failNote;
+            stepOk = true;
+            failNote = null;
+            // A grip on air takes what the view aims at (#100).
+            yield return MpDropHeld();
+            yield return GrabWorld(rolled);
+            if (stepOk)
+                stepNote = "reached twice: the first reach said " + first;
+        }
         mpItem = HeldItem();
     }
 
@@ -1609,6 +1637,15 @@ internal sealed partial class SelfTestRunner
                     MpFeedHold
                 );
             float speed = HandScript.BandSpeed(d, bandLow, bandHigh);
+            // In the band but too near A's own mouth for a squeeze to be about the host's (vanilla B: 0.23 m of the 0.25 m
+            // it needs, the food 0.36 m from the host's): on through the band's near half, not back out of it.
+            if (
+                bandMark < 0f
+                && ownGap < PeakXR.Interact.Physical.HeldGestures.AwayFromMouth + 0.05f
+                && d > bandLow + 0.01f
+                && d < bandHigh
+            )
+                speed = 0.15f;
             SetHand(
                 left,
                 HandScript
