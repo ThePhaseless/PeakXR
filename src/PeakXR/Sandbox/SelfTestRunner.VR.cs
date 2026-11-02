@@ -419,6 +419,9 @@ internal sealed partial class SelfTestRunner
             else
                 stepNote = note;
         }
+        // Placed and readable by computation; now from the eye's own pixels.
+        if (root != null)
+            yield return PanelInEyes(root, "vr-04-settings-eye");
         yield return root != null
             ? ShotAt("vr-04-settings", CentreOf(root.transform))
             : Shot("vr-04-settings");
