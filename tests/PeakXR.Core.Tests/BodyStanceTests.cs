@@ -767,6 +767,44 @@ public class StanceWalkTests
         Assert.NotEqual(Vector2.Zero, Hold(w, new Vector2(0.075f, 0f), 0.2f));
     }
 
+    /// <summary>Seconds to the first request on a debt from 0.15 m growing at <paramref name="rate"/> (m/s) with the body
+    /// moving at <paramref name="velocity"/>; NaN if none comes in <paramref name="seconds"/>.</summary>
+    static float FirstRequest(float rate, Vector2 velocity, float seconds)
+    {
+        var w = new StanceWalk();
+        var debt = new Vector2(0.15f, 0f);
+        for (float t = 0f; t < seconds; t += Dt)
+        {
+            if (w.Update(debt, velocity, 0f, canWalk: true, Dt) != Vector2.Zero)
+                return t;
+            debt.X += rate * Dt;
+        }
+        return float.NaN;
+    }
+
+    [Fact]
+    public void ACreepingDebt_UnderAStillHead_WalksAtTheDelay()
+    {
+        // Run 23: a creep moved the debt 0.05 m in just under the delay, the hold-still test kept resetting and all three
+        // runaways walked only at AtOnce. The body's own travel leaves the view still.
+        float at = FirstRequest(0.05f, new Vector2(-0.05f, 0f), 3f);
+        Assert.True(at is >= 1.4f and <= 1.6f, $"first request at {at:0.00} s");
+    }
+
+    [Fact]
+    public void ABodyCarryingTheView_IsNotHeld()
+    {
+        float at = FirstRequest(0f, new Vector2(0.1f, 0f), 3f);
+        Assert.True(float.IsNaN(at), $"first request at {at:0.00} s");
+    }
+
+    [Fact]
+    public void ADebtMovingWithNoBodyTravel_KeepsWaiting()
+    {
+        float at = FirstRequest(0.05f, Vector2.Zero, 3f);
+        Assert.True(float.IsNaN(at), $"first request at {at:0.00} s");
+    }
+
     [Fact]
     public void ATurnBeforeTheWalk_LeavesTheFeetLeadWhole()
     {
@@ -781,7 +819,10 @@ public class StanceWalkTests
                 w.Update(Vector2.Zero, Vector2.Zero, 0f, canWalk: true, Dt, stand);
             // The turn: the debt arrives and the feet read differently, the body creeping too fast to count as still.
             for (float t = 0f; t < w.Delay + 3f * Dt; t += Dt)
+            {
                 w.Update(debt, new Vector2(0.1f, 0f), 0f, canWalk: true, Dt, stand + creep);
+                debt.X -= 0.1f * Dt;
+            }
             Assert.Equal(StanceWalkPhase.Push, w.State);
             float travel = 0f;
             for (int i = 0; i < 500 && w.State == StanceWalkPhase.Push; i++)
@@ -988,6 +1029,62 @@ public class StanceWalkTests
         float behind = PushOnFeet(planted: true, seen: true);
         Assert.True(behind < 0f, $"feet behind: ended at {behind:0.000}, before the view");
         Assert.True(behind > coast - w.FeetLead - 0.01f, $"feet behind: ran on to {behind:0.000}");
+    }
+
+    /// <summary>A first push that coasts past the view, then springs <paramref name="springBack"/> m back and rests 0.25 m
+    /// past it; then the follow-up push over feet it leaves behind. The debt when that push ends, along the first push:
+    /// negative is short of the view, positive past it.</summary>
+    static float FollowUpEnd(float springBack)
+    {
+        var w = new StanceWalk();
+        var debt = new Vector2(0.3f, 0f);
+        var stand = new Vector2(0f, -0.04f);
+        var ahead = new Vector2(0.5f, 0f);
+        for (float t = 0f; t < w.Delay + 3f * Dt; t += Dt)
+            w.Update(debt, Vector2.Zero, 0f, canWalk: true, Dt, stand);
+        while (w.State == StanceWalkPhase.Push || debt.X > -0.25f - springBack)
+        {
+            w.Update(debt, ahead, 0f, canWalk: true, Dt, stand);
+            debt.X -= 0.5f * Dt;
+        }
+        for (float back = 0f; back < springBack; back += 0.5f * Dt)
+        {
+            w.Update(debt, -ahead, 0f, canWalk: true, Dt, stand);
+            debt.X += 0.5f * Dt;
+        }
+        for (int i = 0; i < 500 && w.State == StanceWalkPhase.Settle; i++)
+            w.Update(debt, Vector2.Zero, 0f, canWalk: true, Dt, stand);
+        Assert.Equal(StanceWalkPhase.Push, w.State);
+        Assert.Equal(2, w.Pushes);
+        float travel = 0f;
+        for (int i = 0; i < 500 && w.State == StanceWalkPhase.Push; i++)
+        {
+            w.Update(debt, -ahead, 0f, canWalk: true, Dt, stand + new Vector2(travel, 0f));
+            debt.X += 0.5f * Dt;
+            travel += 0.5f * Dt;
+        }
+        Assert.Equal(StanceWalkPhase.Settle, w.State);
+        return debt.X;
+    }
+
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(0.012f)]
+    public void AFollowUp_AfterASettleThatKeptItsPlace_HasNoFeetLead(float springBack)
+    {
+        // T8-1 vr.45: five pushes over 9 s, swinging about +-0.17 m, each settle just over Again with 0.000-0.008 m of
+        // spring-back and feet-behind 0.21-0.29 m. Those feet pulled nothing back, so walking on for them overshot again.
+        float end = FollowUpEnd(springBack);
+        Assert.True(end < 0f, $"ended {end:0.000} m past the view, want short of it by the coast");
+    }
+
+    [Theory]
+    [InlineData(0.03f)]
+    [InlineData(0.08f)]
+    public void AFollowUp_AfterASpringBack_KeepsTheFeetLead(float springBack)
+    {
+        float end = FollowUpEnd(springBack);
+        Assert.True(end > 0f, $"ended {-end:0.000} m short of the view, want past it by the lead");
     }
 
     [Fact]

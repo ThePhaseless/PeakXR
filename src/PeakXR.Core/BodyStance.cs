@@ -137,7 +137,8 @@ public sealed class StanceWalk
     /// Run 20's trace: the spring-back follows the trail at the push's end, up to 0.19 m on 0.17 m (#52).</summary>
     public float FeetLead = 0.2f;
 
-    /// <summary>Seconds a debt must hold still (within <see cref="Start"/>) before it is walked.</summary>
+    /// <summary>Seconds a debt must hold still (the view within <see cref="Start"/>: the debt's change plus the body's
+    /// travel) before it is walked.</summary>
     public float Delay = 1.5f;
 
     /// <summary>A debt past this (m, the lean limit) is walked at once.</summary>
@@ -202,6 +203,10 @@ public sealed class StanceWalk
     /// stops shuffling for peers.</summary>
     public int MaxPushes = 6;
 
+    /// <summary>A follow-up push gets no <see cref="FeetLead"/> after a settle that sprang back less than this (m): T8-1,
+    /// vr.45 swung about +-0.17 m over five pushes on 0.000-0.008 m of spring-back with feet-behind 0.21-0.29 m.</summary>
+    public float NoLeadSpringBack = 0.02f;
+
     /// <summary>How long the last push held its request (s), for the trace.</summary>
     public float PushSeconds { get; private set; }
 
@@ -218,6 +223,7 @@ public sealed class StanceWalk
 
     Vector2 _blockedAt;
     Vector2 _heldAt;
+    Vector2 _heldTravel;
     float _heldFor;
     Vector2 _heading;
     float _best;
@@ -233,6 +239,7 @@ public sealed class StanceWalk
     Vector2 _feetStand;
     float _yaw;
     float _steppedYaw = float.NaN;
+    bool _noLead;
 
     /// <summary>The walk's phase this update.</summary>
     public StanceWalkPhase State { get; private set; }
@@ -292,11 +299,10 @@ public sealed class StanceWalk
         }
         // The delay runs from when the debt is owed: time under Start does not count, or the first few cm of a new
         // lean or turn read as held (run 11, vr.45: a 0.06 m debt walked 0.36 s before the lean's hold began).
-        if (dist <= Start || Vector2.Distance(debt, _heldAt) > Start)
-        {
-            _heldAt = debt;
-            _heldFor = 0f;
-        }
+        // Held on the view: a creeping body moves the debt with the head still (run 23: runaways walked only at AtOnce).
+        _heldTravel += _step;
+        if (dist <= Start || (debt - _heldAt + _heldTravel).Length() > Start)
+            HoldFrom(debt);
         else
             _heldFor += dt;
         // A debt that moved off a leftover is a new debt, which waits its own delay: the old held spot may still read
@@ -304,8 +310,7 @@ public sealed class StanceWalk
         if ((Blocked || Rested) && Vector2.Distance(debt, _blockedAt) > Start)
         {
             Blocked = Rested = false;
-            _heldAt = debt;
-            _heldFor = 0f;
+            HoldFrom(debt);
         }
         PhaseSeconds += dt;
         Closest = MathF.Min(Closest, dist);
@@ -348,8 +353,7 @@ public sealed class StanceWalk
                     {
                         // The head moved on, not the body back: a new debt, which waits its own delay.
                         Enter(StanceWalkPhase.Idle);
-                        _heldAt = debt;
-                        _heldFor = 0f;
+                        HoldFrom(debt);
                         return Vector2.Zero;
                     }
                     if (_stallFor < StillSeconds && PhaseSeconds < SettleMax)
@@ -378,6 +382,13 @@ public sealed class StanceWalk
         }
     }
 
+    void HoldFrom(Vector2 debt)
+    {
+        _heldAt = debt;
+        _heldTravel = Vector2.Zero;
+        _heldFor = 0f;
+    }
+
     /// <summary>The feet's stand in body axes. They last stood for the heading they stepped at: a turn swings the body
     /// over them, so after a smooth 180 they read about 0.14 m off their rest (the mass centre 0.07 m ahead of the hip)
     /// with no trail to see (run 21, vr.300: 0 at each push's end, -0.12 m after each settle, 0.12-0.14 m of spring-back).</summary>
@@ -390,6 +401,8 @@ public sealed class StanceWalk
     {
         float dist = debt.Length();
         Enter(StanceWalkPhase.Push);
+        // A settle that kept its place shows these feet pull nothing back: walking on for them only overshoots again.
+        _noLead = Pushes > 0 && SpringBack < NoLeadSpringBack;
         Pushes++;
         PushFrom = Closest = _best = dist;
         _stallFor = 0f;
@@ -407,7 +420,8 @@ public sealed class StanceWalk
             debt - velocity * (CoastSeconds + eased / (2f * MathF.Max(InputSlew, 0.1f)) + dt);
         // The body settles over its feet: feet trailing it pull it back after the coast, so walk on (FeetLead at most).
         FeetBehind = FeetTrail();
-        rest += _heading * Math.Clamp(FeetBehind, 0f, FeetLead);
+        if (!_noLead)
+            rest += _heading * Math.Clamp(FeetBehind, 0f, FeetLead);
         float restDist = rest.Length();
         float along = Vector2.Dot(rest, _heading);
         // Done once the body would come to rest under the view, but not before the gait has stepped; before that only

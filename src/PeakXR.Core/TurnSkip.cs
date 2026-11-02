@@ -11,7 +11,8 @@ namespace PeakXR.Core;
 /// look turns (and for <see cref="SwingSeconds"/> after, while the ragdoll torso swings onto the new heading) goes
 /// into the skip; the skip never exceeds the share along it, so a walk that closes the debt closes the skip with it.
 /// A stale skip once bent the lean away from the view (vr.300, run 13). Once the walk has been and gone, or none
-/// came for <see cref="ReleaseAfter"/>, the skip lets go and the lean takes what is left: a held offset.
+/// came for <see cref="ReleaseAfter"/>, the skip lets go and the lean takes what is left: a held offset. A look coming
+/// back up gives up the step back the same way (<see cref="GiveUpSpeed"/>): the debt's target moves, the body does not.
 /// </summary>
 public sealed class TurnSkip
 {
@@ -31,11 +32,17 @@ public sealed class TurnSkip
     /// left 0.10-0.14 m under a turned head no longer bends the body 7-12 degrees (run 15, vr.45b; want 8).</summary>
     public float MaxLean = 0.09f;
 
+    /// <summary>The step back shrinks faster than this (m/s): about 7 degrees/s of look mid-band, past a held look's sway.
+    /// The body stands behind a view that no longer wants it there, which the walk owes (run 23: 17.8-25.2 degrees).</summary>
+    public float GiveUpSpeed = 0.1f;
+
     Vector3 _last;
     float _lastYaw;
+    float _lastBack;
     bool _have;
     bool _walked;
     bool _turnWalk;
+    bool _byTurn;
     float _since = float.MaxValue;
     float _kept;
 
@@ -45,8 +52,9 @@ public sealed class TurnSkip
     /// <param name="share">The lean's share of the debt before this skip (world, m).</param>
     /// <param name="yaw">The body's heading, which the game keeps on the look (degrees).</param>
     /// <param name="walking">The stance walk is stepping the body.</param>
+    /// <param name="back">The step back the look wants now (m, <see cref="BodyStance.StepBack"/>).</param>
     /// <returns><see cref="Skip"/>.</returns>
-    public Vector3 Update(Vector3 share, float yaw, bool walking, float dt)
+    public Vector3 Update(Vector3 share, float yaw, bool walking, float dt, float back = 0f)
     {
         share.Y = 0f;
         if (!_have)
@@ -54,24 +62,36 @@ public sealed class TurnSkip
             _have = true;
             _last = share;
             _lastYaw = yaw;
+            _lastBack = back;
             return Skip;
         }
         if (dt <= 0f)
             return Skip;
-        if (MathF.Abs(BodySlotLayout.DeltaAngle(_lastYaw, yaw)) > TurningSpeed * dt)
+        bool turning = MathF.Abs(BodySlotLayout.DeltaAngle(_lastYaw, yaw)) > TurningSpeed * dt;
+        float gaveUp = _lastBack - back;
+        if (turning || gaveUp > GiveUpSpeed * dt)
         {
+            _byTurn = turning || (_byTurn && _since <= SwingSeconds);
             _since = 0f;
             _walked = false;
         }
         else if (_since < float.MaxValue)
             _since += dt;
         _turnWalk = walking && (_turnWalk || _since <= ReleaseAfter);
+        // A give-up's share of the change: only what the step back moved, the head's own travel stays the lean's.
+        var moved = share - _last;
+        float most = MathF.Abs(gaveUp);
+        var stepped =
+            moved.LengthSquared() <= most * most ? moved : Vector3.Normalize(moved) * most;
         if (walking)
             _walked = true;
         else if (_since <= SwingSeconds)
-            Skip += share - _last;
+            Skip += _byTurn ? moved : stepped;
         else if (_walked || _since > ReleaseAfter)
             Skip *= MathF.Max(0f, 1f - ReleaseRate * dt);
+        // The step back growing again takes back what its giving up skipped: a nod keeps the lean.
+        else if (gaveUp < 0f && Vector3.Dot(stepped, Skip) < 0f)
+            Skip += stepped;
         // Along the share and no longer than it: the lean then bends toward the view by at most the debt. Released,
         // never shorter than the skip's own part of the share past MaxLean.
         float len2 = share.LengthSquared();
@@ -88,6 +108,7 @@ public sealed class TurnSkip
             : _kept;
         _last = share;
         _lastYaw = yaw;
+        _lastBack = back;
         return Skip;
     }
 
@@ -98,6 +119,7 @@ public sealed class TurnSkip
         _have = false;
         _walked = false;
         _turnWalk = false;
+        _byTurn = false;
         _since = float.MaxValue;
     }
 }

@@ -194,4 +194,257 @@ public class TurnSkipTests
         Lean(s, share, 90f);
         Assert.Equal(share, Lean(s, share, 90f));
     }
+
+    // A look returning from below -35 degrees: the body stands behind a view that no longer wants it there, and the debt's
+    // target moved with no turn to see (run 23, vr.273: 17.8-25.2 degrees looking level).
+    static readonly float DeepBack = BodyStance.StepBack(-60f);
+    static readonly Vector3 Forward = new(0f, 0f, 1f);
+
+    static Vector3 LeanBack(TurnSkip s, Vector3 share, float back, bool walking = false) =>
+        share - s.Update(share, 0f, walking, Dt, back);
+
+    /// <summary>The look from -60 to level over 0.6 s, the body not stepping; asserts the lean stays out.</summary>
+    static TurnSkip GiveUpDeepLook()
+    {
+        var s = new TurnSkip();
+        LeanBack(s, Vector3.Zero, DeepBack);
+        for (float t = 0f; t <= 0.6f; t += Dt)
+        {
+            float back = BodyStance.StepBack(-60f * (1f - t / 0.6f));
+            var lean = LeanBack(s, Forward * (DeepBack - back), back);
+            Assert.True(lean.Length() < 0.02f, $"look t {t:0.00}: lean {lean.Length():0.000} m");
+        }
+        return s;
+    }
+
+    [Fact]
+    public void AStepBackGivenUp_StaysOutOfTheLean_AndAWalkClosesIt()
+    {
+        var s = GiveUpDeepLook();
+        for (float t = 0f; t < 1.5f; t += Dt)
+        {
+            var lean = LeanBack(s, Forward * DeepBack, 0f);
+            Assert.True(lean.Length() < 0.02f, $"wait t {t:0.00}: lean {lean.Length():0.000} m");
+        }
+        for (float t = 0f; t < 0.6f; t += Dt)
+        {
+            var debt = Forward * (DeepBack + (0.05f - DeepBack) * t / 0.6f);
+            var lean = LeanBack(s, debt, 0f, walking: true);
+            Assert.True(
+                lean.Length() <= s.MaxLean + 0.005f,
+                $"walk t {t:0.00}: lean {lean.Length():0.000} m"
+            );
+        }
+        for (float t = 0f; t < 3f; t += Dt)
+            LeanBack(s, Forward * 0.05f, 0f);
+        Assert.True(s.Skip.Length() < 0.005f, $"skip {s.Skip.Length():0.000} m");
+    }
+
+    [Fact]
+    public void AStepBackGivenUp_WithNoWalk_LeansAtMostMaxLean()
+    {
+        var s = GiveUpDeepLook();
+        var lean = Vector3.Zero;
+        for (float t = 0f; t < 6f; t += Dt)
+            lean = LeanBack(s, Forward * DeepBack, 0f);
+        Assert.InRange(lean.Length(), s.MaxLean - 0.01f, s.MaxLean + 0.005f);
+    }
+
+    [Fact]
+    public void ALeanHeldThroughTheGivingUp_KeepsItsBend()
+    {
+        // The head stays 0.25 m forward; only the part of the share the step back gave up goes to the skip.
+        const float Head = 0.25f;
+        float heldBack = BodyStance.StepBack(-45f);
+        var s = new TurnSkip();
+        for (float t = 0f; t < 0.5f; t += Dt)
+            LeanBack(s, Forward * (Head - heldBack), heldBack);
+        var lean = Vector3.Zero;
+        for (float t = 0f; t <= 0.6f; t += Dt)
+        {
+            float back = BodyStance.StepBack(-45f + 25f * t / 0.6f);
+            lean = LeanBack(s, Forward * (Head - back), back);
+        }
+        TestUtil.Near(Head - heldBack, lean.Length(), 0.005f);
+    }
+
+    [Fact]
+    public void ALeanGrowingThroughTheGivingUp_KeepsItsBend()
+    {
+        // The look rises from -50 to -20 over 0.5 s while the head leans 0.2 m: only what the step back gave up may go
+        // into the skip, not the lean that came with it.
+        const float Head = 0.2f;
+        float deepBack = BodyStance.StepBack(-50f);
+        var s = new TurnSkip();
+        LeanBack(s, Vector3.Zero, deepBack);
+        var lean = Vector3.Zero;
+        for (float t = 0f; t < 1.5f; t += Dt)
+        {
+            float k = MathF.Min(1f, t / 0.5f);
+            float back = BodyStance.StepBack(-50f + 30f * k);
+            lean = LeanBack(s, Forward * (Head * k + deepBack - back), back);
+        }
+        TestUtil.Near(Head, lean.Length(), 0.01f);
+    }
+
+    [Fact]
+    public void ALeanAtLevel_KeepsItsBend_NoBackGivenUp()
+    {
+        var s = new TurnSkip();
+        for (float t = 0f; t < 1f; t += Dt)
+        {
+            s.Update(Forward * 0.2f * t, 0f, false, Dt);
+            Assert.Equal(Vector3.Zero, s.Skip);
+        }
+    }
+
+    [Fact]
+    public void AHeldLookDownsSway_IsNotAGivingUp()
+    {
+        var s = new TurnSkip();
+        var side = new Vector3(1f, 0f, 0f);
+        for (float t = 0f; t < 3f; t += Dt)
+        {
+            float back = BodyStance.StepBack(-60f + 1.5f * MathF.Sin(2f * t));
+            s.Update(side * 0.04f * t, 0f, false, Dt, back);
+            Assert.Equal(Vector3.Zero, s.Skip);
+        }
+    }
+
+    [Fact]
+    public void ALookGoingDown_IsNotAGivingUp()
+    {
+        // The step back growing moves no body: a lean made on the way down stays the lean's.
+        var s = new TurnSkip();
+        var side = new Vector3(1f, 0f, 0f);
+        for (float t = 0f; t <= 0.7f; t += Dt)
+        {
+            s.Update(side * 0.3f * t, 0f, false, Dt, BodyStance.StepBack(-60f * t / 0.7f));
+            Assert.Equal(Vector3.Zero, s.Skip);
+        }
+    }
+
+    [Theory]
+    [InlineData(2f, 1f, 0.16f)]
+    [InlineData(5f, 1f, 0.12f)]
+    [InlineData(5f, 0.75f, 0.12f)]
+    [InlineData(5f, 0.5f, 0.085f)]
+    [InlineData(5f, 0.25f, 0.085f)]
+    [InlineData(10f, 0.5f, 0.065f)]
+    public void ANodAtADeepLook_KeepsTheLean(float amp, float hz, float least)
+    {
+        // A 0.2 m lean held at -50, looking around below: a rise adds to the skip, so a fall must take it back or every
+        // nod stands the body further up. The lean cannot pass the nod's lowest share, nor MaxLean once a rise kept more.
+        const float Head = 0.2f;
+        float held = BodyStance.StepBack(-50f);
+        var s = new TurnSkip();
+        LeanBack(s, Forward * Head, held);
+        for (float t = 0f; t < 20f; t += Dt)
+        {
+            float back = BodyStance.StepBack(-50f + amp * MathF.Sin(2f * MathF.PI * hz * t));
+            var lean = LeanBack(s, Forward * (Head + held - back), back);
+            if (t > 2f / hz)
+                Assert.True(lean.Length() >= least, $"t {t:0.00}: lean {lean.Length():0.000} m");
+        }
+    }
+
+    [Theory]
+    [InlineData(5f, 1f)]
+    [InlineData(5f, 0.5f)]
+    public void ANodOverATurnsLeftover_KeepsItOutOfTheLean(float amp, float hz)
+    {
+        // The step back moves along the look, the leftover lies across it: a nod takes back none of it (run 15: 7-12 deg).
+        var side = new Vector3(1f, 0f, 0f);
+        float held = BodyStance.StepBack(-50f);
+        var s = new TurnSkip();
+        s.Update(Vector3.Zero, 0f, false, Dt, held);
+        for (float t = 0f; t <= 0.6f; t += Dt)
+            s.Update(
+                side * 0.136f * MathF.Sin(150f * t * MathF.PI / 180f),
+                150f * t,
+                false,
+                Dt,
+                held
+            );
+        for (float t = 0f; t < 1.5f; t += Dt)
+            s.Update(side * 0.136f, 90f, false, Dt, held);
+        for (float t = 0f; t < 0.3f; t += Dt)
+            s.Update(side * 0.136f, 90f, true, Dt, held);
+        var share = side * 0.14f;
+        for (float t = 0f; t < 3f; t += Dt)
+            s.Update(share, 90f, false, Dt, held);
+        for (float t = 0f; t < 20f; t += Dt)
+        {
+            float back = BodyStance.StepBack(-50f + amp * MathF.Sin(2f * MathF.PI * hz * t));
+            var lean = share - s.Update(share, 90f, false, Dt, back);
+            Assert.True(
+                lean.Length() <= s.MaxLean + 0.01f,
+                $"t {t:0.00}: lean {lean.Length():0.000} m"
+            );
+        }
+    }
+
+    [Fact]
+    public void ASwayingLookAfterAGivingUp_LeansAtMostMaxLean()
+    {
+        // Back to -40 with no walk: the sway's falls must not eat what was kept past MaxLean.
+        float deep = BodyStance.StepBack(-60f);
+        var s = new TurnSkip();
+        LeanBack(s, Vector3.Zero, deep);
+        for (float t = 0f; t < 8f; t += Dt)
+        {
+            float k = MathF.Min(1f, t / 0.6f);
+            float pitch =
+                -60f
+                + 20f * k
+                + (t > 0.6f ? 3f * MathF.Sin(2f * MathF.PI * 0.3f * (t - 0.6f)) : 0f);
+            float back = BodyStance.StepBack(pitch);
+            var lean = LeanBack(s, Forward * (deep - back), back);
+            Assert.True(
+                lean.Length() <= s.MaxLean + 0.02f,
+                $"t {t:0.00}: lean {lean.Length():0.000} m"
+            );
+        }
+    }
+
+    [Fact]
+    public void ALeanThroughAGivingUp_LongAfterATurn_KeepsItsBend()
+    {
+        // A turn long gone gives the give-up no licence to take the head's own travel.
+        const float Head = 0.2f;
+        float deep = BodyStance.StepBack(-50f);
+        var s = new TurnSkip();
+        s.Update(Vector3.Zero, 0f, false, Dt, deep);
+        for (float t = 0f; t <= 0.6f; t += Dt)
+            s.Update(Vector3.Zero, 150f * t, false, Dt, deep);
+        for (float t = 0f; t < 1f; t += Dt)
+            s.Update(Vector3.Zero, 90f, false, Dt, deep);
+        var lean = Vector3.Zero;
+        for (float t = 0f; t < 1.5f; t += Dt)
+        {
+            float k = MathF.Min(1f, t / 0.5f);
+            float back = BodyStance.StepBack(-50f + 30f * k);
+            var share = Forward * (Head * k + deep - back);
+            lean = share - s.Update(share, 90f, false, Dt, back);
+        }
+        TestUtil.Near(Head, lean.Length(), 0.01f);
+    }
+
+    [Fact]
+    public void AGivingUpInsideATurnsSwing_LeavesTheSwingToTheWalk()
+    {
+        // The torso is still swinging onto the heading when the look starts up: that travel is the turn's, not the head's.
+        float deep = BodyStance.StepBack(-50f);
+        var s = new TurnSkip();
+        s.Update(Vector3.Zero, 0f, false, Dt, deep);
+        for (float t = 0f; t <= 0.6f; t += Dt)
+            s.Update(Vector3.Zero, 150f * t, false, Dt, deep);
+        for (float t = 0f; t < 0.4f; t += Dt)
+        {
+            float back = BodyStance.StepBack(-50f + 5f * t / 0.4f);
+            var share = Forward * (0.1f * t / 0.4f + deep - back);
+            var lean = share - s.Update(share, 90f, false, Dt, back);
+            Assert.True(lean.Length() < 0.02f, $"t {t:0.00}: lean {lean.Length():0.000} m");
+        }
+    }
 }

@@ -1378,7 +1378,7 @@ internal sealed class RigDriver : MonoBehaviour
         // Measured on the debt, so the walk's progress takes it down (the old turnShift here outlived the walk and bent
         // the lean away from the view, vr.300).
         TurnSkipNow = turnSkip
-            .Update((view - skip - eye).N(), bodyYaw, FollowWalking, Time.unscaledDeltaTime)
+            .Update((view - skip - eye).N(), bodyYaw, FollowWalking, Time.unscaledDeltaTime, back)
             .U();
         ViewOffset = skip + TurnSkipNow;
         // Past the lean limit the walk steps under the head: a head walking away in the room bends the spine no
