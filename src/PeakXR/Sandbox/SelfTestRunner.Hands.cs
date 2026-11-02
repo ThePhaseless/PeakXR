@@ -59,7 +59,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.16-snap-turn", 15f, SnapTurnStep());
         yield return HandStep("vr.17-move", 15f, MoveStep());
         yield return HandStep("vr.18-emote-wheel", 20f, EmoteStep());
-        yield return HandStep("vr.19-laser", 20f, LaserStep());
+        yield return HandStep("vr.19-laser", Budget(10f), LaserStep());
         yield return HandStep("vr.265-hand-reticle", 25f, HandReticleStep());
         yield return HandStep("vr.20-holster", 30f, HolsterStep());
         yield return HandStep("vr.450-throw-over-slot", 20f, ThrowOverSlotStep());

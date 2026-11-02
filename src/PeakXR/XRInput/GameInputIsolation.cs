@@ -1,6 +1,12 @@
 using System.Collections.Generic;
+using System.Reflection;
 using HarmonyLib;
+using PeakXR.Core;
+using PeakXR.Framework;
+using PeakXR.UI.Affordances;
 using PeakXR.VR;
+using PeakXR.XR;
+using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.LowLevel;
 using UnityEngine.InputSystem.XR;
@@ -82,6 +88,9 @@ internal static class GameInputIsolation
 /// binding (A/PauseMenuRebindKeyPage.cs:66, saved at :114). The operation is an onEvent listener of its own that
 /// ignores <c>handled</c>, so it still gets the state <see cref="GameInputIsolation"/> drops, and it takes a control's
 /// start actuation from the control's value, frozen at rest: a finger resting on a control reads as a fresh press (#133).
+/// The headset goes too, as <c>TrackedDevice</c> covers both: its synthetic, not noisy <c>isTracked</c> is a button whose
+/// return from 0 reads as a press, so a player lifting the headset to reach the keyboard would bind it. On an action of no
+/// control type, its <c>trackingState</c> ends the rebind within a few frames of opening.
 /// Unity.InputSystem <c>InputActionRebindingExtensions.PerformInteractiveRebinding</c>.
 /// </summary>
 [HarmonyPatch(
@@ -93,6 +102,104 @@ internal static class RebindSkipsControllersPatch
     private static void Postfix(InputActionRebindingExtensions.RebindingOperation __result)
     {
         if (VRSession.Active)
-            __result.WithControlsExcluding("<XRController>");
+            __result.WithControlsExcluding("<TrackedDevice>");
+    }
+}
+
+/// <summary>
+/// <see cref="RebindSkipsControllersPatch"/> leaves a controller press on the rebinding prompt doing nothing, so each
+/// one gets a refusal saying why and how to leave. Leaving needs help too: the page has no parent, so vanilla's Menu
+/// closes the whole pause menu (A/PauseMenuHandler.cs:45-60) without <c>OnPageExit</c>, the rebind stays live and its
+/// action disabled (A/PauseMenuRebindKeyPage.cs:65) until the menu reopens. Here Menu, or the dashboard for a
+/// controller whose Menu belongs to the runtime, goes through the page's own cancel (:119-124, :132-139), which enables
+/// the action and returns to the Controls page. Keyboard and gamepad cancel the operation themselves before this runs.
+/// </summary>
+[HarmonyPatch]
+internal static class RebindPromptPatch
+{
+    private const string Why =
+        "Keyboard or gamepad only\n<size=72%><color=#d8f4ee>Menu button cancels</color></size>";
+
+    private static readonly RebindPromptInput Input = new();
+    private static AccessTools.FieldRef<
+        PauseMenuRebindKeyPage,
+        InputActionRebindingExtensions.RebindingOperation
+    > operation;
+
+    public static void Resolve() =>
+        operation = GameMember.Field<
+            PauseMenuRebindKeyPage,
+            InputActionRebindingExtensions.RebindingOperation
+        >("rebindOperation");
+
+    private static MethodBase TargetMethod() =>
+        GameMember.Method(typeof(PauseMenuHandler), "Update");
+
+    private static bool Prefix(PauseMenuHandler __instance)
+    {
+        try
+        {
+            if (!VRSession.Active)
+                return true;
+            var c = Character.localCharacter;
+            var op = __instance.currentPage is PauseMenuRebindKeyPage page ? operation(page) : null;
+            if (op == null || !op.started || op.completed || c == null)
+            {
+                Input.Reset();
+                return true;
+            }
+            switch (
+                Input.Step(
+                    c.input.pauseWasPressed,
+                    !VRSession.HasFocus,
+                    XRBootstrapDriver.HeadsetHidden || XRBootstrapDriver.TakenOff,
+                    Down(VRInput.Left),
+                    Down(VRInput.Right),
+                    Time.unscaledDeltaTime
+                )
+            )
+            {
+                case RebindPromptStep.Cancel:
+                    Plugin.Log.LogInfo(
+                        "[xr.input] rebinding prompt cancelled from the controllers"
+                    );
+                    Input.Reset();
+                    __instance.currentPage.OnPageExit();
+                    return false;
+                case RebindPromptStep.RefuseLeft:
+                    Refuse(true);
+                    break;
+                case RebindPromptStep.RefuseRight:
+                    Refuse(false);
+                    break;
+                default:
+                    break;
+            }
+            return true;
+        }
+        catch (System.Exception e)
+        {
+            PatchGuard.Fail<XRInputFeature>(e);
+            return true;
+        }
+    }
+
+    // Menu is left out: it is the way out, and its press lands as a tap on release.
+    private static bool Down(in HandState hand) =>
+        hand.Trigger >= 0.55f
+        || hand.Grip >= 0.6f
+        || hand.Primary
+        || hand.Secondary
+        || hand.StickClick;
+
+    private static void Refuse(bool left)
+    {
+        var hand = VRRig.Instance != null ? VRRig.Instance.Hand(left) : null;
+        Affordance.DenyWithText(
+            left,
+            hand != null ? hand.position : Vector3.zero,
+            DenyReason.Locked,
+            Why
+        );
     }
 }

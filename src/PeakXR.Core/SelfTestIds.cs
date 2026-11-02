@@ -235,6 +235,7 @@ public static class SelfTestIds
         "vr.262-wear-sensor-off",
         "vr.360-headset-off-flat-view",
         "vr.489-xr-state-isolated",
+        "vr.490-rebind-prompt-exit",
         "vr.261-vr-restart-mid-hang",
         "vr.25-cook-over-fire",
         "vr.257-arm-swing-jump",
