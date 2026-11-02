@@ -520,7 +520,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         // Not GiveItem: GameUtils' give calls Item.Interact (GameUtils.cs:270), and a Backpack's opens its wheel
-        // (Backpack.cs:32), leaving it on the ground. Wear is the plain pickup into Player.backpackSlot (Backpack.cs:52).
+        // (Backpack.cs:32), leaving it on the ground. Wear is the plain pickup into Player.backpackSlot (Backpack.cs:51).
         if (c.player.backpackSlot.IsEmpty())
         {
             if (!SandboxActions.SpawnItemAt(pack, GroundAhead(PropSetOut)))

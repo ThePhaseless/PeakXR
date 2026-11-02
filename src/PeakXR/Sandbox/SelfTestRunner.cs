@@ -1196,6 +1196,34 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         }
     }
 
+    /// <summary>Runs <paramref name="body"/>, nested coroutines included, calling <paramref name="sample"/> on every frame
+    /// it waits for: a caller's own MoveNext sees only the top level, and not a body that waits inside a nested walk.</summary>
+    static IEnumerator Sampled(IEnumerator body, Action sample)
+    {
+        var stack = new Stack<IEnumerator>();
+        stack.Push(body);
+        try
+        {
+            while (stack.Count > 0)
+            {
+                var top = stack.Peek();
+                if (!top.MoveNext())
+                    stack.Pop();
+                else if (top.Current is IEnumerator nested)
+                    stack.Push(nested);
+                else
+                {
+                    sample();
+                    yield return top.Current;
+                }
+            }
+        }
+        finally
+        {
+            Unwind(stack);
+        }
+    }
+
     /// <summary>
     /// Disposes a cut-off tree innermost first, so the steps' <c>finally</c> blocks still restore the settings
     /// and body state they changed; a timed-out step would otherwise leak them into every later step.

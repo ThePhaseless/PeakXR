@@ -1657,11 +1657,25 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         var bandCue = cueNote;
-        yield return Wait(0.3f);
+        // From here on: the mouth dwell can feed during the walk back in, before the hold below starts (#119).
+        void SampleMouth()
+        {
+            if (item == null || HeldItem() != item || host == null)
+                return;
+            float gapNow = Social.SocialHands.FeedGap(item, HostPart(host, BodypartType.Head));
+            best = Mathf.Min(best, gapNow);
+            if (gapNow <= 0.18f)
+                atMouth += Time.unscaledDeltaTime;
+        }
+        yield return Sampled(Wait(0.3f), SampleMouth);
         // Within arm's reach of the mouth again before the hold (MP run 15b, #106: A stood 1.09 m off and the 0.6 m hold
         // kept the item 0.30 m from the host's head), the food carried back so the step does not bring it there.
-        yield return CarryFoodBack(left);
-        yield return MpStepToMouth(host);
+        yield return Sampled(CarryFoodBack(left), SampleMouth);
+        yield return Sampled(MpStepToMouth(host), SampleMouth);
+        string fedBy =
+            c.data.lastConsumedItem != consumedBefore
+                ? "fed by the mouth dwell on the way back in, before the hold; "
+                : "fed by resting at the mouth; ";
         Face(HostPart(host, BodypartType.Head));
         float holdFrom = Vector3.Distance(rig.Head.position, HostPart(host, BodypartType.Head));
         string standNote = F(
@@ -1692,9 +1706,7 @@ internal sealed partial class SelfTestRunner
             var mouth = HostPart(host, BodypartType.Head);
             // The zone's own measure: the item's nearest point, not its centre (MP run 27: a lollipop's centre never
             // came within 0.2 m while its candy reached the mouth).
-            float gapNow = Social.SocialHands.FeedGap(item, mouth);
-            best = Mathf.Min(best, gapNow);
-            atMouth = gapNow <= 0.18f ? atMouth + Time.unscaledDeltaTime : atMouth;
+            SampleMouth();
             // Hold the item, not the hand, on the moving mouth every frame: the hand goes where the item's offset from
             // the controller puts the item on the mouth (MP run 19: chasing the lagging item kept it at the mouth for
             // only 0.4 s in all). Eased only while still far.
@@ -1728,27 +1740,25 @@ internal sealed partial class SelfTestRunner
         // gone.
         if (c.data.lastConsumedItem != consumedBefore)
             yield return WaitFor(() => HeldItem() != item, 2f);
-        var note =
-            $"{foodName} closest {best:0.00} m to the host's head, {atMouth:0.0} s at the mouth, trigger up; {standNote}";
+        var note = F(
+            $"{foodName} closest {GapNote(best)} to the host's head after the squeeze, {atMouth:0.0} s at the mouth, trigger up; {standNote}"
+        );
         if (c.data.lastConsumedItem == consumedBefore)
             Fail(
                 (item != null && HeldItem() == item ? "not fed: " : "item left the hand unfed: ")
                     + note
             );
         else
-            stepNote =
-                walkNote
-                + "beside the mouth: "
-                + bandCue
-                + "; fed by resting at the mouth; "
-                + note;
+            stepNote = walkNote + "beside the mouth: " + bandCue + "; " + fedBy + note;
     }
 
     /// <summary>
-    /// feed-fetch-front: the food lies at the host's feet, and A stoops for it and carries it to the side the host stands
-    /// on, as the modded run of #119 did by chance. The controller stays well off the host's mouth, so however the host's
-    /// body holds the food on them, standing there feeds nobody (<see cref="HandOver.PlaceRadius"/>).
-    /// <see cref="SpawnSide"/> took this case out of the other fetches.
+    /// feed-fetch-front: food in the feed zone with its controller well off the mouth, both players still, feeds nobody
+    /// (<see cref="HandOver.PlaceRadius"/>). #119's run got there by chance: the host's body held a bag fetched at their
+    /// feet in the zone with the controller away. Fetched the same way, then carried past the host's head, the head keeps
+    /// the bag on A's side of it, and its place on the controller stops past the limit. <see cref="SpawnSide"/> took this
+    /// case out of the other fetches. The carry to the side the host stood on put the controller at the mouth (0.00 and
+    /// 0.10 m in both pairings' runs), where a feed is fair, so the step never reached its check.
     /// </summary>
     IEnumerator FeedFetchFront()
     {
@@ -1760,6 +1770,7 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         var c = Character.localCharacter;
+        var rig = VRRig.Instance;
         var host = Host();
         yield return GrabReachable(
             i => IsFood(i) && i.canUseOnFriend,
@@ -1775,15 +1786,13 @@ internal sealed partial class SelfTestRunner
         cpItemId = item.itemID;
         bool left = LocalHold.ItemInLeftHand;
         float consumedBefore = c.data.lastConsumedItem;
-        Face(HostPart(host, BodypartType.Head));
-        VRRig.Instance.RotateYaw(left ? 90f : -90f);
-        float closest = float.PositiveInfinity;
-        float place = float.PositiveInfinity;
+        float closest = float.MaxValue;
+        float place = float.MaxValue;
         float inZone = 0f;
         bool used = false;
         void Sample()
         {
-            if (item == null || HeldItem() != item)
+            if (item == null || HeldItem() != item || host == null)
                 return;
             var mouth = HostPart(host, BodypartType.Head);
             float gap = Social.SocialHands.FeedGap(item, mouth);
@@ -1793,35 +1802,89 @@ internal sealed partial class SelfTestRunner
             place = Mathf.Min(place, Social.SocialHands.FeedPlaceGap(item, mouth));
             used |= item.isUsingSecondary || c.input.useSecondaryIsPressed;
         }
-        // The carry too: a feed that starts during it must be judged on what it read.
-        var carry = CarryFoodBack(left);
-        while (carry.MoveNext())
+        bool Fed() => item == null || c.data.lastConsumedItem != consumedBefore;
+        string Seen() =>
+            F(
+                $"the food came within {GapNote(closest)} of the host's mouth, {inZone:0.0} s in the zone at rest, its place on the controller no nearer than {GapNote(place)} (limit {HandOver.PlaceRadius:0.00}), {FlatDistance(c.Center, host.Center):0.00} m level"
+            );
+        Face(HostPart(host, BodypartType.Head));
+        yield return Sampled(MoveTrack(left, FetchFrontLow(left), 0.3f), Sample);
+        yield return Sampled(MpStepToMouth(host), Sample);
+        Face(HostPart(host, BodypartType.Head));
+        if (Fed() || used)
         {
-            Sample();
-            yield return carry.Current;
+            stepSkip = "the walk in fed the host, so the stance never came: " + Seen();
+            yield break;
         }
-        // Past what the dwell and the cast took in #119's run (0.3 s, then 1.15 s in all).
-        for (float end = Now + 3f; Now < end && item != null && HeldItem() == item; )
+        var grip = HeldGrip.Of(rig, Script(left), item);
+        float past = FetchFrontPast;
+        Vector3 PastHead()
         {
+            var mouth = HostPart(host, BodypartType.Head);
+            var goal = mouth + Flat(mouth - rig.Head.position) * past;
+            return rig.Origin.InverseTransformPoint(goal - grip.World(rig, Script(left)));
+        }
+        // Past the mouth at a hand's speed, never resting on the way, on until its place is clear of the limit.
+        for (float end = Now + 3f; Now < end && !Fed() && HeldItem() == item; )
+        {
+            var goal = PastHead();
+            bool clear =
+                Social.SocialHands.FeedPlaceGap(item, HostPart(host, BodypartType.Head))
+                >= HandOver.PlaceRadius + 0.08f;
+            if (clear && Vector3.Distance(Script(left).Position, goal) < 0.03f)
+                break;
+            if (!clear && Vector3.Distance(Script(left).Position, goal) < 0.03f)
+                past = Mathf.Min(past + 0.5f * Time.unscaledDeltaTime, FetchFrontMostPast);
+            SetHand(
+                left,
+                HandScript
+                    .Approach(Script(left).Position.N(), goal.N(), 1.5f, Time.unscaledDeltaTime)
+                    .U()
+            );
+            yield return null;
+        }
+        closest = place = float.MaxValue;
+        inZone = 0f;
+        used = false;
+        // Past what the dwell and the cast took in #119's run (0.3 s, then 1.15 s in all).
+        for (float end = Now + 3f; Now < end && !Fed() && HeldItem() == item; )
+        {
+            SetHand(left, PastHead());
             Sample();
             yield return null;
         }
-        var note = F(
-            $"standing beside the host, the food came within {closest:0.00} m of their mouth, {inZone:0.0} s in the zone, its place on the controller no nearer than {place:0.00} m (limit {HandOver.PlaceRadius:0.00}), {FlatDistance(c.Center, host.Center):0.00} m level"
-        );
-        bool fed = item == null || c.data.lastConsumedItem != consumedBefore;
+        var note = Seen();
+        bool fed = Fed();
+        if (!fed && HeldItem() == item)
+            yield return MoveTrack(left, FetchFrontLow(left), 0.3f);
         if ((fed || used) && place <= HandOver.PlaceRadius)
-            stepSkip =
-                "this stance put the controller at the host's mouth, so the feed was fair: " + note;
+            stepSkip = "the hand stayed at the host's mouth, so the feed was fair: " + note;
         else if (fed || used)
             Fail($"the host was {(fed ? "fed" : "getting fed")} with the controller away: {note}");
         else if (inZone < HandOver.MouthDwell)
             stepSkip =
-                "this stance never brought the food into the zone, so no feed proves nothing: "
-                + note;
+                "the head did not keep the food in the zone, so no feed proves nothing: " + note;
         else
             stepNote = "no feed: " + note;
     }
+
+    /// <summary>feed-fetch-front's carry: low at the holding side, its place well under a host of the same height.</summary>
+    static Vector3 FetchFrontLow(bool left)
+    {
+        var head = VRInput.HeadPosition;
+        var right = VRInput.HeadRotation * Vector3.right;
+        return head + (left ? -right : right) * 0.25f + Vector3.down * 0.85f;
+    }
+
+    /// <summary>How far (m) past the host's mouth feed-fetch-front first sends the food's place on the controller, and
+    /// the most: the bag's box counts in the place's gap, so the first may read inside the limit.</summary>
+    const float FetchFrontPast = 0.35f;
+
+    const float FetchFrontMostPast = 0.9f;
+
+    /// <summary>A measured gap, or says none was: <c>float.MaxValue</c> is the start of a minimum no frame lowered, and
+    /// printed as a number it reads as a result (#119).</summary>
+    static string GapNote(float gap) => gap == float.MaxValue ? "not measured" : F($"{gap:0.00} m");
 
     /// <summary>
     /// feed-held-ahead: food carried ahead at chest height, no carry-back, walked in until it meets the host, then raised
@@ -1850,28 +1913,41 @@ internal sealed partial class SelfTestRunner
         );
         var grip = HeldGrip.Of(rig, Script(left), item);
         float startSpeed = -1f;
-        var walk = WalkTo(HostCenter, 0.45f, false);
-        while (walk.MoveNext())
+        var host = Host();
+        var driver = AvatarPoseDriver.Of(c);
+        float best = float.MaxValue;
+        float placeBest = float.MaxValue;
+        float keptFor = 0f;
+        // From the walk on: the dwell often feeds during the step in, on the host's body keep, before the raise (#112).
+        void Sample()
         {
-            if (startSpeed < 0f && item != null && item.isUsingSecondary)
-                startSpeed = new Vector2(
-                    c.data.avarageVelocity.x,
-                    c.data.avarageVelocity.z
-                ).magnitude;
-            yield return walk.Current;
+            if (item == null || HeldItem() != item || host == null)
+                return;
+            var mouth = HostPart(host, BodypartType.Head);
+            best = Mathf.Min(best, Social.SocialHands.FeedGap(item, mouth));
+            placeBest = Mathf.Min(placeBest, Social.SocialHands.FeedPlaceGap(item, mouth));
+            if (driver != null && driver.HeldBackBody == host)
+                keptFor += Time.unscaledDeltaTime;
         }
+        yield return Sampled(
+            WalkTo(HostCenter, 0.45f, false),
+            () =>
+            {
+                Sample();
+                if (startSpeed < 0f && item != null && item.isUsingSecondary)
+                    startSpeed = new Vector2(
+                        c.data.avarageVelocity.x,
+                        c.data.avarageVelocity.z
+                    ).magnitude;
+            }
+        );
         // Twice the gate: the average decays over the stop, so only a walk's own speed is a fault.
         if (startSpeed > 2f * HandOver.StillSpeed)
         {
             Fail(F($"use-on-friend started on the walk in, A moving {startSpeed:0.00} m/s"));
             yield break;
         }
-        var host = Host();
-        yield return MpStepToMouth(host);
-        var driver = AvatarPoseDriver.Of(c);
-        float best = float.MaxValue;
-        float placeBest = float.MaxValue;
-        float keptFor = 0f;
+        yield return Sampled(MpStepToMouth(host), Sample);
         float end = Now + GameTiming.Budget(GameTiming.FeedSeconds(item), 8f);
         while (
             item != null
@@ -1882,10 +1958,7 @@ internal sealed partial class SelfTestRunner
         )
         {
             var mouth = HostPart(host, BodypartType.Head);
-            best = Mathf.Min(best, Social.SocialHands.FeedGap(item, mouth));
-            placeBest = Mathf.Min(placeBest, Social.SocialHands.FeedPlaceGap(item, mouth));
-            if (driver != null && driver.HeldBackBody == host)
-                keptFor += Time.unscaledDeltaTime;
+            Sample();
             var goal = rig.Origin.InverseTransformPoint(mouth - grip.World(rig, Script(left)));
             goal =
                 VRInput.HeadPosition
@@ -1909,7 +1982,7 @@ internal sealed partial class SelfTestRunner
         if (c.data.lastConsumedItem != consumedBefore)
             yield return WaitFor(() => HeldItem() != item, 2f);
         var note = F(
-            $"item closest {best:0.00} m to the host's mouth, its place on the controller {placeBest:0.00} m, kept by the host's body {keptFor:0.0} s, {mouthStepNote}"
+            $"item closest {GapNote(best)} to the host's mouth, its place on the controller {GapNote(placeBest)}, kept by the host's body {keptFor:0.0} s, {mouthStepNote}"
         );
         if (c.data.lastConsumedItem == consumedBefore)
             Fail("raised to the host's mouth after the walk in, the food did not feed: " + note);
