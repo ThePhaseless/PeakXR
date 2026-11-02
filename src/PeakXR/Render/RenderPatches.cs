@@ -110,6 +110,33 @@ internal static class RenderPatches
         }
     }
 
+    /// <summary>
+    /// AOE.Start (AOE.cs:72) and Peak.TrickLuggage.OnEnable (Peak/TrickLuggage.cs:17) mean a hazard's smoke has just
+    /// appeared: <see cref="SmokeNearFade"/> scans only every 2 s, and a burst beside the player must fade from its first frame.
+    /// </summary>
+    [HarmonyPatch]
+    internal static class HazardSmokeStarts
+    {
+        private static MethodBase[] TargetMethods() =>
+            new MethodBase[]
+            {
+                GameMember.Method(typeof(AOE), "Start"),
+                GameMember.Method(typeof(Peak.TrickLuggage), "OnEnable"),
+            };
+
+        private static void Postfix()
+        {
+            try
+            {
+                SmokeNearFade.RequestScan();
+            }
+            catch (Exception e)
+            {
+                PatchGuard.Fail<RenderFixesFeature>(e);
+            }
+        }
+    }
+
     /// <summary>Peak.LimitFrameRate.Start (Peak/LimitFrameRate.cs:9) caps the game at 144 on scene start.</summary>
     [HarmonyPatch]
     internal static class LimitFrameRateStart

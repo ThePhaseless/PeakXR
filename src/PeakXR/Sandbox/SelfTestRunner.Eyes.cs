@@ -20,7 +20,8 @@ namespace PeakXR.Sandbox;
 /// Whether anything differs between the eyes that should not (issue #5), from each eye's own pixels (<see cref="ReadEyes"/>)
 /// on the level. <c>vr.480</c> measures the head-locked overlays: the Peripheral hide, a control that shows it could fail,
 /// and the stereo offset of a real quad. <c>vr.481</c> renders both eyes from one view and from swapped views.
-/// <c>vr.482</c> logs stereo metrics per effect, and <c>vr.483</c> checks what each eye renders from.
+/// <c>vr.482</c> logs stereo metrics per effect and checks the near smoke fade from particle data, and <c>vr.483</c> checks
+/// what each eye renders from.
 /// </summary>
 internal sealed partial class SelfTestRunner
 {
@@ -65,10 +66,49 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>In <see cref="EyeEffects"/> with no prefab, only under a level's map. They carry nothing but particle
     /// systems, so a copy is safe.</summary>
-    private static readonly string[] SceneEffects = { "Broad Wind", "spores" };
+    private static readonly string[] SceneEffects =
+    {
+        "Broad Wind",
+        "spores",
+        NearFadeVanillaEffect,
+    };
 
     /// <summary>Metres to the side of the spot, so one does not hide another.</summary>
     private static readonly float[] MonoDiffSides = { 0f, -2f, 2f };
+
+    /// <summary>The effects <c>vr.482</c>'s near-fade check prefers, in order: the first loaded is the named report's.</summary>
+    private static readonly string[] NearFadeEffects = { "VFX_PoisonExplo", "VFX_SporeExplo" };
+
+    /// <summary>A second shader and alpha numbers for the same check, so the class is proved and not one material.</summary>
+    private const string NearFadeOtherEffect = "Gas";
+
+    /// <summary>Campfire smoke, in the map and no prefab: a big sheet with no hazard, which the near fade must leave alone.</summary>
+    private const string NearFadeVanillaEffect = "VFX_Smoke_Lit";
+
+    /// <summary>The least a poison sheet taken away right ahead must raise the haze; predicted 0.55.</summary>
+    private const float NearFadePoisonMinHaze = 0.3f;
+
+    /// <summary>What the haze may drift from its reading before a spawn with this effect playing no part in it.</summary>
+    private const float NearFadeHazeMargin = 0.02f;
+
+    /// <summary>Ahead of the head, past any burst: from 6 m a sheet came to 0.70 m at the test rig's frame rate (issue #5).</summary>
+    private const float NearFadeFarMetres = 15f;
+
+    /// <summary>What <c>vr.482</c> places in the real system: one sheet under the fade, one past it.</summary>
+    private const float NearFadeSheetZ = 0.25f;
+    private const float NearFadeKeptSheetZ = 3f;
+    private const float NearFadeSheetSize = 7f;
+    private const float NearFadeSheetLife = 60f;
+
+    /// <summary>Share of its life a placed sheet has had: Gas starts at alpha 0 and is at 1 from 9 % (Fog), 7 % (Spray),
+    /// and poison runs from 1 to 0.</summary>
+    private const float NearFadeSheetAge = 0.3f;
+
+    /// <summary>Above this a sheet counts as drawn: at start alpha 255 the fade passes it at about 0.6 m.</summary>
+    private const int NearFadeDrawnAlpha = 8;
+
+    /// <summary>Longer than the haze's ease (0.3 s). No slow scan to wait for: <see cref="SpawnEffect"/> asks for one.</summary>
+    private const float NearFadeSettleSeconds = 0.6f;
 
     private static readonly int PoisonIntensityId = Shader.PropertyToID("_Intensity");
     private static readonly int PoisonEdgeId = Shader.PropertyToID("_Edge");
@@ -535,8 +575,8 @@ internal sealed partial class SelfTestRunner
         return prefabs;
     }
 
-    /// <summary>A copy of a game effect with what it does to players and what ends it on its own taken out, or null when
-    /// it is not loaded. Returns its holder, to destroy early; <see cref="OnRestore"/> destroys it otherwise.</summary>
+    /// <summary>A copy of a game effect with what it does to players switched off and what ends it on its own taken out, or
+    /// null when it is not loaded. Returns its holder, to destroy early; <see cref="OnRestore"/> destroys it otherwise.</summary>
     GameObject SpawnEffect(Dictionary<string, GameObject> prefabs, string name, Vector3 position)
     {
         if (!prefabs.TryGetValue(name, out var prefab))
@@ -551,14 +591,15 @@ internal sealed partial class SelfTestRunner
                 Destroy(holder);
         });
         var copy = Instantiate(prefab, position, prefab.transform.rotation, holder.transform);
-        Strip<AOE>(copy);
+        // Off, not gone: the near smoke fade takes an effect by these, and a live AOE would ask for its scan itself.
+        SwitchOff<AOE>(copy);
         Strip<AddScreenshake>(copy);
         Strip<TimeEvent>(copy);
         // VFX_PoisonExplo would end on its own while vr.482 holds it.
         Strip<RemoveAfterSeconds>(copy);
-        // Gas. TrickLuggage goes first: its Update reaches for the field (Peak/TrickLuggage.cs:29).
+        // Gas: it would play the luggage's sounds and, after 10 s, reach for the field (Peak/TrickLuggage.cs:17,29).
         Strip<TrickLuggage>(copy);
-        Strip<StatusFieldBase>(copy);
+        SwitchOff<StatusFieldBase>(copy);
         // Flare smoke. A copy tracks nothing: it logs an error and stops, or destroys itself (TrackNetworkedObject.cs:43,55).
         Strip<TrackNetworkedObject>(copy);
         copy.SetActive(true);
@@ -566,7 +607,15 @@ internal sealed partial class SelfTestRunner
         foreach (var ps in copy.GetComponentsInChildren<ParticleSystem>())
             if (!ps.isPlaying)
                 ps.Play(false);
+        SmokeNearFade.RequestScan();
         return holder;
+    }
+
+    static void SwitchOff<T>(GameObject root)
+        where T : Behaviour
+    {
+        foreach (var part in root.GetComponentsInChildren<T>(true))
+            part.enabled = false;
     }
 
     static void Strip<T>(GameObject root)
@@ -757,8 +806,9 @@ internal sealed partial class SelfTestRunner
         && filter.Patterns.Count == 1
         && string.Equals(filter.Patterns[0], "vr.482-eye-effects", StringComparison.Ordinal);
 
-    /// <summary>vr.482: measure only, so nothing here fails the step. Logs stereo metrics per effect, or holds
-    /// <c>VFX_PoisonExplo</c> still in <see cref="EyeEffectsLive"/>.</summary>
+    /// <summary>vr.482: logs stereo metrics per effect, which cannot fail, then checks the near smoke fade from particle
+    /// data, which can (<see cref="NearFadeChecks"/>). Or holds <c>VFX_PoisonExplo</c> still in
+    /// <see cref="EyeEffectsLive"/>.</summary>
     IEnumerator EyeEffectsStep()
     {
         if (!EyesReady(out var cam, out var display))
@@ -799,6 +849,290 @@ internal sealed partial class SelfTestRunner
             stepNote += "; absent: " + string.Join(", ", absent);
         if (absent.Contains(MonoDiffEffects[0]))
             stepNote += $"; {MonoDiffEffects[0]} was not measured in this run";
+        yield return NearFadeChecks(head, prefabs);
+    }
+
+    /// <summary>The near smoke fade, from particle data, with the setting on and then off. A burst lands at random, so a
+    /// check on where it fell could pass with no sheet near: the sheets that decide are placed in the real system, with
+    /// its real material. Off is the control: the same sheet must draw again, or the check proved nothing. Neither
+    /// <see cref="NearFadeEffects"/> loaded is a SKIP, which does not count as passing: re-run on a level that has them.</summary>
+    IEnumerator NearFadeChecks(Transform head, Dictionary<string, GameObject> prefabs)
+    {
+        string named = Array.Find(NearFadeEffects, prefabs.ContainsKey);
+        if (named == null)
+        {
+            stepSkip =
+                $"near fade not checked: {string.Join(" and ", NearFadeEffects)} are not loaded here; {stepNote}";
+            yield break;
+        }
+        bool setting = RenderFixesFeature.NearSmokeFade.Value;
+        OnRestore(() => RenderFixesFeature.NearSmokeFade.Value = setting);
+        RenderFixesFeature.NearSmokeFade.Value = true;
+        var notes = new List<string>();
+        if (!string.Equals(named, NearFadeEffects[0], StringComparison.Ordinal))
+            notes.Add($"{NearFadeEffects[0]} absent, near fade checked on {named}");
+
+        // The last metrics line's haze easing out.
+        yield return Wait(NearFadeSettleSeconds);
+        float hazeBefore = SmokeNearFade.HazeAlpha;
+        var position = head.position;
+        var far = position + (Flat(head.forward) * NearFadeFarMetres);
+        var checks = new List<(string Name, GameObject Holder)>
+        {
+            (named, SpawnEffect(prefabs, named, far)),
+        };
+        if (prefabs.ContainsKey(NearFadeOtherEffect))
+        {
+            var beside = far + (Flat(head.right) * 10f);
+            checks.Add((NearFadeOtherEffect, SpawnEffect(prefabs, NearFadeOtherEffect, beside)));
+        }
+        else
+            notes.Add($"{NearFadeOtherEffect} absent");
+        yield return Wait(1f);
+        foreach (var (name, holder) in checks)
+            NearFadeFarCheck(name, holder, head, hazeBefore, notes);
+
+        var burst = SpawnEffect(prefabs, named, position);
+        yield return Wait(1f);
+        var landed = ReadSheets(burst, head);
+        notes.Add(F($"{named} burst at the player: nearest drawn {landed.NearestDrawn:0.00} m"));
+        if (landed.NearestDrawn < SheetFade.FadeStart)
+            Fail(F($"{named} burst at the player drew a sheet at {landed.NearestDrawn:0.00} m"));
+        Destroy(burst);
+        yield return Wait(NearFadeSettleSeconds);
+
+        foreach (var (name, holder) in checks)
+        {
+            if (stepOk)
+                yield return NearFadePlacedCheck(name, holder, head, notes);
+            Destroy(holder);
+            yield return Wait(NearFadeSettleSeconds);
+        }
+        if (stepOk)
+            yield return NearFadeVanillaCheck(prefabs, head, notes);
+        notes.Add(
+            F(
+                $"last scan's find {SmokeNearFade.LastFindMilliseconds:0.00} ms, sky level {SmokeNearFade.SkyLevel:0.00}"
+            )
+        );
+        stepNote += "; " + string.Join("; ", notes);
+    }
+
+    /// <summary>Past the fade nothing changes: no sheet loses alpha and, with no sheet near, the haze does not rise. It is
+    /// global and <c>read.Near</c> counts this effect only, so it is read against <paramref name="hazeBefore"/>.</summary>
+    void NearFadeFarCheck(
+        string name,
+        GameObject holder,
+        Transform head,
+        float hazeBefore,
+        List<string> notes
+    )
+    {
+        var read = ReadSheets(holder, head);
+        float rise = SmokeNearFade.HazeAlpha - hazeBefore;
+        notes.Add(
+            F(
+                $"{name} {NearFadeFarMetres:0} m ahead: {read.Sheets} sheets, {read.FadedPastEnd} faded past {SheetFade.FadeEnd:0.0} m, {read.Near} near, haze {SmokeNearFade.HazeAlpha:0.00} from {hazeBefore:0.00}"
+            )
+        );
+        if (read.Sheets == 0)
+            Fail($"{name}: no sheets to read, so this proved nothing");
+        if (read.FadedPastEnd > 0)
+            Fail($"{name}: {read.FadedPastEnd} sheets past the fade lost alpha");
+        if (read.Near == 0 && rise > NearFadeHazeMargin)
+            Fail(F($"{name}: haze rose {rise:0.00} with no sheet near"));
+    }
+
+    /// <summary>A sheet under the fade and one past it: on, only the far one draws and a capped haze shows; off, one pass
+    /// brings the near one back and takes the haze away.</summary>
+    IEnumerator NearFadePlacedCheck(
+        string name,
+        GameObject holder,
+        Transform head,
+        List<string> notes
+    )
+    {
+        var system = Array.Find(
+            holder.GetComponentsInChildren<ParticleSystem>(),
+            SmokeNearFade.Fades
+        );
+        if (system == null)
+        {
+            Fail($"{name}: none of its particle systems passes the near fade's filter");
+            yield break;
+        }
+        float hazeBefore = SmokeNearFade.HazeAlpha;
+        float timeScale = Time.timeScale;
+        yield return PlaceSheetsAndFreeze(system, head);
+        yield return Wait(NearFadeSettleSeconds);
+        var on = ReadSheets(holder, head);
+        float haze = SmokeNearFade.HazeAlpha;
+        RenderFixesFeature.NearSmokeFade.Value = false;
+        yield return Frames(3);
+        var off = ReadSheets(holder, head);
+        float hazeOff = SmokeNearFade.HazeAlpha;
+        RenderFixesFeature.NearSmokeFade.Value = true;
+        Time.timeScale = timeScale;
+        float least = string.Equals(name, NearFadeEffects[0], StringComparison.Ordinal)
+            ? NearFadePoisonMinHaze
+            : NearFadeHazeMargin;
+        notes.Add(
+            F(
+                $"{name} placed: on {on.Near} near, nearest drawn {on.NearestDrawn:0.00} m, haze {haze:0.00} from {hazeBefore:0.00}; off nearest drawn {off.NearestDrawn:0.00} m, {off.Faded} still faded, haze {hazeOff:0.00}"
+            )
+        );
+        if (on.Near == 0)
+            Fail($"{name}: the placed sheet is not there");
+        else if (on.NearestDrawn < SheetFade.FadeStart)
+            Fail(F($"{name}: a sheet draws at {on.NearestDrawn:0.00} m with the fade on"));
+        else if (on.NearestDrawn > NearFadeKeptSheetZ + 0.1f)
+            Fail(
+                F($"{name}: the sheet at {NearFadeKeptSheetZ:0} m does not draw with the fade on")
+            );
+        else if (haze - hazeBefore < least || haze > SheetFade.MaxHaze + 0.01f)
+            Fail(
+                F(
+                    $"{name}: haze {haze:0.00} from {hazeBefore:0.00} for a sheet taken away right ahead, wanted a rise of {least:0.00}"
+                )
+            );
+        else if (off.NearestDrawn >= SheetFade.FadeStart)
+            Fail($"{name}: the placed sheet does not draw with the fade off, so on proved nothing");
+        else if (off.Faded > 0 || hazeOff > 0f)
+            Fail(F($"{name}: off left {off.Faded} sheets faded and haze {hazeOff:0.00}"));
+    }
+
+    /// <summary>A big sheet with no hazard, placed like the others, stays exactly vanilla: the haze would go near black on
+    /// the thin dense smoke of a campfire. A level without the effect only says so: a kept poison sheet proves the fade.</summary>
+    IEnumerator NearFadeVanillaCheck(
+        Dictionary<string, GameObject> prefabs,
+        Transform head,
+        List<string> notes
+    )
+    {
+        var holder = SpawnEffect(
+            prefabs,
+            NearFadeVanillaEffect,
+            head.position + (Flat(head.forward) * NearFadeFarMetres)
+        );
+        if (holder == null)
+        {
+            notes.Add($"{NearFadeVanillaEffect} absent");
+            yield break;
+        }
+        var system = Array.Find(
+            holder.GetComponentsInChildren<ParticleSystem>(),
+            SmokeNearFade.IsSheet
+        );
+        if (system == null)
+        {
+            Fail($"{NearFadeVanillaEffect}: no big sheet in it, so this proved nothing");
+            yield break;
+        }
+        float hazeBefore = SmokeNearFade.HazeAlpha;
+        float timeScale = Time.timeScale;
+        yield return PlaceSheetsAndFreeze(system, head);
+        yield return Wait(NearFadeSettleSeconds);
+        var read = ReadSheets(holder, head);
+        float haze = SmokeNearFade.HazeAlpha;
+        Time.timeScale = timeScale;
+        notes.Add(
+            F(
+                $"{NearFadeVanillaEffect} placed: {read.Near} near, nearest drawn {read.NearestDrawn:0.00} m, {read.Faded} faded, haze {haze:0.00} from {hazeBefore:0.00}"
+            )
+        );
+        if (SmokeNearFade.Fades(system))
+            Fail($"{NearFadeVanillaEffect} passes the near fade's filter");
+        else if (read.Near == 0)
+            Fail($"{NearFadeVanillaEffect}: the placed sheet is not there");
+        else if (read.Faded > 0)
+            Fail($"{NearFadeVanillaEffect}: {read.Faded} sheets lost alpha");
+        else if (haze - hazeBefore > NearFadeHazeMargin)
+            Fail(F($"{NearFadeVanillaEffect}: haze rose to {haze:0.00} from {hazeBefore:0.00}"));
+        Destroy(holder);
+    }
+
+    /// <summary>Two frames with time running, so the renderer's bounds, which decide whether a system is read, hold the
+    /// new sheets; how they follow at timeScale 0 is not known. Then frozen, so what is placed stays where it is. The
+    /// caller puts the time back.</summary>
+    IEnumerator PlaceSheetsAndFreeze(ParticleSystem system, Transform head)
+    {
+        PlaceSheets(
+            system,
+            head.position + (head.forward * NearFadeSheetZ),
+            head.position + (head.forward * NearFadeKeptSheetZ)
+        );
+        yield return Frames(2);
+        FreezeWorld();
+    }
+
+    /// <summary>One still sheet at each spot, aged by <see cref="NearFadeSheetAge"/>. Emit has no age of its own.</summary>
+    static void PlaceSheets(ParticleSystem system, params Vector3[] spots)
+    {
+        bool world = system.main.simulationSpace == ParticleSystemSimulationSpace.World;
+        foreach (var spot in spots)
+            system.Emit(
+                new ParticleSystem.EmitParams
+                {
+                    position = world ? spot : system.transform.InverseTransformPoint(spot),
+                    applyShapeToPosition = false,
+                    velocity = Vector3.zero,
+                    startSize = NearFadeSheetSize,
+                    startLifetime = NearFadeSheetLife,
+                },
+                1
+            );
+        var buffer = new ParticleSystem.Particle[Mathf.Max(1000, system.particleCount)];
+        int count = system.GetParticles(buffer);
+        for (int i = 0; i < count; i++)
+            if (Mathf.Approximately(buffer[i].startLifetime, NearFadeSheetLife))
+                buffer[i].remainingLifetime = NearFadeSheetLife * (1f - NearFadeSheetAge);
+        system.SetParticles(buffer, count);
+    }
+
+    private struct SheetRead
+    {
+        public int Sheets;
+        public int Near;
+        public int Faded;
+        public int FadedPastEnd;
+        public float NearestDrawn;
+    }
+
+    /// <summary>The sheets the near fade covers, ahead of the head along its forward: how many are under the fade, how
+    /// many hold less than their start alpha, and the nearest still drawn.</summary>
+    static SheetRead ReadSheets(GameObject holder, Transform head)
+    {
+        var read = new SheetRead { NearestDrawn = float.PositiveInfinity };
+        foreach (var ps in holder.GetComponentsInChildren<ParticleSystem>())
+        {
+            if (!SmokeNearFade.IsSheet(ps))
+                continue;
+            var buffer = new ParticleSystem.Particle[Mathf.Max(1000, ps.particleCount)];
+            byte full = ((Color32)SmokeNearFade.StartColor(ps)).a;
+            bool world = ps.main.simulationSpace == ParticleSystemSimulationSpace.World;
+            int count = ps.GetParticles(buffer);
+            read.Sheets += count;
+            for (int i = 0; i < count; i++)
+            {
+                var at = world
+                    ? buffer[i].position
+                    : ps.transform.TransformPoint(buffer[i].position);
+                float z = Vector3.Dot(at - head.position, head.forward);
+                if (buffer[i].startColor.a != full)
+                {
+                    read.Faded++;
+                    if (Mathf.Abs(z) >= SheetFade.FadeEnd)
+                        read.FadedPastEnd++;
+                }
+                if (z <= 0f)
+                    continue;
+                if (z < SheetFade.FadeStart)
+                    read.Near++;
+                if (buffer[i].GetCurrentColor(ps).a > NearFadeDrawnAlpha && z < read.NearestDrawn)
+                    read.NearestDrawn = z;
+            }
+        }
+        return read;
     }
 
     IEnumerator EyeEffectHold(Dictionary<string, GameObject> prefabs, Vector3 spot, string where)
@@ -842,6 +1176,9 @@ internal sealed partial class SelfTestRunner
             Plugin.Log.LogInfo(EyeEffectLine(cam, quiet, before, after, holder, effect, where));
         Destroy(holder);
         yield return Frames(2);
+        // A line after this one must not read the haze easing out as noise.
+        if (SmokeNearFade.HazeAlpha > 0f)
+            yield return Wait(NearFadeSettleSeconds);
     }
 
     static string EyeEffectLine(
