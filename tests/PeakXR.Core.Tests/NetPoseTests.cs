@@ -21,13 +21,45 @@ public class PoseFrameTests
     {
         var root = new Vector3(10f, 5f, -3f);
         var world = WorldPose();
-        var local = PoseFrame.ToLocal(world, root, 73f);
+        var local = PoseFrame.ToLocal(world, root, 73f, 73f);
         var back = PoseFrame.ToWorld(local, root, 73f);
         TestUtil.Near(world.HeadPosition, back.HeadPosition);
         TestUtil.Near(world.LeftHandPosition, back.LeftHandPosition);
         TestUtil.Near(world.RightHandPosition, back.RightHandPosition);
         TestUtil.SameRotation(world.HeadRotation, back.HeadRotation);
         TestUtil.SameRotation(world.RightHandRotation, back.RightHandRotation);
+    }
+
+    [Fact]
+    public void ABodyOffTheLook_SendsTheHeadOverTheBody_SoACopyFacingTheLookBendsNothing()
+    {
+        // The owner's body stands 70 degrees off a glance; a peer's copy always faces the look (CharacterSyncer.cs:33-55
+        // sends lookValues and hipLocation, never a rotation). The head 0.24 m ahead of the owner's body has to land
+        // 0.24 m ahead of the copy, or the copy's lean wants 2 * 0.24 * sin(35) = 0.27 m.
+        var root = new Vector3(10f, 5f, -3f);
+        const float body = 20f;
+        const float look = 90f;
+        var ahead = new Vector3(0f, 1.1f, 0.24f);
+        var world = WorldPose();
+        world.HeadPosition = root + UnityQuat.Rotate(UnityQuat.Euler(0f, body, 0f), ahead);
+        var copy = PoseFrame.ToWorld(PoseFrame.ToLocal(world, root, look, body), root, look);
+        TestUtil.Near(
+            root + UnityQuat.Rotate(UnityQuat.Euler(0f, look, 0f), ahead),
+            copy.HeadPosition
+        );
+    }
+
+    [Fact]
+    public void ABodyOffTheLook_KeepsTheHeadsRotationAndTheHandsWhereTheyAre()
+    {
+        // The head look on the copy and the hands' reach stay in the world, on the look's frame.
+        var root = new Vector3(10f, 5f, -3f);
+        var world = WorldPose();
+        var copy = PoseFrame.ToWorld(PoseFrame.ToLocal(world, root, 90f, 20f), root, 90f);
+        TestUtil.SameRotation(world.HeadRotation, copy.HeadRotation);
+        TestUtil.Near(world.LeftHandPosition, copy.LeftHandPosition);
+        TestUtil.Near(world.RightHandPosition, copy.RightHandPosition);
+        TestUtil.SameRotation(world.RightHandRotation, copy.RightHandRotation);
     }
 
     [Fact]
@@ -41,7 +73,7 @@ public class PoseFrameTests
             RightHandPosition = root + new Vector3(0.5f, 0f, 0f),
             RightHandRotation = UnityQuat.Euler(0f, 90f, 0f),
         };
-        var local = PoseFrame.ToLocal(world, root, 90f);
+        var local = PoseFrame.ToLocal(world, root, 90f, 90f);
         TestUtil.Near(new Vector3(0f, 0f, 0.5f), local.RightHandPosition);
         TestUtil.SameRotation(Quaternion.Identity, local.RightHandRotation);
     }
@@ -67,7 +99,7 @@ public class PoseFrameTests
         p.Flags |= PoseFlags.Fingers | PoseFlags.Seated;
         p.Sequence = 77;
         p.LeftFingers = new FingerCurls(0.1f, 0.2f, 0.3f, 0.4f, 0.5f);
-        var local = PoseFrame.ToLocal(p, Vector3.Zero, 30f);
+        var local = PoseFrame.ToLocal(p, Vector3.Zero, 30f, 30f);
         Assert.Equal(p.Flags, local.Flags);
         Assert.Equal(77, local.Sequence);
         Assert.Equal(0.3f, local.LeftFingers.Middle);
@@ -715,7 +747,7 @@ public class YawHistoryTests
                     RightHandPosition = hand,
                     RightHandRotation = Quaternion.Identity,
                 };
-                poses.Push(PoseFrame.ToLocal(world, root, yaw), t);
+                poses.Push(PoseFrame.ToLocal(world, root, yaw, yaw), t);
                 from = shown;
                 to = yaw;
                 since = 0.0;

@@ -86,9 +86,10 @@ public sealed class BodyHold
 
     public float BendSettleSeconds = 0.3f;
 
-    /// <summary>The look turns faster than this (deg/s; a glance is 100-250, idle sway a few, as <see cref="TurnSkip"/>
-    /// reads it): the game spins the ragdoll to it, and the body slides with no bend to arm the hold (vr.302, #123:
-    /// 0.073-0.189 m). The eye's lag behind the turn (<see cref="BodyLean.HeadBias"/>) used to arm it by accident.</summary>
+    /// <summary>The body's heading turns faster than this (deg/s; <see cref="BodyTurn.Rate"/> is 120, idle sway a few, as
+    /// <see cref="TurnSkip"/> reads it): the ragdoll spins to it, and the body slides with no bend to arm the hold (vr.302,
+    /// #123: 0.073-0.189 m when the heading kept to the look). The eye's lag behind the turn
+    /// (<see cref="BodyLean.HeadBias"/>) used to arm it by accident.</summary>
     public float SwingSpeed = 30f;
 
     /// <summary>Mass-centre jolt (m/s^2) a head swing's own contacts never reach: 5.1 at most standing, against 15.6-16.7 for a
@@ -119,7 +120,7 @@ public sealed class BodyHold
     /// <param name="free"><see cref="HoldGate.Free"/>: nothing but the lean is moving the body.</param>
     /// <returns>Acceleration (x, z) to add to every part.</returns>
     /// <param name="bendRate">How fast the lean's bend is changing (deg/s): its contact jolt is not an outside force.</param>
-    /// <param name="lookRate">How fast the look's heading is turning (deg/s): past <see cref="SwingSpeed"/> it counts as a
+    /// <param name="lookRate">How fast the body's heading is turning (deg/s): past <see cref="SwingSpeed"/> it counts as a
     /// lean, and its jolt as the lean's own.</param>
     public Vector2 Update(
         Vector2 centre,

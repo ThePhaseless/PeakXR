@@ -397,6 +397,13 @@ internal sealed partial class SelfTestRunner
             );
             JudgeSettled(c, at, off.magnitude, fails);
             JudgePeakBend(at, fails, notes);
+            // BodyTurn leaves a glance alone, not a turned head: the body comes round.
+            float facing = Mathf.DeltaAngle(
+                RigDriver.BodyHeading(c, 0f),
+                RigDriver.LookHeading(c, 0f)
+            );
+            if (Mathf.Abs(facing) > 6f)
+                fails.Add(F($"{at}: the body faces {facing:0} deg off the settled head"));
         }
         JudgeRise("over the turns", rig, viewY, groundY, fails, notes);
         ReleaseHead();

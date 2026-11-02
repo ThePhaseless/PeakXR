@@ -544,10 +544,7 @@ internal sealed class RigDriver : MonoBehaviour
     {
         if (c == null || c.refs.hip == null || !LeanTraceDue(ref nextLeanTrace))
             return;
-        var f = c.data.lookDirection_Flat;
-        if (f.sqrMagnitude < 1e-4f)
-            return;
-        f.Normalize();
+        var f = Quaternion.Euler(0f, BodyHeading(c, 0f), 0f) * Vector3.forward;
         var r = new Vector3(f.z, 0f, -f.x);
         var root = ViewRoot(c);
         var hip = c.refs.hip.Rig.position;
@@ -702,6 +699,8 @@ internal sealed class RigDriver : MonoBehaviour
             || Mathf.Abs(d.lookDirection.y) > LevelLookY
             || d.lookDirection_Flat.sqrMagnitude < 1e-4f
             // Mid-turn the look heading is new but the ragdoll still faces the old one: a skewed sample.
+            // Past BodyTurn's band a turn is due: within it the body stands on its own heading, which the sample uses.
+            || Mathf.Abs(Mathf.DeltaAngle(BodyHeading(c, 0f), LookHeading(c, 0f))) > 6f
             || Time.unscaledTime < turnHoldUntil
             || Mathf.Abs(Mathf.DeltaAngle(turnYaw, rig.Origin.eulerAngles.y)) > 0.01f
             // The first sample (taken whole) waits for a still stand, past the beach wake-up: the first upright frame after
@@ -722,7 +721,7 @@ internal sealed class RigDriver : MonoBehaviour
         bool leaning = driver != null && driver.LeanWeight > 0f;
         if (leaning || !TryEyePoint(c, out eye))
             return false;
-        float facing = Mathf.Atan2(d.lookDirection_Flat.x, d.lookDirection_Flat.z) * Mathf.Rad2Deg;
+        float facing = BodyHeading(c, 0f);
         var sample = RigMath.EyeOffset(eye.N(), ViewRoot(c).N(), facing);
         var torsoSample = RigMath.EyeOffset(eye.N(), c.Center.N(), facing);
         if (!(sample.Y > 0.1f && sample.Y < 2f && Mathf.Abs(sample.X) < 0.5f))
@@ -1354,8 +1353,8 @@ internal sealed class RigDriver : MonoBehaviour
 
     /// <summary>
     /// The stance (<see cref="BodyStance"/>), on the view just placed: <see cref="StanceDebt"/> is the view less the
-    /// body's unbent eyes at its own heading (<see cref="LeanEye"/>; the game turns the body to the head's heading
-    /// every frame, Character.SetRotation, Character.cs:1539-1542, about its mass centre with the eyes 0.24 m ahead),
+    /// body's unbent eyes at its own heading (<see cref="LeanEye"/>; the body turns about its mass centre with the eyes
+    /// 0.24 m ahead, Character.SetRotation, Character.cs:1539-1542, on <see cref="Avatar.AvatarPatches.BodyFacing"/>'s heading),
     /// less the step back while looking down. Measured, not added up from the view's shifts, so a turn in the room,
     /// a snap or smooth turn, a step, a lean and the look-down all count. player.locomotion walks it off; the lean
     /// bends for it meanwhile, except for the step back (<see cref="ViewOffset"/>).
@@ -1392,7 +1391,8 @@ internal sealed class RigDriver : MonoBehaviour
                 Time.unscaledDeltaTime,
                 back,
                 Locomotion.LocomotionInput.TurnSettling,
-                (eye - lastStanceEye).N()
+                (eye - lastStanceEye).N(),
+                LookHeading(c, bodyYaw)
             )
             .U();
         lastStanceEye = eye;
@@ -1736,9 +1736,33 @@ internal sealed class RigDriver : MonoBehaviour
         return rootBlend >= 1f ? mass : Vector3.Lerp(torso, mass, rootBlend);
     }
 
-    /// <summary>The heading the body faces (its flat look, Character.cs:1350, the frame the eyes are measured in,
-    /// <see cref="UpdateEyeOffset"/>), or <paramref name="fallback"/> without one.</summary>
+    /// <summary>The heading the body faces, the frame the eyes are measured in (<see cref="UpdateEyeOffset"/>): the local
+    /// VR body's own (<see cref="Avatar.AvatarPatches.BodyFacing"/>), else its flat look (Character.cs:1350), or
+    /// <paramref name="fallback"/> without one.</summary>
     internal static float BodyHeading(Character c, float fallback)
+    {
+        float own = c.IsLocal ? Avatar.AvatarPatches.BodyFacing.Heading : float.NaN;
+        return float.IsNaN(own) ? LookHeading(c, fallback) : own;
+    }
+
+    /// <summary>What a tracking-space <see cref="BodyYaw"/> (the belt, a friend reach's shoulders) follows: looking level
+    /// the heading the avatar's hips stand on, so a glance turns neither off them; looking down, or with the body on the
+    /// look, the head as ever.</summary>
+    internal static float BodyYawInput(System.Numerics.Quaternion headRot, float lookDownPitch)
+    {
+        float head = BodySlotLayout.HeadYawDeg(headRot);
+        var origin = VRRig.Instance != null ? VRRig.Instance.Origin : null;
+        float heading = Avatar.AvatarPatches.BodyFacing.Heading;
+        return
+            float.IsNaN(heading)
+            || origin == null
+            || BodySlotLayout.HeadPitchDeg(headRot) >= lookDownPitch
+            ? head
+            : heading - origin.eulerAngles.y;
+    }
+
+    /// <summary>The flat look's heading (Character.cs:1350), or <paramref name="fallback"/> without one.</summary>
+    internal static float LookHeading(Character c, float fallback)
     {
         var f = c.data.lookDirection_Flat;
         return f.sqrMagnitude > 1e-4f ? Mathf.Atan2(f.x, f.z) * Mathf.Rad2Deg : fallback;

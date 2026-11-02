@@ -146,6 +146,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         yield return MpStep("regroup", 60f, true, WalkTo(HostCenter, 1.5f, true));
+        yield return MpStep("vr.306-glance-peer", 40f, true, MpGlancePeer());
         yield return MpStep("luggage", 300f, true, OpenLuggage());
         yield return MpStep("grab", 40f, true, GrabNearest(food: false));
         // One item passes along this chain (mpItem): a link after a failed one would judge what that failure left.
@@ -160,6 +161,75 @@ internal sealed partial class SelfTestRunner
         yield return MpStep("feed", 180f, true, Feed());
         yield return MpSocialSteps();
         MpFinish("script done");
+    }
+
+    /// <summary>
+    /// <c>vr.306-glance-peer</c>: A glances 70 degrees, holding each under <see cref="BodyTurn.QuietSeconds"/> so its body
+    /// stays on its heading, and names when it held in the checkpoint's <c>glances</c> (Unix seconds, from once the pose
+    /// buffer has caught up). A modded B logs the bend of A's copy, which faces the look (CharacterSyncer.cs:33-55), and
+    /// mp-check judges it there: read on the look, the head asks that copy for 0.27 m. A fails only if its body came along,
+    /// which would prove nothing.
+    /// </summary>
+    IEnumerator MpGlancePeer()
+    {
+        Character c = null;
+        yield return StanceSetup(x => c = x);
+        if (c == null)
+            yield break;
+        var rig = VRRig.Instance;
+        var driver = AvatarPoseDriver.Of(c);
+        var home = new Vector3(
+            rig.RoomAnchor.X,
+            RigMath.TrackedEyeHeight(rig.HeightOffset),
+            rig.RoomAnchor.Y
+        );
+        var level = Quaternion.LookRotation(Flat(VRInput.HeadRotation * Vector3.forward));
+        var forward = level * Vector3.forward;
+        var windows = new List<string>();
+        float leastOff = 180f;
+        float ownBend = 0f;
+        for (int i = 0; i < 4; i++)
+        {
+            float t0 = Now;
+            double from = 0d;
+            while (Now - t0 < 2.6f)
+            {
+                float t = Now - t0;
+                ScriptGlance(home, level, forward, t, 0.7f);
+                yield return null;
+                if (t is <= 0.6f or >= 1.05f)
+                    continue;
+                if (from == 0d)
+                    from = Unix;
+                leastOff = Mathf.Min(
+                    leastOff,
+                    Mathf.Abs(
+                        Mathf.DeltaAngle(
+                            Rig.RigDriver.BodyHeading(c, 0f),
+                            Rig.RigDriver.LookHeading(c, 0f)
+                        )
+                    )
+                );
+                ownBend = Mathf.Max(ownBend, driver.LeanDegrees);
+                if (Now - t0 >= 1.05f)
+                    windows.Add(
+                        "["
+                            + from.ToString("0.###", CultureInfo.InvariantCulture)
+                            + ","
+                            + Unix.ToString("0.###", CultureInfo.InvariantCulture)
+                            + "]"
+                    );
+            }
+        }
+        ReleaseHead();
+        cpExtra["glances"] = "[" + string.Join(",", windows) + "]";
+        string note = F($"body stayed {leastOff:0} deg off the glance, own bend {ownBend:0.0} deg");
+        if (leastOff < 40f)
+            Fail(
+                note + ", want 40 deg: the body came with the head, so a peer's copy proves nothing"
+            );
+        else
+            stepNote = note;
     }
 
     /// <summary>One checkpoint: the step, then its line in a-checkpoints.jsonl, a screenshot, a short still hold and

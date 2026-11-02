@@ -90,7 +90,8 @@ internal sealed partial class SelfTestRunner
     static readonly float MaxStanceLeftover = new StanceWalk().Again + 0.01f;
 
     /// <summary>Most the drawn eyes may sit off the view once a walk has settled (m, level): the lean bends for what
-    /// the walk left, so only the eye model's own error (<see cref="MaxEyeModelGap"/>) remains.</summary>
+    /// the walk left less what <see cref="TurnSkip"/> keeps out of it, and the eye model's own error
+    /// (<see cref="MaxEyeModelGap"/>) stays on top.</summary>
     const float MaxDrawnEyeOff = MaxEyeModelGap;
 
     /// <summary>The eye renderers' level distance from the view (m), NaN without them. Without the view hold's deliberate
@@ -310,7 +311,8 @@ internal sealed partial class SelfTestRunner
     /// no stance walk may start, the mass centre may move at most 0.05 m level, and the rig origin, which only the head
     /// may move, at most <see cref="MaxLeanDrift"/> level, also over 3 s more, once
     /// <see cref="PeakXR.Core.BodyHold.MaxAfterLean"/> has let the body go. What the body does in those 3 s (a late slide,
-    /// a walk) is only a note: #50's open decision, accept it or step the feet instead of holding them.
+    /// a walk) is only a note: #50's open decision, accept it or step the feet instead of holding them. The note also
+    /// names how far the head's forward stays off the look at the glance's peak (<see cref="BodyTurn.HeadOnNeck"/>).
     /// </summary>
     IEnumerator GlanceStillStep()
     {
@@ -341,6 +343,7 @@ internal sealed partial class SelfTestRunner
             lastOrigin = now;
         }
         bool walked = false;
+        float headOff = 0f;
         float t0 = Now;
         RigDriver.TraceEveryStepUntil = Time.unscaledTime + 3f;
         while (Now - t0 < 3f)
@@ -350,6 +353,11 @@ internal sealed partial class SelfTestRunner
             walked |= RigDriver.FollowWalking;
             root.Encapsulate(RigDriver.ViewRoot(c));
             ReadView();
+            if (Now - t0 is > 0.5f and < 0.65f)
+                headOff = Mathf.Max(
+                    headOff,
+                    Vector3.Angle(Flat(c.refs.head.transform.forward), c.data.lookDirection_Flat)
+                );
         }
         float moved = FlatSize(root);
         var after = new Bounds(RigDriver.ViewRoot(c), Vector3.zero);
@@ -365,7 +373,7 @@ internal sealed partial class SelfTestRunner
         ReleaseHead();
         float view = FlatSize(origin);
         var note = F(
-            $"glance: stance walk {(walked ? "started" : "never started")}, body moved {moved:0.000} m; 3 s later the body moved {FlatSize(after):0.000} m more, {(walkedLate ? "with a walk" : "no walk")}; view moved {ViewMoved(origin)} over all 6 s, largest step {viewStep:0.000} m"
+            $"glance: stance walk {(walked ? "started" : "never started")}, body moved {moved:0.000} m; 3 s later the body moved {FlatSize(after):0.000} m more, {(walkedLate ? "with a walk" : "no walk")}; view moved {ViewMoved(origin)} over all 6 s, largest step {viewStep:0.000} m; head forward {headOff:0} deg off the look at the peak"
         );
         if (walked || moved > 0.05f || view > MaxLeanDrift)
             Fail(note);
@@ -373,14 +381,14 @@ internal sealed partial class SelfTestRunner
             stepNote = note;
     }
 
-    /// <summary>The scripted head of a glance <paramref name="t"/> seconds in: out over 0.35 s, held 0.3 s, back over
-    /// 0.35 s, at 70 degrees; the eyes swing on a 0.1 m neck as in vr.45b.</summary>
-    void ScriptGlance(Vector3 home, Quaternion level, Vector3 forward, float t)
+    /// <summary>The scripted head of a glance <paramref name="t"/> seconds in: out over 0.35 s, held
+    /// <paramref name="held"/> s, back over 0.35 s, at 70 degrees; the eyes swing on a 0.1 m neck as in vr.45b.</summary>
+    void ScriptGlance(Vector3 home, Quaternion level, Vector3 forward, float t, float held = 0.3f)
     {
         float k =
             t < 0.35f ? t / 0.35f
-            : t < 0.65f ? 1f
-            : t < 1f ? 1f - (t - 0.65f) / 0.35f
+            : t < 0.35f + held ? 1f
+            : t < 0.7f + held ? 1f - (t - 0.35f - held) / 0.35f
             : 0f;
         var q = Quaternion.Euler(0f, 70f * Mathf.SmoothStep(0f, 1f, k), 0f);
         ScriptHead(home + (q * forward - forward) * NeckSwing, q * level);

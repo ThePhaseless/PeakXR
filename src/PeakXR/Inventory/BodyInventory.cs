@@ -198,7 +198,7 @@ internal sealed class BodyInventory : IGripExtension
         var headPos = VRInput.HeadPosition.N();
         var headRot = VRInput.HeadRotation.N();
         yaw = bodyYaw.Update(
-            BodySlotLayout.HeadYawDeg(headRot),
+            Rig.RigDriver.BodyYawInput(headRot, bodyYaw.LookDownPitch),
             BodySlotLayout.HeadPitchDeg(headRot),
             dt
         );

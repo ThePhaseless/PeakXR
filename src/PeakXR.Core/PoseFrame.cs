@@ -18,11 +18,22 @@ public static class PoseFrame
 {
     static readonly Vector3 Up = new Vector3(0f, 1f, 0f);
 
-    public static PosePacket ToLocal(in PosePacket world, Vector3 root, float yawDeg)
+    /// <param name="bodyYawDeg">The heading the sender's body stands on (<see cref="BodyTurn"/>). A receiver's copy
+    /// always faces the look, so the head's position goes over the body: read on the look, a body 70 degrees off a glance
+    /// would ask the copy's lean for 0.27 m. Rotation and hands stay in the world, on the look's frame.</param>
+    public static PosePacket ToLocal(
+        in PosePacket world,
+        Vector3 root,
+        float yawDeg,
+        float bodyYawDeg
+    )
     {
         var inv = Quaternion.CreateFromAxisAngle(Up, -yawDeg * UnityQuat.Deg2Rad);
         var p = world;
-        p.HeadPosition = UnityQuat.Rotate(inv, world.HeadPosition - root);
+        p.HeadPosition = UnityQuat.Rotate(
+            Quaternion.CreateFromAxisAngle(Up, -bodyYawDeg * UnityQuat.Deg2Rad),
+            world.HeadPosition - root
+        );
         p.HeadRotation = UnityQuat.Mul(inv, world.HeadRotation);
         p.LeftHandPosition = UnityQuat.Rotate(inv, world.LeftHandPosition - root);
         p.LeftHandRotation = UnityQuat.Mul(inv, world.LeftHandRotation);

@@ -524,7 +524,8 @@ internal static class LocomotionInput
                 new NVector2(data.lookValues.x, data.lookValues.y),
                 outside,
                 dt,
-                AvatarPoseDriver.Of(c) is { BodyHeld: true }
+                AvatarPoseDriver.Of(c) is { BodyHeld: true },
+                bodyYaw
             );
         TurnSettling = canFollow && Own.SettlingTurn;
         FollowGap = NVector2.Distance(head, Follow.Anchor);
@@ -550,7 +551,7 @@ internal static class LocomotionInput
             var armless = ArmlessVelocity(c);
             Plugin.Log.LogInfo(
                 System.FormattableString.Invariant(
-                    $"[player.locomotion] room t{Time.unscaledTime:0.00} head-anchor {FollowGap:0.000} debt ({debt.X:0.000},{debt.Y:0.000}) body-delta ({delta.x:0.000},{delta.z:0.000}) follow {canFollow} walking {Stance.Walking} blocked {Stance.Blocked} stick fwd {stick.Y:0.00} right {stick.X:0.00} body-v ({bodyVelocity.x:0.000},{bodyVelocity.z:0.000}) armless-v ({armless.x:0.000},{armless.z:0.000})"
+                    $"[player.locomotion] room t{Time.unscaledTime:0.00} head-anchor {FollowGap:0.000} debt ({debt.X:0.000},{debt.Y:0.000}) body-delta ({delta.x:0.000},{delta.z:0.000}) follow {canFollow} walking {Stance.Walking} blocked {Stance.Blocked} held {Stance.HeldSeconds:0.00} stick fwd {stick.Y:0.00} right {stick.X:0.00} body-v ({bodyVelocity.x:0.000},{bodyVelocity.z:0.000}) armless-v ({armless.x:0.000},{armless.z:0.000})"
                 )
             );
         }

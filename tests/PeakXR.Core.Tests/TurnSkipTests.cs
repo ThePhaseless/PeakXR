@@ -21,6 +21,24 @@ public class TurnSkipTests
         share - s.Update(share, yaw, walking, Dt);
 
     [Fact]
+    public void AGlance_WithTheBodyStandingStill_IsATurnAllTheSame()
+    {
+        // BodyTurn leaves the body on its heading through a glance, and the neck alone moves the debt: 0.1 m of radius.
+        var s = new TurnSkip();
+        const float neck = 0.1f;
+        s.Update(Vector3.Zero, 0f, false, Dt, look: 0f);
+        float most = 0f;
+        for (float t = 0f; t < 1f; t += Dt)
+        {
+            float look = 70f * (t < 0.5f ? t / 0.5f : (1f - t) / 0.5f);
+            var share = neck * (Facing(look) - Facing(0f));
+            var lean = share - s.Update(share, 0f, false, Dt, look: look);
+            most = MathF.Max(most, lean.Length());
+        }
+        Assert.InRange(most, 0f, 0.005f);
+    }
+
+    [Fact]
     public void Glance_TheLeanNeverBends()
     {
         // vr.302 (run 13): a 70 degree glance out and back put 0.16 m on the debt and the lean bent 9.5 degrees for it.

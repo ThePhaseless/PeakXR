@@ -4,8 +4,8 @@ using System.Numerics;
 namespace PeakXR.Core;
 
 /// <summary>
-/// The part of the lean's share of the stance debt that a turn made, which the lean leaves to the stance walk. The game
-/// turns the body to the look about its mass centre with its eyes 0.24 m ahead, a real head turns about its neck, and a
+/// The part of the lean's share of the stance debt that a turn made, which the lean leaves to the stance walk. The body
+/// turns about its mass centre with its eyes 0.24 m ahead, a real head turns about its neck, and a
 /// snap or smooth turn pivots on the eye, so every turn moves the debt without the head leaving the body. Run 13 bent
 /// the spine 9.5 degrees for a glance (vr.302) and 15-19 under a held turned head (vr.45b). The debt's change while the
 /// look turns (and for <see cref="SwingSeconds"/> after, while the ragdoll torso swings onto the new heading) goes
@@ -39,6 +39,7 @@ public sealed class TurnSkip
 
     Vector3 _last;
     float _lastYaw;
+    float _lastLook;
     float _lastBack;
     bool _have;
     bool _walked;
@@ -52,11 +53,12 @@ public sealed class TurnSkip
     public Vector3 Skip { get; private set; }
 
     /// <param name="share">The lean's share of the debt before this skip (world, m).</param>
-    /// <param name="yaw">The body's heading, which the game keeps on the look (degrees).</param>
+    /// <param name="yaw">The body's heading (degrees).</param>
     /// <param name="walking">The stance walk is stepping the body.</param>
     /// <param name="back">The step back the look wants now (m, <see cref="BodyStance.StepBack"/>).</param>
     /// <param name="settling">The body still creeps after a large look change (<see cref="OwnMotion.SettlingTurn"/>).</param>
     /// <param name="eyeTravel">The body's eyes' travel since the last update (world, m).</param>
+    /// <param name="look">The look's heading (degrees), when the body doesn't keep to it (<see cref="BodyTurn"/>).</param>
     /// <returns><see cref="Skip"/>.</returns>
     public Vector3 Update(
         Vector3 share,
@@ -65,7 +67,8 @@ public sealed class TurnSkip
         float dt,
         float back = 0f,
         bool settling = false,
-        Vector3 eyeTravel = default
+        Vector3 eyeTravel = default,
+        float? look = null
     )
     {
         share.Y = 0f;
@@ -74,13 +77,17 @@ public sealed class TurnSkip
             _have = true;
             _last = share;
             _lastYaw = yaw;
+            _lastLook = look ?? yaw;
             _lastBack = back;
             _lastSettling = settling;
             return Skip;
         }
         if (dt <= 0f)
             return Skip;
-        bool turning = MathF.Abs(BodySlotLayout.DeltaAngle(_lastYaw, yaw)) > TurningSpeed * dt;
+        // The neck moves the debt as the body's turn does, each on its own.
+        bool turning =
+            MathF.Abs(BodySlotLayout.DeltaAngle(_lastYaw, yaw)) > TurningSpeed * dt
+            || MathF.Abs(BodySlotLayout.DeltaAngle(_lastLook, look ?? yaw)) > TurningSpeed * dt;
         float gaveUp = _lastBack - back;
         if (turning || gaveUp > GiveUpSpeed * dt)
         {
@@ -131,6 +138,7 @@ public sealed class TurnSkip
             : _kept;
         _last = share;
         _lastYaw = yaw;
+        _lastLook = look ?? yaw;
         _lastBack = back;
         return Skip;
     }

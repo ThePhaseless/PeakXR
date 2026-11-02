@@ -7,8 +7,9 @@
 # A's CheckpointHold) for how late B may answer a checkpoint while A still stands still.
 # --modded-b: B ran PeakXR flat (docs/testing.md, "Modded B"). Instead of "no event 151 anywhere" it checks B's
 # handshake, the 151 stream from A (mean rate over the seconds with packets between RATE_MIN and RATE_MAX per second,
-# defaults 2 and 30), A's avatar hands on B within HAND_TOL (m, default 0.25) of A's tracked hands, that B sent no 151,
-# ran flat and logged no mod errors. Every other check is the same as the default (vanilla B) mode.
+# defaults 2 and 30), A's avatar hands on B within HAND_TOL (m, default 0.25) of A's tracked hands, A's avatar on B
+# bending at most GLANCE_LEAN (degrees, default 6) while A glances, that B sent no 151, ran flat and logged no mod
+# errors. Every other check is the same as the default (vanilla B) mode.
 set -euo pipefail
 
 MODDED=false
@@ -24,6 +25,7 @@ HOLD="${HOLD:-2.0}"
 HAND_TOL="${HAND_TOL:-0.25}"
 RATE_MIN="${RATE_MIN:-2}"
 RATE_MAX="${RATE_MAX:-30}"
+GLANCE_LEAN="${GLANCE_LEAN:-6}"
 A="$DIR/a-checkpoints.jsonl"
 B="$DIR/b-observer.jsonl"
 SUM="$DIR/b-summary.json"
@@ -40,7 +42,7 @@ checks() {
 # "after" runs on to B's next checkpoint, for the checks that something must never arrive.
 jq -nr --slurpfile a "$A" --slurpfile b "$B" --slurpfile s "$SUM" \
     --argjson pos "$POS_TOL" --argjson land "$LAND_TOL" --argjson lag "$LAG_TOL" --argjson hold "$HOLD" \
-    --argjson modded "$MODDED" --argjson handTol "$HAND_TOL" --argjson rateMin "$RATE_MIN" --argjson rateMax "$RATE_MAX" \
+    --argjson modded "$MODDED" --argjson handTol "$HAND_TOL" --argjson glanceLean "$GLANCE_LEAN" --argjson rateMin "$RATE_MIN" --argjson rateMax "$RATE_MAX" \
     --slurpfile done <(if [[ -s "$DONE" ]]; then cat "$DONE"; else echo '{}'; fi) '
 def dist($p; $q): [range(0; 3) | ($p[.] - $q[.]) * ($p[.] - $q[.])] | add | sqrt;
 def flat($p; $q): [0, 2 | ($p[.] - $q[.]) * ($p[.] - $q[.])] | add | sqrt;
@@ -119,7 +121,7 @@ def moddedb:
      else "INFO PeakXR warned \($px.warnings) time(s) on B: \($px.firstWarnings | map(.e) | join(" | "))" end)
     end;
 # Every checkpoint MpScript writes (SelfTestRunner.MpTest.cs); one A never wrote means its script stopped early.
-def expected: ["join", "walk-to-host", "emote", "ping", "scene-button", "board", "regroup", "luggage", "grab",
+def expected: ["join", "walk-to-host", "emote", "ping", "scene-button", "board", "regroup", "vr.306-glance-peer", "luggage", "grab",
   "drop", "pickup", "throw", "eat", "holster", "climb", "two-hand", "feed", "feed-refuse", "reach-deny", "reach-look", "reach",
   "vr.421-reach-out-cone", "vr.422-reach-out-idle", "vr.423-reach-out-hands-full", "vr.424-reach-out-far",
   "kick-mode", "carry", "pack", "vr.330-pack-stash", "vr.434-point-friend-pack", "pal-jump", "vr.420-reach-out-ledge", "campfire-far", "spectate",
@@ -154,6 +156,14 @@ def expected: ["join", "walk-to-host", "emote", "ping", "scene-button", "board",
         elif $x.ping == null then "FAIL ping: A logged no ping point"
         else ([$pts[] | dist(.; $x.ping)] | min) as $d
           | "\(if $d <= $land then "PASS" else "FAIL" end) ping: B got the point \($d | r2) m from where A saw it" end
+    elif $x.name == "vr.306-glance-peer" then
+      # A glances with its body left behind; its copy here faces the look (src/PeakXR/Sandbox/SelfTestRunner.MpTest.cs).
+      if ($modded | not) then "INFO vr.306-glance-peer: an unmodded B has no lean on A to read"
+      else [$x.glances[]? as $w | $b[] | select(.type == "lean" and .t >= $w[0] and .t <= $w[1]) | .deg] as $deg
+        | if $deg == [] then "FAIL vr.306-glance-peer: B logged no bend of A during the glances"
+          elif ($deg | max) <= $glanceLean then "PASS vr.306-glance-peer: A on B bent at most \($deg | max | r2) deg over \($deg | length) samples while A glanced (limit \($glanceLean))"
+          else "FAIL vr.306-glance-peer: A on B bent \($deg | max | r2) deg while A glanced, want \($glanceLean): the head is read off the look" end
+      end
     elif $x.name == "board" then
       (if $y.scene != null and $y.scene != "Airport" and $y.scene == $x.scene then "PASS board: B is on \($y.scene) too"
        else "FAIL board: A on \($x.scene), B on \($y.scene)" end),

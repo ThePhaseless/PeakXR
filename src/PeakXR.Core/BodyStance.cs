@@ -141,6 +141,14 @@ public sealed class StanceWalk
     /// travel) before it is walked.</summary>
     public float Delay = 1.5f;
 
+    /// <summary>Body turn (degrees) since the feet last stepped past which the walk takes <see cref="TurnDelay"/>.</summary>
+    public float TurnedDegrees = 20f;
+
+    /// <summary>The delay (s) just after a body turn past <see cref="TurnedDegrees"/>: the head came to rest before the body
+    /// came, so there is no glance left to wait out, and the feet the turn swung pull the body over them all this time
+    /// (vr.45b: 0.1-0.34 m of slide peers see before the walk).</summary>
+    public float TurnDelay = 0.3f;
+
     /// <summary>A debt past this (m, the lean limit) is walked at once.</summary>
     public float AtOnce = 0.35f;
 
@@ -238,6 +246,7 @@ public sealed class StanceWalk
     Vector2 _feet;
     Vector2 _feetStand;
     float _yaw;
+    float _sinceTurn = float.MaxValue;
     float _steppedYaw = float.NaN;
     bool _noLead;
 
@@ -264,6 +273,9 @@ public sealed class StanceWalk
 
     /// <summary>Seconds in the current phase.</summary>
     public float PhaseSeconds { get; private set; }
+
+    /// <summary>Seconds the debt has held on the view (traced: a creep that restarts it walks late).</summary>
+    public float HeldSeconds => _heldFor;
 
     /// <summary>Debt (m) when the current or last push began.</summary>
     public float PushFrom { get; private set; }
@@ -292,6 +304,7 @@ public sealed class StanceWalk
     {
         float dist = debt.Length();
         _feet = feet;
+        _sinceTurn = MathF.Abs(BodySlotLayout.DeltaAngle(_yaw, yaw)) > 0.01f ? 0f : _sinceTurn + dt;
         _yaw = yaw;
         // The gait has stepped the feet at this heading; a body that cannot be walked (the stick, a landing) gets new ones.
         if (float.IsNaN(_steppedYaw) || !canWalk || eased > GaitInput)
@@ -336,7 +349,7 @@ public sealed class StanceWalk
                     !Blocked
                     && (!Rested || dist > AtOnce)
                     && dist > Start
-                    && (dist > AtOnce || _heldFor >= Delay)
+                    && (dist > AtOnce || HeldLongEnough)
                 )
                 {
                     _fruitless = 0;
@@ -362,7 +375,13 @@ public sealed class StanceWalk
                         HoldFrom(debt);
                         return Vector2.Zero;
                     }
-                    if (_stallFor < StillSeconds && PhaseSeconds < SettleMax)
+                    // A body still moving at the max isn't judged yet, or its rest is read in passing (run Z-3 t122.91:
+                    // 0.093 m rested at -0.153 m/s went on to 0.167 m, a 14.9 degree lean).
+                    if (
+                        _stallFor < StillSeconds
+                        && PhaseSeconds
+                            < SettleMax + (velocity.Length() >= 2f * StillSpeed ? 1f : 0f)
+                    )
                         return Vector2.Zero;
                     if (dist <= Again)
                     {
@@ -387,6 +406,15 @@ public sealed class StanceWalk
                 return Pushing(debt, velocity, eased, dt);
         }
     }
+
+    /// <summary>The debt has waited out its delay: <see cref="TurnDelay"/> from the end of a body turn past
+    /// <see cref="TurnedDegrees"/> the feet haven't stepped for, only just after it, as a lean later on is a lean, whose
+    /// <see cref="Delay"/> lets a glance return.</summary>
+    bool HeldLongEnough =>
+        _sinceTurn < Delay
+        && MathF.Abs(BodySlotLayout.DeltaAngle(_steppedYaw, _yaw)) > TurnedDegrees
+            ? _heldFor >= TurnDelay && _sinceTurn >= TurnDelay
+            : _heldFor >= Delay;
 
     void HoldFrom(Vector2 debt)
     {
@@ -528,6 +556,8 @@ public sealed class OwnMotion
     float _poseFor;
     float _turned;
     Vector2 _turnFrom;
+    float _facing;
+    float _facingFrom;
     float _settleFor;
     float _settleStill;
     Vector2 _look;
@@ -541,6 +571,8 @@ public sealed class OwnMotion
     /// <param name="look">The character's look (yaw, pitch) in degrees, as the head drives it.</param>
     /// <param name="outside">An outside force acts this update: wind, an impulse, a slide, a moving ground.</param>
     /// <param name="held"><see cref="BodyHold.Holding"/>.</param>
+    /// <param name="heading">The body's heading (degrees), when it doesn't keep to the look (<see cref="BodyTurn"/>):
+    /// its turn counts as a look of its own, and the hands a turning head brings along pull the body before that.</param>
     /// <returns>This update's body travel is PeakXR's own.</returns>
     public bool Update(
         bool walking,
@@ -548,7 +580,8 @@ public sealed class OwnMotion
         Vector2 look,
         bool outside,
         float dt,
-        bool held = false
+        bool held = false,
+        float? heading = null
     )
     {
         // Held still a while, not one slow update: a body springing back toward its planted feet passes through
@@ -562,6 +595,7 @@ public sealed class OwnMotion
             _coasting = true;
         else if (_stillFor >= StillSeconds || _coastFor >= MaxCoastSeconds)
             _coasting = false;
+        float facing = heading ?? look.X;
         if (_haveLook && dt > 0f)
         {
             float yaw = (look.X - _look.X) % 360f;
@@ -570,17 +604,24 @@ public sealed class OwnMotion
                 : yaw < -180f ? yaw + 360f
                 : yaw;
             float moved = new Vector2(yaw, look.Y - _look.Y).Length();
-            if (moved / dt > LookRate)
+            float bodyTurned = MathF.Abs(BodySlotLayout.DeltaAngle(_facing, facing));
+            if (MathF.Max(moved, bodyTurned) / dt > LookRate)
             {
                 if (_poseFor <= 0f)
+                {
                     _turnFrom = _look;
+                    _facingFrom = _facing;
+                }
                 _poseFor = PoseSeconds;
                 _turned = MathF.Max(
                     _turned,
-                    new Vector2(
-                        BodySlotLayout.DeltaAngle(_turnFrom.X, look.X),
-                        look.Y - _turnFrom.Y
-                    ).Length()
+                    MathF.Max(
+                        new Vector2(
+                            BodySlotLayout.DeltaAngle(_turnFrom.X, look.X),
+                            look.Y - _turnFrom.Y
+                        ).Length(),
+                        MathF.Abs(BodySlotLayout.DeltaAngle(_facingFrom, facing))
+                    )
                 );
                 _settleFor = _settleStill = 0f;
             }
@@ -588,6 +629,7 @@ public sealed class OwnMotion
                 _poseFor = MathF.Max(0f, _poseFor - dt);
         }
         _look = look;
+        _facing = facing;
         _haveLook = true;
         SettlingTurn = Settling(levelSpeed, outside, held, dt);
         return !outside && (walking || _coasting || _poseFor > 0f || SettlingTurn);

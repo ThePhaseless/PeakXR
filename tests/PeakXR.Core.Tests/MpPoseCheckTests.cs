@@ -14,7 +14,7 @@ public class MpPoseFrameTests
             RightHandRotation = Quaternion.Identity,
         };
 
-        var wire = PoseFrame.ToLocal(packet, root, 73f).RightHandPosition;
+        var wire = PoseFrame.ToLocal(packet, root, 73f, 73f).RightHandPosition;
 
         TestUtil.Near(wire, MpPoseFrame.ToFrame(hand, root, 73f));
     }

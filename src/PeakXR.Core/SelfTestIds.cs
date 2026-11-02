@@ -292,6 +292,7 @@ public static class SelfTestIds
         "vr.303-belt-look-down",
         "vr.304-push-moves-view",
         "vr.305-wind-through-glance",
+        "vr.306-glance-peer",
         "vr.390-walk-legs-flat",
         "vr.395-walk-forward-stick",
         "vr.396-walk-forward-room",
