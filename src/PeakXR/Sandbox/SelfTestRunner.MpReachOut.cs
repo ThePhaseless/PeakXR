@@ -306,9 +306,17 @@ internal sealed partial class SelfTestRunner
         yield return FreeHands();
         if (!stepOk)
             yield break;
-        // Any item at hand, passing over one the walk cannot reach (MP run 15b: the walk to the nearest stuck 1.1 m short).
+        // Any item at hand a second hand cannot join, passing over one the walk cannot reach (MP run 15b: the walk to the
+        // nearest stuck 1.1 m short). One that can is a real two-hand grip here, not a full hand (#149: a BingBong, which
+        // the game holds in both hands, took the stretched arm's grip as SecondHand, GripIntent.OnPress).
+        var info = new ItemHoldInfo();
         yield return GrabReachable(
-            _ => true,
+            i =>
+                i.name.StartsWith(MpPlainItem, StringComparison.Ordinal)
+                || (
+                    info.Bind(i)
+                    && !ItemHoldTable.AcceptsSecondHand(info.Profile.Handedness, !i.rightHandOnly)
+                ),
             null,
             NearItems,
             3,
