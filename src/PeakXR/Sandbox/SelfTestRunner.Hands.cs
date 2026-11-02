@@ -52,6 +52,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.12-eat", 30f, EatStep());
         yield return HandStep("vr.13-throw", 25f, ThrowCheck());
         yield return HandStep("vr.249-button-throw-aim", 25f, ButtonThrowAimStep());
+        yield return HandStep("vr.463-throw-pack", 25f, ThrowPackStep());
         yield return HandStep("vr.14-two-hand", 25f, TwoHandStep());
         yield return HandStep("vr.14b-two-hand-between", 45f, TwoHandBetweenStep());
         yield return HandStep("vr.15-climb", 40f, ClimbStep());
@@ -501,6 +502,42 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>Where the last <see cref="ThrowHeld"/> came to rest; null when it did not land.</summary>
     Vector3? lastLanding;
+
+    /// <summary>vr.463 (#117): a hard swing throws a backpack. The game sends one with no velocity
+    /// (CharacterItems.cs:268-272), so at the hand throw's charge 0 it only dropped at the feet.</summary>
+    IEnumerator ThrowPackStep()
+    {
+        Item pack = null;
+        foreach (var it in SandboxActions.Items)
+        {
+            if (it is Backpack b && b.backpackType == BackpackSlot.BackpackType.Backpack)
+                pack = it;
+        }
+        if (pack == null || !SandboxActions.GiveItem(pack))
+        {
+            stepSkip = "no backpack to give: " + SandboxActions.LastMessage;
+            yield break;
+        }
+        var c = Character.localCharacter;
+        yield return WaitFor(() => c.data.currentItem is Backpack, 2f);
+        // Given, it may go on the back: the pack slot is what the game equips it from (Backpack.cs:114).
+        if (c.data.currentItem is not Backpack)
+        {
+            c.refs.items.EquipSlot(Optionable<byte>.Some(3));
+            yield return WaitFor(() => c.data.currentItem is Backpack, 2f);
+        }
+        if (c.data.currentItem is not Backpack)
+        {
+            stepSkip = "the given pack did not reach the hand";
+            yield break;
+        }
+        ushort id = HeldItem().itemID;
+        yield return null;
+        yield return ThrowHeld();
+        var thrown = NewItem(id);
+        if (thrown != null)
+            spawned.Add(thrown.gameObject);
+    }
 
     /// <summary>The MP throw for the item already in hand: vr.13's swing along the head's level forward.</summary>
     IEnumerator ThrowHeld()
