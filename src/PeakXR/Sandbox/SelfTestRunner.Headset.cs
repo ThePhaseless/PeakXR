@@ -8,6 +8,9 @@ using PeakXR.UI.Common;
 using PeakXR.VR;
 using PeakXR.XR;
 using UnityEngine;
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.Controls;
+using UnityEngine.InputSystem.XR;
 using UnityEngine.Rendering.Universal;
 
 namespace PeakXR.Sandbox;
@@ -427,11 +430,77 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>
+    /// vr.489: a controller's state does not reach the game's actions. A trigger value queued on the real Input System
+    /// device, as the runtime would send it, must leave the control as it was: the game's UI module would otherwise
+    /// take every pull as a second click (#133, #134). The game's rebinding prompt still reads that event, so it must not
+    /// take the control either, and a rebind made past the patched entry point must, or the probe proved nothing. A
+    /// self-test's hands never pass through there, so no other step can see this.
+    /// </summary>
+    IEnumerator XRStateIsolatedCheck()
+    {
+        AxisControl trigger = null;
+        foreach (var device in InputSystem.devices)
+            if (device is XRController && trigger == null)
+                trigger = device.TryGetChildControl<AxisControl>("trigger");
+        if (trigger == null)
+        {
+            stepSkip = "no XR controller with a trigger among the Input System's devices";
+            yield break;
+        }
+        float before = trigger.ReadValue();
+        float probe = before > 0.5f ? 0.1f : 0.9f;
+        // Throwaway action, so nothing can land on a real binding. The long wait keeps a match from completing.
+        using var action = new InputAction("selftest-rebind", binding: "<Keyboard>/f12");
+        using var bare = new InputActionRebindingExtensions.RebindingOperation();
+        bare.WithAction(action).OnMatchWaitForAnother(5f).Start();
+        using var prompt = action.PerformInteractiveRebinding().OnMatchWaitForAnother(5f).Start();
+        InputSystem.QueueDeltaStateEvent(trigger, probe);
+        InputSystem.Update();
+        float read = trigger.ReadValue();
+        bool bareTook = bare.candidates.Contains(trigger);
+        bool promptTook = prompt.candidates.Contains(trigger);
+        bare.Cancel();
+        prompt.Cancel();
+        var note =
+            $"{trigger.path}: {before:0.00}, queued {probe:0.00}, read {read:0.00}; "
+            + $"rebind took it: bare {bareTook}, prompt {promptTook}";
+        InputSystem.QueueDeltaStateEvent(trigger, before);
+        InputSystem.Update();
+        if (Mathf.Abs(read - before) > 0.01f)
+            Fail("the game's actions still read the controller: " + note);
+        else if (promptTook)
+            Fail("the game's rebinding prompt takes the controller: " + note);
+        else if (!bareTook)
+            Fail("the probe reached no rebind, so the prompt's result says nothing: " + note);
+        else
+            Note(note);
+    }
+
+    /// <summary>A raycaster on a canvas ui.world converted, for vr.360.</summary>
+    static UnityEngine.UI.GraphicRaycaster ConvertedRaycaster()
+    {
+        foreach (
+            var raycaster in FindObjectsByType<UnityEngine.UI.GraphicRaycaster>(
+                FindObjectsSortMode.None
+            )
+        )
+            if (
+                raycaster.TryGetComponent<Canvas>(out var canvas)
+                && UI.World.WorldCanvases.IsConverted(canvas.rootCanvas)
+            )
+                return raycaster;
+        return null;
+    }
+
+    /// <summary>
     /// vr.360: while the headset shows none of the game's frames (OpenXR SYNCHRONIZED; OpenVR headset idle, written
     /// into <see cref="XRSessionState"/> as the backend would), the desktop gets a flat view: the rig's head camera
     /// renders as a plain camera (<see cref="Rig.DesktopMirror.Flat"/>, eye mask None, URP XR rendering off) and the
     /// game paces itself at the idle rate on either runtime. Shown again, the same camera is back in stereo with XR
-    /// rendering on and pacing off. Screenshot <c>vr-360-flat-view</c> is the window while off.
+    /// rendering on and pacing off. Screenshot <c>vr-360-flat-view</c> is the window while off. While off the converted
+    /// canvases' event camera is that head camera, so a mouse click lands under the cursor; back on, it is the laser's
+    /// (#132). The laser is judged with the menu the focus loss opens up, hidden while off and showing back on: without
+    /// a menu it hides either way, so that is only noted.
     /// </summary>
     IEnumerator FlatViewCheck()
     {
@@ -456,7 +525,16 @@ internal sealed partial class SelfTestRunner
         {
             Play(3);
             yield return Wait(0.3f);
+            var raycaster = ConvertedRaycaster();
+            if (raycaster == null)
+                fails.Add("no converted canvas to read the event camera from");
             var flat = Rig.DesktopMirror.Flat;
+            if (raycaster != null && raycaster.eventCamera != cam)
+                fails.Add($"event camera '{raycaster.eventCamera}' while off, not the head camera");
+            if (!GUIManager.InPauseMenu)
+                notes.Add("no menu up while off: laser not judged");
+            else if (UI.World.LaserPointer.Showing)
+                fails.Add("the laser shows while the head camera draws the window");
             var data = cam.GetUniversalAdditionalCameraData();
             if (!XRBootstrapDriver.HeadsetHidden)
                 fails.Add($"not hidden after the state change ({XRBootstrapDriver.FocusSource})");
@@ -474,6 +552,12 @@ internal sealed partial class SelfTestRunner
             yield return Wait(0.3f);
             if (Rig.DesktopMirror.Flat != null)
                 fails.Add("flat view kept after the headset shows frames again");
+            if (raycaster != null && raycaster.eventCamera != UI.World.LaserPointer.EventCamera)
+                fails.Add($"event camera '{raycaster.eventCamera}' back on, not the laser's");
+            if (!GUIManager.InPauseMenu)
+                notes.Add("no menu up back on: laser not judged");
+            else if (!UI.World.LaserPointer.Showing)
+                fails.Add("the laser stays hidden after the headset shows frames again");
             if (cam.stereoTargetEye != StereoTargetEyeMask.Both || !data.allowXRRendering)
                 fails.Add(
                     $"head camera not back in stereo (eyes {cam.stereoTargetEye}, XR rendering {data.allowXRRendering})"

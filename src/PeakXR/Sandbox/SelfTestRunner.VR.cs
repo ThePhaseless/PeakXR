@@ -229,10 +229,20 @@ internal sealed partial class SelfTestRunner
         if (onBeach && stage != null && stage.Active)
         {
             // The title's button groups come to arm's reach (UI/Menu/TitleMenuDepth.cs), measured from the stage eye.
-            float reach = Plugin.Settings.TryGetEntry<float>("UI", "TitleReach", out var r)
-                ? r.Value
-                : TitleLayout.TouchReach;
+            float reach = TitleReachSetting;
             yield return WaitFor(() => stage.Depth.NearGroups > 0, 5f);
+            yield return TitleButtonsUp(stage.Eye, reach + 0.25f);
+            if (ConnectFailedPopup() is { } late)
+            {
+                stepSkip =
+                    $"Photon connect failed while the title came up (game popup), title buttons hidden; up: '{late}'";
+                yield break;
+            }
+            if (!stepOk)
+            {
+                yield return Shot("vr-02-title");
+                yield break;
+            }
             float nearest = stage.Depth.NearestButton(stage.Eye);
             notes.Add(
                 $"{stage.Depth.NearGroups} button groups near, nearest button {nearest:0.00} m (reach {reach:0.00})"
@@ -257,6 +267,53 @@ internal sealed partial class SelfTestRunner
         yield return Shot("vr-02-title");
     }
 
+    /// <summary>How long the title's intro may take to show its buttons once the page is up: it waits for Photon
+    /// (MainMenuPageHandler.cs:85-87), which the online run reached about 4 s after the page.</summary>
+    const float TitleButtonsSeconds = 15f;
+
+    static float TitleReachSetting =>
+        Plugin.Settings.TryGetEntry<float>("UI", "TitleReach", out var reach)
+            ? reach.Value
+            : TitleLayout.TouchReach;
+
+    /// <summary>Waits for what vr.02 and vr.02c read: a labelled, interactable button within reach of the stage eye,
+    /// which the game's intro holds back until Photon connects (#136). A connection popup opening meanwhile ends the
+    /// wait too, for the caller to handle; running out fails the step by name.</summary>
+    IEnumerator TitleButtonsUp(Vector3 stageEye, float within)
+    {
+        yield return WaitFor(
+            () => ConnectFailedPopup() != null || LabelledTitleButtons(stageEye, within).Count > 0,
+            TitleButtonsSeconds
+        );
+        if (ConnectFailedPopup() == null && LabelledTitleButtons(stageEye, within).Count == 0)
+            Fail(
+                $"the title's buttons never came up: no labelled, interactable button within {within:0.00} m of the stage eye after {TitleButtonsSeconds:0} s (Photon {Photon.Pun.PhotonNetwork.NetworkClientState})"
+            );
+    }
+
+    /// <summary>The labels of the interactable buttons on the title's page within <paramref name="within"/> of the
+    /// stage eye. Empty with no page.</summary>
+    static List<TMP_Text> LabelledTitleButtons(Vector3 stageEye, float within)
+    {
+        var found = new List<TMP_Text>();
+        var handler = FindAnyObjectByType<MainMenuPageHandler>();
+        var page = handler != null ? handler.currentPage : null;
+        if (page == null)
+            return found;
+        foreach (var button in page.GetComponentsInChildren<Selectable>(false))
+        {
+            if (
+                !button.IsInteractable()
+                || Vector3.Distance(stageEye, button.transform.position) > within
+            )
+                continue;
+            var label = button.GetComponentInChildren<TMP_Text>(false);
+            if (label != null && !string.IsNullOrWhiteSpace(label.GetParsedText()))
+                found.Add(label);
+        }
+        return found;
+    }
+
     /// <summary>vr.02: every labelled, interactable button on the title's page that was brought within
     /// <paramref name="within"/> of the stage eye (the hand-sized groups, TitleMenuDepth) reads from the head along
     /// its view (<see cref="Readable(string, TMP_Text, Vector3, List{string})"/>). The note gives the one farthest
@@ -274,16 +331,8 @@ internal sealed partial class SelfTestRunner
         int count = 0;
         float worst = -1f;
         string worstNote = "";
-        foreach (var button in page.GetComponentsInChildren<Selectable>(false))
+        foreach (var label in LabelledTitleButtons(stageEye, within))
         {
-            if (
-                !button.IsInteractable()
-                || Vector3.Distance(stageEye, button.transform.position) > within
-            )
-                continue;
-            var label = button.GetComponentInChildren<TMP_Text>(false);
-            if (label == null || string.IsNullOrWhiteSpace(label.GetParsedText()))
-                continue;
             count++;
             string note = Readable($"button '{label.GetParsedText()}'", label, head.forward, fails);
             float off = Vector3.Angle(head.forward, label.transform.position - head.position);

@@ -166,8 +166,10 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         if (VRRun)
             yield return Run("vr.00-session", 60f, Session());
         yield return VRStep("vr.01-rig", 20f, RigCheck());
-        yield return VRStep("vr.02-title-stage", 20f, TitleStageCheck());
-        yield return VRStep("vr.02c-title-drawn", 25f, TitleDrawnCheck());
+        // Past their own wait for the title's buttons (TitleButtonsSeconds).
+        yield return VRStep("vr.02-title-stage", 40f, TitleStageCheck());
+        yield return VRStep("vr.02c-title-drawn", 45f, TitleDrawnCheck());
+        yield return VRStep("vr.137-beam-on-panel", 15f, BeamOnPanelCheck());
         if (!hold)
             yield return TutorialSteps();
         yield return Run("01-airport", 180f, Airport());
@@ -242,6 +244,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
             yield return VRStep("vr.260-headset-off", 760f, HeadsetOffCheck());
             yield return VRStep("vr.262-wear-sensor-off", 20f, WearSensorCheck());
             yield return VRStep("vr.360-headset-off-flat-view", 15f, FlatViewCheck());
+            yield return VRStep("vr.489-xr-state-isolated", 10f, XRStateIsolatedCheck());
             // Use steps need run-only systems (achievements, item render features), so they run in the level.
             yield return Uses();
             yield return Mobs();

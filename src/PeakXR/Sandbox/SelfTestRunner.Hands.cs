@@ -1473,6 +1473,7 @@ internal sealed partial class SelfTestRunner
             );
             var data = new UnityEngine.EventSystems.PointerEventData(system)
             {
+                pointerId = PeakXR.UI.World.LaserPointer.PointerId,
                 position = new Vector2(cam.pixelWidth * 0.5f, cam.pixelHeight * 0.5f),
             };
             results.Clear();

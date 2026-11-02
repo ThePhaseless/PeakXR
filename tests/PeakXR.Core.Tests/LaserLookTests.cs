@@ -4,6 +4,18 @@ public class LaserLookTests
 {
     static readonly Vector3 Eye = Vector3.Zero;
 
+    [Theory]
+    // #137: the title's panels stand past the miss length, so a beam between controls ended in the air.
+    [InlineData(2.9f, 2.9f)]
+    // A blocker or a big canvas rect nearer than that leaves the beam at its full length.
+    [InlineData(0.95f, LaserLook.MissLength)]
+    // No panel on the ray.
+    [InlineData(-1f, LaserLook.MissLength)]
+    public void BeamWithNoHitThatCounts_RunsToThePanelItCrosses(float crossing, float length)
+    {
+        Assert.Equal(length, LaserLook.MissBeam(crossing));
+    }
+
     [Fact]
     public void RayFromTheMouth_CrossesTheFace()
     {

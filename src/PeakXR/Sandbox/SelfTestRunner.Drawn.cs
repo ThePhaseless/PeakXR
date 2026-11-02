@@ -23,8 +23,8 @@ internal sealed partial class SelfTestRunner
     /// <summary>Frames a readback may take before the check says the eye could not be read.</summary>
     private const float EyeReadSeconds = 3f;
 
-    /// <summary>vr.02c: the panel on show at the title, the connection popup offline or the title menu otherwise, is
-    /// in both eyes' pixels.</summary>
+    /// <summary>vr.02c: the panel on show at the title, the connection popup offline or the title menu with its buttons
+    /// otherwise, is in both eyes' pixels.</summary>
     IEnumerator TitleDrawnCheck()
     {
         if (SelfTestFeature.Hold)
@@ -52,7 +52,98 @@ internal sealed partial class SelfTestRunner
             Fail("no world-space title panel to look for");
             yield break;
         }
+        // Online the panel is the full menu: read it once the intro has shown the buttons, past the depth fade.
+        var stage = UI.Menu.TitleStage.Instance;
+        if (ConnectFailedPopup() == null && stage != null && stage.Active)
+        {
+            yield return TitleButtonsUp(stage.Eye, TitleReachSetting + 0.25f);
+            if (!stepOk)
+                yield break;
+            if (ConnectFailedPopup() != null)
+                root = RootCanvasOf(Zorro.UI.Modal.Modal.Instance);
+            yield return Wait(0.5f);
+        }
         yield return PanelInEyes(root, "vr-02c-title");
+    }
+
+    /// <summary>vr.137: over a gap in the panel on show at the title, where no dot lands, the beam reaches that panel
+    /// instead of stopping at its miss length in the air. Sweeps both hands over the panel's rect for such a spot.</summary>
+    IEnumerator BeamOnPanelCheck()
+    {
+        if (SelfTestFeature.Hold)
+        {
+            stepSkip = "hold mode: the hands are a person's";
+            yield break;
+        }
+        var root =
+            ConnectFailedPopup() != null
+                ? RootCanvasOf(Zorro.UI.Modal.Modal.Instance)
+                : RootCanvasOf(FindAnyObjectByType<MainMenuPageHandler>());
+        if (root == null || !WorldCanvases.IsConverted(root))
+        {
+            Fail("no converted title panel to aim at");
+            yield break;
+        }
+        var rig = VRRig.Instance;
+        var rect = (RectTransform)root.transform;
+        var box = rect.rect;
+        // At the title the override is IdleHands; only ApplyHands emits the script below.
+        BeginHands();
+        HeadFrame(out var head, out var forward, out var right);
+        int aimed = 0;
+        try
+        {
+            for (int x = 1; x < 8 && aimed == 0; x++)
+            for (int y = 1; y < 6 && aimed == 0; y++)
+            {
+                var target = rect.TransformPoint(
+                    new Vector3(box.xMin + box.width * x / 8f, box.yMin + box.height * y / 6f, 0f)
+                );
+                for (int i = 0; i < 2; i++)
+                {
+                    bool left = i == 0;
+                    var p =
+                        head
+                        + (left ? -right : right) * 0.15f
+                        + Vector3.down * 0.2f
+                        + forward * 0.2f;
+                    Script(left).Position = p;
+                    Script(left).Rotation = HandLook(
+                        rig.Origin.InverseTransformDirection(target - rig.Origin.TransformPoint(p)),
+                        Vector3.up
+                    );
+                }
+                yield return Wait(0.1f);
+                var aim = rig.Aim(LaserPointer.OverLeft);
+                float panel = Vector3.Distance(aim.position, target);
+                if (
+                    !LaserPointer.Showing
+                    || LaserPointer.DotShown
+                    || panel < LaserLook.MissLength + 0.2f
+                )
+                    continue;
+                aimed++;
+                float beam = Vector3.Distance(aim.position, LaserPointer.BeamEnd);
+                if (beam < LaserLook.MissLength + 0.1f)
+                    Fail(
+                        F(
+                            $"the beam stops at {beam:0.00} m over a gap in the panel {panel:0.00} m away"
+                        )
+                    );
+                else
+                    Note(
+                        F(
+                            $"over a gap the beam runs {beam:0.00} m to the panel {panel:0.00} m away"
+                        )
+                    );
+            }
+        }
+        finally
+        {
+            EndHands();
+        }
+        if (stepOk && aimed == 0)
+            stepSkip = "no spot on the panel past the miss length without a dot";
     }
 
     /// <summary>Fails the step unless <paramref name="root"/> shows in every eye. Reads each eye with the panel on,
