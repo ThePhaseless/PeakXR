@@ -432,7 +432,13 @@ internal sealed class LaserPointer
         ExecuteEvents.Execute(data.pointerPress, data, ExecuteEvents.pointerUpHandler);
         var click = ExecuteEvents.GetEventHandler<IPointerClickHandler>(over);
         if (data.pointerClick != null && data.pointerClick == click && data.eligibleForClick)
+        {
+            // One line a pull: a toggle (title Credits) that did not change shows here whether the laser clicked (#134).
+            Plugin.Log.LogInfo(
+                $"[ui.world] laser click on '{click.name}' ({(hands.ActiveLeft ? "left" : "right")} hand)"
+            );
             ExecuteEvents.Execute(data.pointerClick, data, ExecuteEvents.pointerClickHandler);
+        }
         // Dropped only while the pressed control is still there to click. One hidden or disabled since the press (its
         // page already switched, live run e7b3cd9: "pressed 'UI_MainMenuButton_Options', released over 'nothing'"
         // right after the settings page opened) lost nothing, and the old line named those too.
