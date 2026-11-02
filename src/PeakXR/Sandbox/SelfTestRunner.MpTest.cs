@@ -1725,11 +1725,22 @@ internal sealed partial class SelfTestRunner
             if (item == null || to.magnitude > 0.8f)
                 continue;
             yield return GrabWorld(item);
-            if (stepOk || !nextOnMiss || HeldItem() != null)
+            if (stepOk || !nextOnMiss)
                 yield break;
             missed = failNote;
             failNote = null;
             stepOk = true;
+            // A grip on air takes what the view aims at (the vanilla run of #100: a Guidebook lying near), which this
+            // step did not fetch.
+            yield return MpDropHeld();
+            if (HeldItem() != null)
+            {
+                Fail(missed + "; and the grip took " + HeldItem().name + ", which would not drop");
+                yield break;
+            }
+            // One that slid off under the hand is reached for again, as a player does.
+            if (grabMoved)
+                tried.Remove(item);
         }
         if (missed != null)
             Fail(missed + $" (the last of {tried.Count} tried){spawnNote}");
@@ -1775,6 +1786,12 @@ internal sealed partial class SelfTestRunner
     {
         yield return GrabReachable(food, null, NearItems, 3, spawn: MpFood);
     }
+
+    /// <summary>How far (m) a hand follows an item from where it lay; past it the item slid off and is not chased.</summary>
+    const float GripFollow = 0.3f;
+
+    /// <summary>The last <see cref="GrabWorld"/> missed an item that had moved past <see cref="GripFollow"/>.</summary>
+    bool grabMoved;
 
     /// <summary>Walks to a ground item and closes the right hand on it (vr.10's grab, on an item the level spawned).</summary>
     IEnumerator GrabWorld(Item world)
@@ -1853,7 +1870,7 @@ internal sealed partial class SelfTestRunner
             left,
             () =>
             {
-                if (world != null && (world.Center() - lay).sqrMagnitude < 0.3f * 0.3f)
+                if (world != null && (world.Center() - lay).sqrMagnitude < GripFollow * GripFollow)
                     at = GripPoint(world);
                 return CapToReach(at);
             },
@@ -1871,7 +1888,7 @@ internal sealed partial class SelfTestRunner
                 left,
                 () =>
                 {
-                    if (world != null && (world.Center() - lay).sqrMagnitude < 0.3f * 0.3f)
+                    if (world != null && (world.Center() - lay).sqrMagnitude < GripFollow * GripFollow)
                         at = GripPoint(world);
                     return CapToReach(at);
                 },
@@ -1897,6 +1914,8 @@ internal sealed partial class SelfTestRunner
             )
         );
         headDrop = 0f;
+        grabMoved =
+            !stepOk && world != null && Vector3.Distance(world.Center(), lay) > GripFollow;
         if (!stepOk)
             yield break;
         // What was fetched, not what is held: a later failure appends this note (MP run 17: "holding TrailMix" after
