@@ -119,7 +119,7 @@ def moddedb:
      else "INFO PeakXR warned \($px.warnings) time(s) on B: \($px.firstWarnings | map(.e) | join(" | "))" end)
     end;
 # Every checkpoint MpScript writes (SelfTestRunner.MpTest.cs); one A never wrote means its script stopped early.
-def expected: ["join", "walk-to-host", "emote", "ping", "ping-seen", "scene-button", "board", "regroup", "luggage", "grab",
+def expected: ["join", "walk-to-host", "emote", "scene-button", "board", "regroup", "ping", "ping-seen", "luggage", "grab",
   "drop", "pickup", "throw", "eat", "holster", "climb", "two-hand", "feed", "feed-fetch-front", "feed-held-ahead", "feed-refuse", "reach-deny", "reach-look", "reach",
   "vr.421-reach-out-cone", "vr.422-reach-out-idle", "vr.423-reach-out-hands-full", "vr.424-reach-out-far",
   "kick-mode", "carry", "pack", "vr.330-pack-stash", "vr.434-point-friend-pack", "pal-jump", "vr.420-reach-out-ledge", "campfire-far", "spectate",

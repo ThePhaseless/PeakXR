@@ -137,8 +137,6 @@ internal sealed partial class SelfTestRunner
         }
         yield return MpStep("walk-to-host", 60f, true, WalkTo(HostCenter, 1.5f, true));
         yield return MpStep("emote", 20f, true, EmoteStep());
-        yield return MpStep("ping", 15f, true, PingStep());
-        yield return MpStep("ping-seen", 20f, true, PingSeen());
         // A host-owned scene button refused for this non-host (WP5 body, SelfTestRunner.World.cs); SKIP when none.
         yield return MpStep("scene-button", 60f, true, MpSceneButton());
         yield return MpStep("board", 400f, false, Board());
@@ -148,6 +146,10 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         yield return MpStep("regroup", 60f, true, WalkTo(HostCenter, 1.5f, true));
+        // On the beach, not the airport: the corridor B spawns in has a wall a metre off, so there A's body filled B's
+        // picture of the ping and no ground lay 3 m out for B's own (#130).
+        yield return MpStep("ping", 15f, true, PingStep());
+        yield return MpStep("ping-seen", 20f, true, PingSeen());
         yield return MpStep("luggage", 300f, true, OpenLuggage());
         yield return MpStep("grab", 40f, true, GrabNearest(food: false));
         // One item passes along this chain (mpItem): a link after a failed one would judge what that failure left.
@@ -709,10 +711,59 @@ internal sealed partial class SelfTestRunner
         var look = Flat(host.data.lookDirection_Flat);
         var toA = Flat(c.Center - host.Center);
         float side = Vector3.Dot(Vector3.Cross(Vector3.up, look), toA) > 0f ? -1f : 1f;
-        var aim = host.Center + Quaternion.Euler(0f, side * PingSpotOff, 0f) * look * PingSpotAhead;
-        return Terrain(aim + Vector3.up * 2f, Vector3.down, 6f, out var ground)
-            ? ground.point
-            : aim;
+        if (
+            OpenSpot(
+                host.Center,
+                look,
+                new[] { side * PingSpotOff, side * 45f, side * 60f, -side * PingSpotOff },
+                c,
+                host,
+                out var spot
+            )
+        )
+            return spot;
+        return host.Center + Quaternion.Euler(0f, side * PingSpotOff, 0f) * look * PingSpotAhead;
+    }
+
+    /// <summary>Ground <see cref="PingSpotAhead"/> m from <paramref name="from"/>, at the first of
+    /// <paramref name="turns"/> (degrees off <paramref name="dir"/>) that is under open sky or a high roof and in plain
+    /// view of both players' heads: a marker someone cannot see tells nothing.</summary>
+    static bool OpenSpot(
+        Vector3 from,
+        Vector3 dir,
+        float[] turns,
+        Character c,
+        Character host,
+        out Vector3 spot
+    )
+    {
+        foreach (float turn in turns)
+        {
+            var at = from + Quaternion.Euler(0f, turn, 0f) * dir * PingSpotAhead;
+            if (!Terrain(at + Vector3.up * 2f, Vector3.down, 6f, out var ground))
+                continue;
+            var over = ground.point + Vector3.up * 0.15f;
+            if (
+                ground.normal.y < 0.7f
+                || Physics.Linecast(
+                    c.Head,
+                    over,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+                || Physics.Linecast(
+                    host.Head,
+                    over,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+            )
+                continue;
+            spot = ground.point;
+            return true;
+        }
+        spot = default;
+        return false;
     }
 
     /// <summary>
@@ -726,14 +777,20 @@ internal sealed partial class SelfTestRunner
         var c = Character.localCharacter;
         var host = Host();
         // Turned off the line to the host, so the spot is clear of the host's body from both cameras.
-        var dir = Quaternion.Euler(0f, 60f, 0f) * Flat(c.Center - host.Center);
-        var spot = c.Center + dir * 3f;
-        if (!Terrain(spot + Vector3.up * 2f, Vector3.down, 6f, out var ground))
+        if (
+            !OpenSpot(
+                c.Center,
+                Flat(c.Center - host.Center),
+                new[] { 60f, -60f, 100f, -100f, 140f, -140f },
+                c,
+                host,
+                out var spot
+            )
+        )
         {
-            stepSkip = "no ground 3 m out for the host to ping";
+            stepSkip = "no open ground 3 m out in view of both players for the host to ping";
             yield break;
         }
-        spot = ground.point;
         Face(spot);
         LookAtPoint(spot);
         yield return Wait(0.5f);
@@ -1043,7 +1100,8 @@ internal sealed partial class SelfTestRunner
         bool fallback = item == null;
         if (fallback)
             item = NearestGround(_ => true);
-        yield return GrabWorld(item);
+        // Reached for again when it slid off under the hand, then the next one: on a slope a player does the same (#100).
+        yield return GrabReachable(i => fallback || IsFood(i) == food, item, nextOnMiss: true);
         mpItem = HeldItem();
         if (fallback && mpItem != null)
             Note(
@@ -1161,7 +1219,7 @@ internal sealed partial class SelfTestRunner
     IEnumerator Holster()
     {
         if (HeldItem() == null)
-            yield return GrabReachable(_ => true, OnGround(mpItem));
+            yield return GrabReachable(_ => true, OnGround(mpItem), nextOnMiss: true);
         if (!stepOk || stepSkip != null)
             yield break;
         if (HeldItem() == null)
@@ -1239,16 +1297,17 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>Walls the climb step tries, the farthest it looks (m), and how long each walk may take: 5 walks of up
     /// to 25 s, plus the settle (about 14 s) and the climb itself (about 20 s), fit the step's 200 s. MP run 18 found
-    /// one wall within 40 m and skipped, once the climb kept to faces under 68 degrees.</summary>
+    /// one wall within 40 m and skipped, once the climb kept to faces under 68 degrees. On the same level a start 60 m
+    /// from the nearest found none, and a walk covers 100 m in its 25 s (#60).</summary>
     const int MpWallTries = 5;
 
-    const float MpWallRange = 60f;
+    const float MpWallRange = 100f;
 
     const float MpWallWalkSeconds = 25f;
 
     /// <summary>
     /// Climbable faces with walkable ground in front within <see cref="MpWallRange"/> of A, nearest first: <see cref="WallsFrom"/>'s best
-    /// face from A and from rings of seeds 6, 15, 30 and 45 m around A, each standing spot at least 2 m from the others.
+    /// face from A and from rings of seeds 6, 15, 30, 45, 60 and 80 m around A, each standing spot at least 2 m from the others.
     /// </summary>
     /// <summary>Steepest the face may lean back over the climber along the pull (deg from up): past it is an overhang
     /// the arm pull cannot rise up (MP run 26: 77/72/72 then 113/107 degrees 0.5-1 m above the hold, the body sank).</summary>
@@ -1298,7 +1357,7 @@ internal sealed partial class SelfTestRunner
             found.Add((face, stand, WallProfile));
         }
         From(home);
-        foreach (float radius in new[] { 6f, 15f, 30f, 45f })
+        foreach (float radius in new[] { 6f, 15f, 30f, 45f, 60f, 80f })
         {
             for (int o = 0; o < 8; o++)
                 From(home + Quaternion.Euler(0f, o * 45f, 0f) * Vector3.forward * radius);
@@ -2260,8 +2319,12 @@ internal sealed partial class SelfTestRunner
     /// <summary>How far (m) a hand follows an item from where it lay; past it the item slid off and is not chased.</summary>
     const float GripFollow = 0.3f;
 
-    /// <summary>The last <see cref="GrabWorld"/> missed an item that had moved past <see cref="GripFollow"/>.</summary>
+    /// <summary>The last <see cref="GrabWorld"/> missed an item that had moved past <see cref="GripNudged"/>.</summary>
     bool grabMoved;
+
+    /// <summary>How far (m) an item moved under a missed reach to get another try: the hand follows it to
+    /// <see cref="GripFollow"/>, but a Guidebook on a 14 degree slope slid 0.20 m and the grip still missed by 0.16 m (#100).</summary>
+    const float GripNudged = 0.1f;
 
     /// <summary>Walks to a ground item and closes the right hand on it (vr.10's grab, on an item the level spawned).</summary>
     IEnumerator GrabWorld(Item world)
@@ -2387,7 +2450,7 @@ internal sealed partial class SelfTestRunner
             )
         );
         headDrop = 0f;
-        grabMoved = !stepOk && world != null && Vector3.Distance(world.Center(), lay) > GripFollow;
+        grabMoved = !stepOk && world != null && Vector3.Distance(world.Center(), lay) > GripNudged;
         if (!stepOk)
             yield break;
         // What was fetched, not what is held: a later failure appends this note (MP run 17: "holding TrailMix" after
@@ -2810,7 +2873,7 @@ internal sealed partial class SelfTestRunner
         if (VRSession.Active && VRInput.TestOverride != null)
             VRInput.TestOverride = applyHands;
         // Its warp strands B on a face: after kick-mode, carry and pack, and after the crouch dip is put back.
-        yield return MpStep("vr.420-reach-out-ledge", 90f, true, MpReachOutLedge());
+        yield return MpStep("vr.420-reach-out-ledge", 120f, true, MpReachOutLedge());
         yield return HostWake();
         yield return MpStep("campfire-far", 60f, true, CampfireFar());
         // Last: A passes out to spectate, then wakes.

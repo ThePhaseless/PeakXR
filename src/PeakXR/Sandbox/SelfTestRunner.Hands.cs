@@ -1789,8 +1789,7 @@ internal sealed partial class SelfTestRunner
             Fail($"hotbar slot {selected.Value} does not hold the item");
             yield break;
         }
-        yield return Wait(0.4f);
-        yield return GripTo(left, 1f, 0.1f);
+        yield return GripAtSlot(left, slot);
         yield return Until(HoldingIt, 2f, "grip at the slot did not draw it");
         if (!stepOk)
             yield break;

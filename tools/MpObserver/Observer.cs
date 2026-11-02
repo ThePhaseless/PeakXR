@@ -930,13 +930,16 @@ internal sealed partial class Observer : MonoBehaviour
                 QueryTriggerInteraction.Ignore
             )
         )
-            at = hit.point + Vector3.up * 0.3f;
+            at = hit.point + Vector3.up * 0.15f;
         var go = PhotonNetwork.InstantiateItemRoom(prefab.gameObject.name, at, Quaternion.identity);
         if (go == null)
         {
             note = "spawning " + prefabName + " failed";
             return false;
         }
+        // Held still until picked up, as a level's own items lie: on a slope an Apple rolled 11.7 m off and the walk after
+        // it stopped short (#119), and an item sliding under the reach missed the grip (#100). Item.cs:1179.
+        go.GetComponent<Item>().SetKinematicNetworked(true, at, Quaternion.identity);
         note = "spawned " + prefabName + " in front of " + vr.characterName;
         return true;
     }

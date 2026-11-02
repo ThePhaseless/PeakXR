@@ -217,6 +217,21 @@ internal sealed partial class SelfTestRunner
         Script(left).Grip = 0f;
     }
 
+    /// <summary>The hand stays in the slot while it waits and closes, as a player's follows the ghost: the slots ride the
+    /// body, which can be pushing under the head, and a hand left where it arrived missed the slot (#109: 0.29 m in that
+    /// time, with the stance pushing).</summary>
+    IEnumerator GripAtSlot(bool left, int slot)
+    {
+        var inv = BodyInventory.Instance;
+        for (float start = Now; Now - start < 0.5f; )
+        {
+            SetHand(left, inv.Anchor(slot));
+            Script(left).Grip = Mathf.Clamp01((Now - start - 0.4f) / 0.1f);
+            yield return null;
+        }
+        Script(left).Grip = 1f;
+    }
+
     /// <summary>The hand keeps still for a second, longer than the body's dwell; no cast may start. The item must be on
     /// the body throughout, or this proves nothing.</summary>
     IEnumerator ExpectNoCast(bool left, string where)
@@ -305,9 +320,7 @@ internal sealed partial class SelfTestRunner
             Fail($"hotbar slot {gameSlot} does not hold the item: " + at);
             yield break;
         }
-        SetHand(left, BodyInventory.Instance.Anchor(slot));
-        yield return Wait(0.4f);
-        yield return GripTo(left, 1f, 0.1f);
+        yield return GripAtSlot(left, slot);
         yield return Until(
             () => HeldItem() != null && HeldItem().itemID == id,
             2f,

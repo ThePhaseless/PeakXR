@@ -481,7 +481,9 @@ internal sealed partial class SelfTestRunner
         // which can be at the edge (MP run 17, #95: the walk to the point ended 2.29 m under it, off the lip).
         var behind = Vector3.zero;
         float missed = 0f;
-        for (int i = 0; i < 3; i++)
+        // Three lips at 15 s a walk with three detours overran the step's budget, which then said only "timeout" (#95).
+        float giveUp = Now + LedgeSearchSeconds;
+        for (int i = 0; i < 3 && Now < giveUp; i++)
         {
             yield return FindLedge(c, tried);
             if (!ledgeFound)
@@ -490,7 +492,12 @@ internal sealed partial class SelfTestRunner
             outward = ledgeOutward;
             behind = stand - outward * LedgeBack;
             tried.Add(stand);
-            yield return MpWalkAround(() => behind, 0.2f, 15f);
+            yield return MpWalkAround(
+                () => behind,
+                0.2f,
+                Mathf.Min(15f, Mathf.Max(giveUp - Now, 1f)),
+                1
+            );
             missed = FlatDistance(c.Center, behind);
             // Under the lip is no arrival: a level distance also reads small at the foot of its face (#95).
             if (missed <= 0.6f && SelfTestChecks.OnLip(c.Center.y - stand.y))
@@ -759,6 +766,10 @@ internal sealed partial class SelfTestRunner
         }
         return false;
     }
+
+    /// <summary>How long (s) the lip search and its walks may take, leaving the step's 120 s room for the reach and to bring
+    /// the host back.</summary>
+    const float LedgeSearchSeconds = 45f;
 
     /// <summary>How far from A the lip search looks (m), on a 1 m grid: a lip is within 0.7 m of a grid point, so the
     /// 2 m grid of MP run 12 stepped over most edges and found none within 40 m of the beach spawn.</summary>
