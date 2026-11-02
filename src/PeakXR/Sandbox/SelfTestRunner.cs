@@ -795,9 +795,8 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
     /// game update that drops a few, while a broken scan (nothing from Photon's cache or Resources) fails.</summary>
     const int MinMobEntities = 35;
 
-    /// <summary>Mobs judged by how far they come toward the player: spawned at a fixed distance straight ahead, so the
-    /// start does not depend on where the spawn rule lands (run 61: AntiSphere_Projectile started 6.1 m off instead of
-    /// 15.8 m and had no room left to show its approach).</summary>
+    /// <summary>Mobs spawned at a fixed distance straight ahead, so the start does not depend on where the spawn rule
+    /// lands. The bubble lifts what is in it (<see cref="MobBehaviour"/>); out here that is not the player.</summary>
     static readonly string[] ApproachMobs = { "AntiSphere_Projectile" };
 
     /// <summary>Where an approach mob starts: this far ahead of the player, over open ground.</summary>

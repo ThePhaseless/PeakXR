@@ -38,7 +38,8 @@ internal sealed partial class SelfTestRunner
         yield return WarpBack();
         yield return HandStep("vr.82-lid-progress", 40f, LidProgressStep());
         yield return WarpBack();
-        yield return HandStep("vr.82b-lid-low-grip", 60f, LidLowGripStep());
+        // Restoring: the step may stand on a test ledge (LedgeBeside), which must go after it.
+        yield return Restoring("vr.82b-lid-low-grip", 60f, LidLowGripStep());
         yield return WarpBack();
         yield return HandStep("vr.83-cook-cant-use", 40f, CookCantUseStep());
         yield return WarpBack();
@@ -1126,20 +1127,8 @@ internal sealed partial class SelfTestRunner
     static void LevelSpotsBeside(Luggage lug, List<Vector3> spots)
     {
         var c = Character.localCharacter;
-        Bounds? solid = null;
-        foreach (var col in lug.GetComponentsInChildren<Collider>())
-        {
-            if (col.isTrigger || !col.enabled)
-                continue;
-            if (solid is { } b)
-            {
-                b.Encapsulate(col.bounds);
-                solid = b;
-            }
-            else
-                solid = col.bounds;
-        }
-        if (solid is not { } box || c == null)
+        var box = SolidBounds(lug);
+        if (box.size == Vector3.zero || c == null)
             return;
         var from = Flat(c.Center - box.center);
         for (int i = 0; i < 8; i++)
@@ -1165,6 +1154,91 @@ internal sealed partial class SelfTestRunner
                 spots.Add(ground.point);
         }
     }
+
+    /// <summary>
+    /// A Map-layer test ledge beside <paramref name="lug"/> at about its base, as <see cref="VineLedge"/> stands a body
+    /// under a vine, for a case with no ground to stand on at its own height. It takes the first of the eight headings
+    /// with standing room where the body lands within 0.3 m, facing the case; with none the step fails as setup,
+    /// listing the tries. A ledge that held goes to <paramref name="note"/> with the tries before it.
+    /// </summary>
+    IEnumerator LedgeBeside(Luggage lug, Action<string> note)
+    {
+        var c = Character.localCharacter;
+        var box = SolidBounds(lug);
+        // The base below the render centre, by the solid: a tilted case's bounds reach lower than its low corner stands.
+        float floor = Mathf.Max(box.min.y, lug.Center().y - LedgeUnderCentre);
+        var ledge = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        ledge.name = "PeakXR_TestCaseLedge";
+        ledge.layer = LayerMask.NameToLayer("Map");
+        OnRestore(() =>
+        {
+            if (ledge != null)
+                UnityEngine.Object.Destroy(ledge);
+        });
+        ledge.transform.localScale = new Vector3(2f, 0.2f, 2f);
+        ledge.SetActive(false);
+        var from = Flat(c.Center - box.center);
+        string tried = "";
+        for (int i = 0, warps = 0; i < 8 && warps < LedgeTries; i++)
+        {
+            var dir = Quaternion.Euler(0f, i * 45f, 0f) * from;
+            float reach =
+                Mathf.Abs(dir.x) * box.extents.x + Mathf.Abs(dir.z) * box.extents.z + 0.45f;
+            var feet = new Vector3(box.center.x, floor, box.center.z) + dir * reach;
+            if (!StandingRoom(feet))
+            {
+                tried += F($"heading {i + 1} of 8: no room; ");
+                continue;
+            }
+            warps++;
+            // Its near edge stays 0.25 m off the case's bounds: a hand low on the case must not read the ledge as rock.
+            ledge.transform.SetPositionAndRotation(
+                feet + dir * 0.8f + Vector3.down * 0.1f,
+                Quaternion.LookRotation(dir, Vector3.up)
+            );
+            ledge.SetActive(true);
+            Physics.SyncTransforms();
+            warpedForProp = true;
+            c.photonView.RPC(
+                "WarpPlayerRPC",
+                Photon.Pun.RpcTarget.All,
+                CentreOver(c, feet + Vector3.up * 0.1f),
+                false
+            );
+            yield return Wait(0.5f);
+            yield return WaitFor(() => !c.warping, 3f);
+            yield return Wait(1f);
+            float rise = TrackedFloorY() - feet.y;
+            if (Mathf.Abs(rise) <= 0.3f)
+            {
+                var r = VRRig.Instance;
+                r.RotateYaw(
+                    Vector3.SignedAngle(
+                        Flat(r.Head.forward),
+                        Flat(lug.Center() - c.Center),
+                        Vector3.up
+                    )
+                );
+                yield return Wait(0.6f);
+                note(
+                    tried
+                        + F($"stood on a test ledge beside {lug.name}, its floor y {feet.y:0.00}; ")
+                );
+                yield break;
+            }
+            tried += F($"heading {i + 1} of 8: landed {rise:0.00} m over it; ");
+            ledge.SetActive(false);
+            Physics.SyncTransforms();
+        }
+        Fail(F($"setup: no test ledge held beside {lug.name} (floor y {floor:0.00}): {tried}"));
+    }
+
+    /// <summary><see cref="LedgeBeside"/>'s floor at most this far under the case's render centre: the prefabs' floors
+    /// sit 0.5-0.75 m under it.</summary>
+    const float LedgeUnderCentre = 0.75f;
+
+    /// <summary><see cref="LedgeBeside"/> warps to at most this many headings.</summary>
+    const int LedgeTries = 3;
 
     /// <summary>vr.82b tries at most this many level spots: each warp costs about 2.5 s.</summary>
     const int LevelSpotTries = 6;
@@ -1256,8 +1330,12 @@ internal sealed partial class SelfTestRunner
         }
         else
         {
-            landings += "no level spot held, warped facing the nearest case; ";
-            yield return WarpFacing(lug.Center(), 0.6f);
+            // The gate before 0.3.1: LuggageClown on a rock, its only spots 1.6-1.8 m under it, and WarpFacing landed
+            // on its lid, so the low grip lay at the feet (#54). The level has no stand here: the step brings one.
+            landings += "no level spot held; ";
+            yield return LedgeBeside(lug, note => landings += note);
+            if (!stepOk)
+                yield break;
         }
         bool left = VRInput.LeftHanded;
         // The side the eyes face it from: vr43 put the hand 0.9 m behind the head from the body's side.
@@ -1364,22 +1442,13 @@ internal sealed partial class SelfTestRunner
             );
             yield break;
         }
-        // GripOnLid reads the centre, which on LuggageClown sits over the lid (#127), so it calls a capped hand on the
-        // lid low. The aim obeys the height rule; this is the hand.
         float gripY = rig.Hand(left).position.y;
-        float lidLine = Mathf.Min(lug.Center().y, SolidTop(lug)) - LidGesture.LidGive;
-        if (gripY > lidLine)
-        {
-            yield return GripTo(left, 0f, 0.1f);
-            Fail(
-                F(
-                    $"setup: the hand gripped {lug.name} at y {gripY:0.00}, over the low grip's limit {lidLine:0.00}, so it was not low ({LidGesture.LastGrab}); grip point y {low.y:0.00}, stooped {headDrop:0.00} m"
-                )
-            );
-            yield break;
-        }
         yield return ExpectCue(left, DenyReason.AimHigher, mark, tint: false, within: 2f);
         var cue = cueNote;
+        // The ring the player is sent to: it must sit where a hand takes the lid.
+        float ringAbove =
+            Vector3.Dot(CueLog.Capture.Hand(left).RingCenter.U(), lug.transform.up)
+            - LidGesture.LidFace(lug, out _);
         var interaction = Interaction.instance;
         // Kept: still held, or the plain vanilla hold already finished and opened it.
         bool holding =
@@ -1393,12 +1462,24 @@ internal sealed partial class SelfTestRunner
             Fail("the low grip did not keep the vanilla hold on " + lug.name);
             yield break;
         }
+        if (
+            ringAbove < -LidGesture.LidGive
+            || ringAbove > LidGesture.LidEdgeUp + InteractConfig.Instance.GrabRadius
+        )
+        {
+            Fail(
+                F(
+                    $"the AimHigher ring on {lug.name} is {ringAbove:+0.00;-0.00} m from the lid's lower face along the case's up, out of a hand's reach of the lid; {cue}"
+                )
+            );
+            yield break;
+        }
         stepNote =
             landings
             + stepped
             + capped
             + F(
-                $"{lug.name}: centre y {lug.Center().y:0.00}, solid top y {SolidTop(lug):0.00}, grip point y {low.y:0.00} on {GripTouch(lug, low)}, hand y {gripY:0.00}; {cue}; stooped {headDrop:0.00} m; {LidGesture.LastGrab}"
+                $"{lug.name}: centre y {lug.Center().y:0.00}, solid top y {SolidTop(lug):0.00}, grip point y {low.y:0.00} on {GripTouch(lug, low)}, hand y {gripY:0.00}; {cue}; ring {ringAbove:+0.00;-0.00} m from the lid's lower face; stooped {headDrop:0.00} m; {LidGesture.LastGrab}"
             );
         if (lug.IsOpen)
         {
@@ -1409,9 +1490,9 @@ internal sealed partial class SelfTestRunner
         // triangle from inside a concave mesh and did "Interact on nothing").
         // The centre lies half the case further out than the low grip (run 76: past arm's reach), so step in and stoop
         // as for the low grip, until it is in reach or no closer stance is left.
-        // Under the top too: LuggageClown's centre sits over its lid, where the overlap finds nothing sunk (#127).
-        var inside = lug.Center();
-        inside.y = Mathf.Min(inside.y, SolidTop(lug)) - 0.05f;
+        // 0.3 m in from the near wall: a 2.6 m case's centre is out of arm's reach from any stance beside it (#54), and
+        // the hollow starts well before it.
+        var inside = SunkPoint(lug, low);
         float closest = float.MaxValue;
         for (int step = 0; ; step++)
         {
@@ -1464,6 +1545,16 @@ internal sealed partial class SelfTestRunner
         var glowBefore = PhysicalInteraction.GripPreview(left);
         float handIn = Gap(rig.Hand(left).position, lug);
         float originMoved = Vector3.Distance(originBefore, rig.Origin.position);
+        // In reach of a wall, floor or lid the plain overlap takes the case and SunkInto never runs: no proof of it.
+        if (GripTouch(lug, rig.Hand(left).position) is { } touched)
+        {
+            Fail(
+                F(
+                    $"setup: the sunk hand is within the grab radius of {lug.name}'s {touched}, so the grip would not need SunkInto: hand {rig.Hand(left).position}, aimed {inside}"
+                )
+            );
+            yield break;
+        }
         yield return GripTo(left, 1f, 0.1f);
         yield return WaitFor(
             () => ReferenceEquals(PhysicalInteraction.HandTarget(left), lug) || lug.IsOpen,
@@ -1480,24 +1571,162 @@ internal sealed partial class SelfTestRunner
                     + $"{Label(Interaction.instance != null ? Interaction.instance.currentHovered : null)}; {sunkNote}"
             );
         else
+        {
             stepNote += "; a hand sunk into it takes it too";
+            yield return PastTheWallsCheck(lug, left);
+        }
     }
 
     /// <summary>
-    /// vr.82b's low grip: a point of the case's near side at least <see cref="LidLowMargin"/> under the lid's give
-    /// (<see cref="LidGesture.LidGive"/>) below the lower of its centre and its solid top, which the grip's own query
-    /// touches. Run 14 (#54): aimed 0.08 m under the centre, the surface point came out 0.04 m under it, inside the
-    /// 0.05 m give, and the grip took the lid half. Runs 22-23: on LuggageClown the first such point lay off the case, so
-    /// the grip found nothing. Lower probes are tried down to 0.6 m; false when none qualifies.
+    /// vr.82b, #54: a hand outside the walls of the hovered case, by more than the grab radius, inside the world-axis box
+    /// round it, takes nothing and lights nothing. A case lying square has no such point, and a hover lost to the pose
+    /// proves nothing: each is a note reading `past-the-walls check skipped`.
+    /// </summary>
+    IEnumerator PastTheWallsCheck(Luggage lug, bool left)
+    {
+        var rig = VRRig.Instance;
+        if (lug.IsOpen)
+        {
+            stepNote += "; past-the-walls check skipped: the sunk grip's hold opened the case";
+            yield break;
+        }
+        if (!PastTheWalls(lug, rig.Head.position, out var past))
+        {
+            stepNote += "; past-the-walls check skipped: its world box adds no point in reach";
+            yield break;
+        }
+        LookAtPoint(lug.Center());
+        yield return ReachDown(left, () => past, 0.3f);
+        if (OverReach(left) is { } far)
+        {
+            stepNote += "; past-the-walls check skipped: " + far;
+            yield break;
+        }
+        for (float until = Now + 0.4f; Now < until; )
+        {
+            AimHand(rig, left, lug.Center());
+            yield return null;
+        }
+        var hovered = Interaction.instance != null ? Interaction.instance.currentHovered : null;
+        if (!ReferenceEquals(hovered, lug))
+        {
+            stepNote += $"; past-the-walls check skipped: hovered {Label(hovered)}, not the case";
+            yield break;
+        }
+        var glow = PhysicalInteraction.GripPreview(left);
+        var at = rig.Hand(left).position;
+        yield return GripTo(left, 1f, 0.1f);
+        yield return WaitFor(
+            () => ReferenceEquals(PhysicalInteraction.HandTarget(left), lug),
+            0.4f
+        );
+        bool took = ReferenceEquals(PhysicalInteraction.HandTarget(left), lug);
+        yield return GripTo(left, 0f, 0.1f);
+        if (took || ReferenceEquals(glow, lug))
+            Fail(
+                F(
+                    $"a hand {Gap(at, lug):0.00} m from {lug.name}'s solids, outside its walls, took {took} and lit {Label(glow)}: hand {at}, case up {lug.transform.up}"
+                )
+            );
+        else
+            stepNote += F(
+                $"; a hand {Gap(at, lug):0.00} m off its walls, in its world box, does not"
+            );
+    }
+
+    /// <summary>The nearest point to <paramref name="eye"/>, in reach and clear of the face, on a 0.1 m grid over the
+    /// world-axis box round the case's solids, with the case's own box more than 0.1 m past the grab radius away.</summary>
+    static bool PastTheWalls(Luggage lug, Vector3 eye, out Vector3 point)
+    {
+        var root = lug.transform;
+        var box = default(CaseBox);
+        var world = new Bounds(root.position, Vector3.zero);
+        bool any = false;
+        foreach (var col in lug.GetComponentsInChildren<Collider>())
+        {
+            if (!col.enabled || col.isTrigger)
+                continue;
+            PhysicalInteraction.AddToCase(ref box, root, col);
+            if (any)
+                world.Encapsulate(col.bounds);
+            else
+                world = col.bounds;
+            any = true;
+        }
+        float clear = InteractConfig.Instance.GrabRadius + 0.1f;
+        float best = MaxHandFromEye * 0.9f * (MaxHandFromEye * 0.9f);
+        point = default;
+        bool found = false;
+        for (float x = world.min.x; x <= world.max.x; x += 0.1f)
+        for (float y = world.min.y; y <= world.max.y; y += 0.1f)
+        for (float z = world.min.z; z <= world.max.z; z += 0.1f)
+        {
+            var p = new Vector3(x, y, z);
+            float sq = (p - eye).sqrMagnitude;
+            if (
+                sq < best
+                && sq > 0.35f * 0.35f
+                && !box.Within(root.InverseTransformPoint(p).N(), clear)
+            )
+            {
+                best = sq;
+                point = p;
+                found = true;
+            }
+        }
+        return found;
+    }
+
+    /// <summary>
+    /// vr.82b's sunk hand: in the case's own frame, at <paramref name="low"/> moved to at least 0.3 m in from every wall,
+    /// midway between the floor under it and the lid's lower face, so that neither is within the grab radius and only
+    /// SunkInto can take the case. The floor is the highest solid base box under that spot; a concave base has none, so
+    /// its bottom. The lid's colliders are left out (named Lid*, see <see cref="LidGesture.LidFace"/>), as they overhang
+    /// the walls.
+    /// </summary>
+    static Vector3 SunkPoint(Luggage lug, Vector3 low)
+    {
+        const float In = 0.3f;
+        var root = lug.transform;
+        var colliders = lug.GetComponentsInChildren<Collider>();
+        var whole = default(CaseBox);
+        foreach (var col in colliders)
+            if (IsBase(col))
+                PhysicalInteraction.AddToCase(ref whole, root, col);
+        var at = root.InverseTransformPoint(low);
+        float x = Mathf.Clamp(at.x, whole.Min.X + In, whole.Max.X - In);
+        float z = Mathf.Clamp(at.z, whole.Min.Z + In, whole.Max.Z - In);
+        float floor = whole.Min.Y;
+        foreach (var col in colliders)
+        {
+            if (col is not BoxCollider || !IsBase(col))
+                continue;
+            var one = default(CaseBox);
+            PhysicalInteraction.AddToCase(ref one, root, col);
+            if (one.Min.X <= x && x <= one.Max.X && one.Min.Z <= z && z <= one.Max.Z)
+                floor = Mathf.Max(floor, one.Max.Y);
+        }
+        float face = LidGesture.LidFace(lug, out var up) - Vector3.Dot(root.position, up);
+        return root.TransformPoint(x, (floor + face) * 0.5f, z);
+
+        static bool IsBase(Collider col) =>
+            col.enabled
+            && !col.isTrigger
+            && !col.name.StartsWith("Lid", System.StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// vr.82b's low grip: a point of the case's near side that <see cref="LidGesture.ReadsLow"/> by at least
+    /// <see cref="LidLowMargin"/>, which the grip's own query touches. Run 14 (#54): the surface point came out inside
+    /// the 0.05 m give and the grip took the lid half. Runs 22-23: on LuggageClown the first such point lay off the case,
+    /// so the grip found nothing. Lower probes are tried down to 0.6 m; false when none qualifies.
     /// </summary>
     static bool LowGripPoint(Luggage lug, Vector3 eye, out Vector3 point)
     {
-        const float want = LidGesture.LidGive + LidLowMargin;
-        float under = Mathf.Min(lug.Center().y, SolidTop(lug)) - want;
-        for (float up = -want; up >= -0.6f; up -= 0.05f)
+        for (float up = -(LidGesture.LidGive + LidLowMargin); up >= -0.6f; up -= 0.05f)
             if (
                 NearSide(lug, eye, up, out point)
-                && point.y <= under
+                && LidGesture.ReadsLow(lug, point, LidLowMargin)
                 && GripTouch(lug, point) != null
             )
                 return true;
@@ -1546,7 +1775,26 @@ internal sealed partial class SelfTestRunner
         return bestSq < float.MaxValue;
     }
 
-    /// <summary>Top of the case's enabled solid colliders. LuggageClown's render centre sits over its lid (#127).</summary>
+    /// <summary>The bounds of the case's enabled solid colliders; empty with none.</summary>
+    static Bounds SolidBounds(Luggage lug)
+    {
+        Bounds? solid = null;
+        foreach (var col in lug.GetComponentsInChildren<Collider>())
+        {
+            if (col.isTrigger || !col.enabled)
+                continue;
+            if (solid is { } b)
+            {
+                b.Encapsulate(col.bounds);
+                solid = b;
+            }
+            else
+                solid = col.bounds;
+        }
+        return solid ?? default;
+    }
+
+    /// <summary>Top of the bounds of the case's enabled solid colliders: on a tilted case, its highest corner.</summary>
     static float SolidTop(Luggage lug)
     {
         float top = float.NegativeInfinity;

@@ -147,12 +147,59 @@ public static class BodyZones
 }
 
 /// <summary>
+/// A hollow case's solid box, in the case's own frame. Nothing stops a tracked hand going into a case, and an overlap
+/// sphere in its hollow meets nothing, so the box stands in for the hollow. It has to be the case's own frame: a
+/// world-axis box round a yawed or tilted case reaches about a metre past its walls, into air and rock (#54).
+/// </summary>
+public struct CaseBox
+{
+    private bool any;
+
+    public Vector3 Min { get; private set; }
+    public Vector3 Max { get; private set; }
+
+    /// <summary>Grows the box round a collider's box at <paramref name="centre"/> with these half axes, all in the
+    /// case's frame; each half axis's size per case axis adds up to the same box as the 8 corners.</summary>
+    public void Add(Vector3 centre, Vector3 halfX, Vector3 halfY, Vector3 halfZ)
+    {
+        var reach = Vector3.Abs(halfX) + Vector3.Abs(halfY) + Vector3.Abs(halfZ);
+        Min = any ? Vector3.Min(Min, centre - reach) : centre - reach;
+        Max = any ? Vector3.Max(Max, centre + reach) : centre + reach;
+        any = true;
+    }
+
+    /// <summary><paramref name="point"/>, in the case's frame, is inside the box or within
+    /// <paramref name="radius"/> of it. Never with nothing added.</summary>
+    public readonly bool Within(Vector3 point, float radius) =>
+        any && Vector3.Distance(point, Vector3.Clamp(point, Min, Max)) <= radius;
+}
+
+/// <summary>
 /// Lid lift for luggage: maps the hand's rise onto the game's hold-to-open timer. The timer still runs on time
 /// (<c>Interaction.currentInteractableHeldTime</c>), so a lift never opens faster than holding the button; the lid
 /// only caps how far it may go, and only a fully raised lid lets it finish.
 /// </summary>
 public static class LidLift
 {
+    /// <summary>The lowest point, measured along <paramref name="up"/>, of a box at <paramref name="centre"/> with these
+    /// half axes: a lid collider's underside along its case's own up, the seam of a case however it lies (#127).</summary>
+    public static float LowerFace(
+        Vector3 centre,
+        Vector3 halfX,
+        Vector3 halfY,
+        Vector3 halfZ,
+        Vector3 up
+    ) =>
+        Vector3.Dot(centre, up)
+        - MathF.Abs(Vector3.Dot(halfX, up))
+        - MathF.Abs(Vector3.Dot(halfY, up))
+        - MathF.Abs(Vector3.Dot(halfZ, up));
+
+    /// <summary>A hand on the lid half: at or over the lid's <paramref name="face"/> (<see cref="LowerFace"/>) along the
+    /// case's <paramref name="up"/>, less <paramref name="give"/>.</summary>
+    public static bool OnLid(Vector3 hand, float face, Vector3 up, float give) =>
+        Vector3.Dot(hand, up) >= face - give;
+
     public static float Fraction(float rise, float height) =>
         height <= 0f ? 1f : Math.Clamp(rise / height, 0f, 1f);
 

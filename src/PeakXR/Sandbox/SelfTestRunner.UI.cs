@@ -636,6 +636,9 @@ internal sealed partial class SelfTestRunner
         );
         if (!stepOk)
             yield break;
+        // The labels last moved in LateUpdate, before TrackHeldItem picked this item's hand (#141): a frame for them to
+        // follow it, or the distance reads the hand of the last item held.
+        yield return null;
         var hand = VRRig.Instance.Hand(LocalHold.ItemInLeftHand);
         float d = Vector3.Distance(prompt.transform.parent.position, hand.position);
         yield return ShotAt("ui-02-button-labels", CentreOf(prompt.transform.parent));

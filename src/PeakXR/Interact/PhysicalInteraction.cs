@@ -600,17 +600,7 @@ internal static class PhysicalInteraction
         if (aim == null || cam == null || interaction == null)
             return AimedTarget.None;
         float reach = interaction.distance - Vector3.Distance(cam.transform.position, aim.position);
-        if (
-            reach <= 0f
-            || !Physics.Raycast(
-                aim.position,
-                aim.forward,
-                out var hit,
-                reach,
-                HelperFunctions.GetMask(HelperFunctions.LayerType.AllPhysical),
-                QueryTriggerInteraction.Collide
-            )
-        )
+        if (reach <= 0f || !HandAim.FirstHit(c, aim.position, aim.forward, reach, out var hit))
             return AimedTarget.None;
         var target = hit.collider.GetComponentInParent<IInteractible>();
         var kind = Classify(target, c);
@@ -1084,9 +1074,14 @@ internal static class PhysicalInteraction
             return;
         foreach (var hand in Hands)
         {
-            if (hand.Action != GripPressAction.Interact || !hand.Injected)
+            if (!hand.Injected)
                 continue;
-            hand.Target = item;
+            // A posed tap (TapPending) presses with the grip already open: no grab to hand over, but the item still
+            // goes to the hand that tapped (#141).
+            if (hand.Action == GripPressAction.Interact)
+                hand.Target = item;
+            else if (hand.Action != GripPressAction.None)
+                continue;
             pendingLeft = hand.Left;
             pendingTime = Time.time;
             return;
@@ -1868,9 +1863,12 @@ internal static class PhysicalInteraction
     private static readonly System.Collections.Generic.List<Collider> SunkColliders = new();
 
     /// <summary>The hovered interactible (Interaction.cs:15, :95) when the hand is inside, or within the grab radius of,
-    /// the bounds of one of its enabled solid concave mesh colliders. Nothing stops a tracked hand going into a case, and an overlap
-    /// sphere inside a concave mesh's hollow meets no triangle (VR runs 75 and 77's vr.82b: grip "Interact on nothing"
-    /// with LuggageAncient hovered). Only the hovered one, which the game's own ray found, so nothing behind a wall.</summary>
+    /// the bounds of one of its enabled solid concave mesh colliders, or of a case's own box (<see cref="CaseBox"/>).
+    /// Nothing stops a tracked hand going into a case, and an overlap sphere in its hollow meets nothing: no triangle of
+    /// a concave mesh (VR runs 75 and 77's vr.82b: grip "Interact on nothing" with LuggageAncient hovered), no thin wall
+    /// of a box-built case (LuggageClown, Big, Epic, Small, Trick: #54). Only the hovered one, which the game's own ray
+    /// found. The revival statue (RespawnChest.cs:6) is a Luggage but no case: it is solid (a convex mesh on every instance),
+    /// and a grip taking it from thin air holds its cast at 0 with no cue (<see cref="StatueTouch.HoldsAtZero"/>).</summary>
     private static IInteractible SunkInto(Character c, Vector3 pos, float radius)
     {
         var interaction = Interaction.instance;
@@ -1885,23 +1883,55 @@ internal static class PhysicalInteraction
             return null;
         comp.GetComponentsInChildren(false, SunkColliders);
         IInteractible found = null;
+        bool hollow = it is Luggage and not RespawnChest;
+        var root = comp.transform;
+        var box = default(CaseBox);
         foreach (var col in SunkColliders)
         {
-            // Only a concave mesh: the overlap sphere already finds a hand inside or at any primitive or convex
+            if (!col.enabled || col.isTrigger)
+                continue;
+            if (hollow)
+                AddToCase(ref box, root, col);
+            // A concave mesh: the overlap sphere already finds a hand inside or at any other primitive or convex
             // collider, and a box around those reached well past the item's shape.
-            if (
-                col.enabled
-                && !col.isTrigger
-                && !ExactShape(col)
-                && col.bounds.SqrDistance(pos) <= radius * radius
-            )
+            else if (!ExactShape(col) && col.bounds.SqrDistance(pos) <= radius * radius)
             {
                 found = it;
                 break;
             }
         }
+        if (hollow && box.Within(root.InverseTransformPoint(pos).N(), radius))
+            found = it;
         SunkColliders.Clear();
         return found;
+    }
+
+    /// <summary>Grows <paramref name="box"/>, in <paramref name="root"/>'s frame, round a box or a mesh's bounds. Every
+    /// case prefab and instance has world scale 1, so the frame is in metres, and only those two collider types.</summary>
+    internal static void AddToCase(ref CaseBox box, Transform root, Collider col)
+    {
+        Vector3 centre,
+            half;
+        switch (col)
+        {
+            case BoxCollider b:
+                centre = b.center;
+                half = b.size * 0.5f;
+                break;
+            case MeshCollider { sharedMesh: { } mesh }:
+                centre = mesh.bounds.center;
+                half = mesh.bounds.extents;
+                break;
+            default:
+                return;
+        }
+        var t = col.transform;
+        box.Add(
+            root.InverseTransformPoint(t.TransformPoint(centre)).N(),
+            root.InverseTransformVector(t.TransformVector(half.x, 0f, 0f)).N(),
+            root.InverseTransformVector(t.TransformVector(0f, half.y, 0f)).N(),
+            root.InverseTransformVector(t.TransformVector(0f, 0f, half.z)).N()
+        );
     }
 
     /// <summary>The last grab search's interactible colliders in reach, and how many of them the eye could not see

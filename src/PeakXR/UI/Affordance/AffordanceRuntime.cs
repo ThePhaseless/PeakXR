@@ -587,7 +587,10 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         int best = -1;
         for (int i = 0; i < n; i++)
         {
-            if ((best < 0 || RayHits[i].distance < RayHits[best].distance) && Counts(c, RayHits[i]))
+            if (
+                (best < 0 || RayHits[i].distance < RayHits[best].distance)
+                && HandAim.Counts(c, RayHits[i])
+            )
                 best = i;
         }
         if (best >= 0)
@@ -632,23 +635,6 @@ internal sealed class AffordanceRuntime : MonoBehaviour
         return item != null
             && LocalHold.ItemInLeftHand == left
             && (item.isUsingPrimary || item.isUsingSecondary || item.progress > 0f);
-    }
-
-    /// <summary>The hits vanilla's interact ray considers (Interaction.cs:224).</summary>
-    private static bool Counts(Character c, in RaycastHit hit)
-    {
-        var col = hit.collider;
-        // Your own body: vanilla checks the ragdoll's collider list (internal); its parent Character is the same test.
-        if (col == null || col.GetComponentInParent<Character>() == c)
-            return false;
-        if (
-            Item.TryGetItemFromCollider(col, out var item)
-            && item != null
-            && item == c.data.currentItem
-        )
-            return false;
-        var parent = col.transform.parent;
-        return parent == null || !parent.TryGetComponent<global::Peak.ArrowOnMe>(out _);
     }
 
     /// <summary>Poses cues and the label; runs late and again right before rendering for the hand-following label.</summary>

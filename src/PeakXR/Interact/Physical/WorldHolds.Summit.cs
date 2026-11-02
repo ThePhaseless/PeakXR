@@ -278,13 +278,12 @@ internal static partial class WorldHolds
         float reach = interaction.distance - Vector3.Distance(cam.transform.position, aim.position);
         if (
             reach <= 0f
-            || !Physics.Raycast(
+            || !HandAim.FirstHit(
+                Character.localCharacter,
                 aim.position,
                 aim.forward,
-                out var hit,
                 reach,
-                HelperFunctions.GetMask(HelperFunctions.LayerType.AllPhysical),
-                QueryTriggerInteraction.Collide
+                out var hit
             )
         )
             return false;

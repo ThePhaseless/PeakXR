@@ -1073,12 +1073,24 @@ internal sealed partial class SelfTestRunner
     /// <summary>The point on <see cref="testVine"/>'s drawn middle a hand grips, set by <see cref="VineLedge"/>.</summary>
     Transform vineSpot;
 
+    /// <summary>Points along the vine <see cref="VineLedge"/> may stand under, the middle first.</summary>
+    static readonly float[] VineStands = { 0.5f, 0.4f, 0.6f, 0.3f, 0.7f };
+
+    /// <summary>How many of <see cref="VineStands"/> <see cref="VineLedge"/> warps to: each costs about 1-4 s.</summary>
+    const int VineStandTries = 3;
+
+    /// <summary>How far (m) off its stand the body may settle: past it, rock pushed the body out (#142).</summary>
+    const float VineStandSlack = 0.25f;
+
     /// <summary>
-    /// <see cref="ToVine"/>'s vine with the player standing on a Map-layer test ledge 2 m under its drawn middle, so
-    /// the vine hangs 0.4 m over the eye, in an overhead reach. <see cref="vineSpot"/> marks that point; both go when
-    /// the step's <see cref="Restoring"/> runs. Run 39 warped into the air under it: the body fell, and the hand,
-    /// placed a frame behind the fall, closed 0.9 m off the vine. Run 43 warped the body's centre onto the ledge top
-    /// (not <see cref="CentreOver"/>) and it sank under it: the grip sat 1.14 m above the eye (tracking y 2.74).
+    /// <see cref="ToVine"/>'s vine with the player standing on a Map-layer test ledge 2 m under its drawn line, so the
+    /// vine hangs 0.4 m over the eye, in an overhead reach. <see cref="vineSpot"/> marks that point; both go when the
+    /// step's <see cref="Restoring"/> runs. Run 39 warped into the air under it: the body fell, and the hand, placed a
+    /// frame behind the fall, closed 0.9 m off the vine. Run 43 warped the body's centre onto the ledge top (not
+    /// <see cref="CentreOver"/>) and it sank under it: the grip sat 1.14 m above the eye (tracking y 2.74). The gate
+    /// before 0.3.1: rock stood where the ledge went under the vine's middle and pushed the body about 1 m along it, so
+    /// the hand landed past the reach guard by a varying amount (#142). The stand needs room and the body has to land
+    /// on it, or the next point along the vine is tried; with none the step fails as setup.
     /// </summary>
     IEnumerator VineLedge()
     {
@@ -1089,8 +1101,6 @@ internal sealed partial class SelfTestRunner
             yield break;
         var marker = new GameObject("PeakXR_TestVineSpot").transform;
         OnRestore(() => UnityEngine.Object.Destroy(marker.gameObject));
-        marker.position = testVine.GetPosition(0.5f, 1, 1) + Vector3.down * testVine.colliderOffset;
-        var feet = marker.position + Vector3.down * 2f;
         var ledge = GameObject.CreatePrimitive(PrimitiveType.Cube);
         ledge.name = "PeakXR_TestVineLedge";
         ledge.layer = LayerMask.NameToLayer("Map");
@@ -1099,19 +1109,46 @@ internal sealed partial class SelfTestRunner
             if (ledge != null)
                 UnityEngine.Object.Destroy(ledge);
         });
-        ledge.transform.SetPositionAndRotation(feet + Vector3.down * 0.1f, Quaternion.identity);
         ledge.transform.localScale = new Vector3(2f, 0.2f, 2f);
-        Physics.SyncTransforms();
-        c.photonView.RPC(
-            "WarpPlayerRPC",
-            RpcTarget.All,
-            CentreOver(c, feet + Vector3.up * 0.1f),
-            false
-        );
-        yield return WaitFor(() => !c.warping, 2f);
-        yield return WaitFor(() => c.data.isGrounded, 2f);
-        yield return Wait(0.5f);
-        vineSpot = marker;
+        string tried = "";
+        int warps = 0;
+        foreach (float along in VineStands)
+        {
+            if (warps >= VineStandTries)
+                break;
+            marker.position =
+                testVine.GetPosition(along, 1, 1) + Vector3.down * testVine.colliderOffset;
+            var feet = marker.position + Vector3.down * 2f;
+            // Not the ledge of the last try: it may stand in this one's way.
+            ledge.SetActive(false);
+            Physics.SyncTransforms();
+            if (!StandingRoom(feet))
+            {
+                tried += F($"{along:0.0} along it: no room at {feet}; ");
+                continue;
+            }
+            ledge.transform.SetPositionAndRotation(feet + Vector3.down * 0.1f, Quaternion.identity);
+            ledge.SetActive(true);
+            Physics.SyncTransforms();
+            warps++;
+            c.photonView.RPC(
+                "WarpPlayerRPC",
+                RpcTarget.All,
+                CentreOver(c, feet + Vector3.up * 0.1f),
+                false
+            );
+            yield return WaitFor(() => !c.warping, 2f);
+            yield return WaitFor(() => c.data.isGrounded, 2f);
+            yield return Wait(0.5f);
+            float off = FlatDistance(c.Center, feet);
+            if (off <= VineStandSlack)
+            {
+                vineSpot = marker;
+                yield break;
+            }
+            tried += F($"{along:0.0} along it: the body settled {off:0.00} m off {feet}; ");
+        }
+        Fail("setup: no stand under the vine held: " + tried);
     }
 
     /// <summary>
@@ -1696,14 +1733,15 @@ internal sealed partial class SelfTestRunner
         if (aim == null)
             return "no aim pose";
         float reach = Vector3.Distance(aim.position, target) + 0.5f;
+        // Past the player's own body, as the game's interact ray is (Interaction.cs:224): a plain raycast stopped at a
+        // RigCollider of the arm it starts in, 0.04-0.66 m out, and failed the step with the Apple on the line (#55).
         if (
-            !Physics.Raycast(
+            !Interact.HandAim.FirstHit(
+                Character.localCharacter,
                 aim.position,
                 aim.forward,
-                out var hit,
                 reach,
-                HelperFunctions.GetMask(HelperFunctions.LayerType.AllPhysical),
-                QueryTriggerInteraction.Collide
+                out var hit
             )
         )
             return F($"nothing within {reach:0.00} m");
@@ -2141,6 +2179,30 @@ internal sealed partial class SelfTestRunner
             AimHeldAt(rig, left, face);
             yield return null;
         }
+        // A settled stance (#129): the one NoWall came with the body sliding 2 m/s and the hand 0.78 m off its controller,
+        // the ring straight down. A slide that drops the arms hands the aim to the physical piton (HandAim.HoldTarget),
+        // and the step measured the wall before the press only.
+        var driver = AvatarPoseDriver.Of(c);
+        // Held, not one frame's read: the frame the slide let the body touch ground reads settled too.
+        float settledSince = float.PositiveInfinity;
+        for (float until = Now + 3f; Now < until && Now - settledSince < SettledFor; )
+        {
+            AimHeldAt(rig, left, face);
+            yield return null;
+            if (!Settled(c, driver))
+                settledSince = float.PositiveInfinity;
+            else if (float.IsPositiveInfinity(settledSince))
+                settledSince = Now;
+        }
+        if (Now - settledSince < SettledFor)
+        {
+            Fail(
+                F(
+                    $"setup: no settled stance held {SettledFor:0.00} s to press from in 3 s: grounded {c.data.isGrounded}, falling {c.data.fallSeconds:0.00} s, speed {c.data.avarageVelocity.magnitude:0.00} m/s, hold pose {Interact.HandAim.HoldPoseOn(c)}, arm weight {(driver != null ? driver.ArmWeight : 0f):0.00}"
+                )
+            );
+            yield break;
+        }
         // The precondition: in range, so only the slot rule can refuse it.
         float range = spike.climbingSpikeStartDistanceGrounded;
         if (
@@ -2169,7 +2231,7 @@ internal sealed partial class SelfTestRunner
         int spikesAfter = c.data.climbingSpikeCount;
         string note =
             F(
-                $"first spike slot {first.itemSlotID}, drawn {selected.Value}, wall {hit.distance:0.00} m (reach {range:0.00} m) along {spikeDir}, at the press from {pressFrom} along {pressDir}, spikes {spikesBefore} then {spikesAfter}, cast {cast}; "
+                $"first spike slot {first.itemSlotID}, drawn {selected.Value}, wall {hit.distance:0.00} m (reach {range:0.00} m) along {spikeDir}, at the press from {pressFrom} along {pressDir}, hold pose {pressHoldPose}, arm weight {pressArmWeight:0.00}, spikes {spikesBefore} then {spikesAfter}, cast {cast}; "
             ) + stepNote;
         if (!stepOk)
             stepNote = note;
@@ -2179,6 +2241,18 @@ internal sealed partial class SelfTestRunner
             Note(note);
         yield return LetGoAll(c);
     }
+
+    /// <summary>How long vr.44f's stance must stay <see cref="Settled"/> before the press.</summary>
+    const float SettledFor = 0.25f;
+
+    /// <summary>The body stands still and the hold, not the physical item, aims the held spike.</summary>
+    static bool Settled(Character c, AvatarPoseDriver driver) =>
+        c.data.isGrounded
+        && c.data.fallSeconds <= 0f
+        && c.data.avarageVelocity.magnitude < 0.3f
+        && driver != null
+        && driver.ArmWeight >= 1f
+        && Interact.HandAim.HoldPoseOn(c);
 
     /// <summary>
     /// vr.267: a held piton set from close to a wall. The hold lays the blade along the aim

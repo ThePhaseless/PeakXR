@@ -311,7 +311,9 @@ internal sealed partial class SelfTestRunner
     /// vr.446 (issue #82): a quick grip tap in the thumbs-up pose, with an Apple on the head's interact ray, is a gaze
     /// grab. The pose holds the interact back (Core <c>GripIntent.GestureInteractAt</c>, 0.25 s), and a grip opened
     /// sooner pressed nothing; now the release presses it once (<c>GripIntent.ReleaseTaps</c>). The fist closes for
-    /// 0.1 s: the press frame must be posed (<c>GestureEmotes.ThumbPosed</c>), and the Apple must reach the hand.
+    /// 0.1 s: the press frame must be posed (<c>GestureEmotes.ThumbPosed</c>), and the Apple must reach the hand that
+    /// tapped. The hand stands 0.4 m out like the other thumb steps: at 0.3 m it sat on <c>EmoteGestures.ThumbReach</c>
+    /// and float rounding decided the pose (#141).
     /// </summary>
     IEnumerator PosedTapStep()
     {
@@ -339,7 +341,7 @@ internal sealed partial class SelfTestRunner
         Script(hand).StickTouch = true;
         yield return MoveTrack(
             hand,
-            head + forward * 0.3f + (hand ? -right : right) * 0.15f + Vector3.down * 0.25f,
+            head + forward * 0.4f + (hand ? -right : right) * 0.1f + Vector3.down * 0.2f,
             0.3f
         );
         for (float until = Now + 3f; Now < until; )
@@ -356,6 +358,9 @@ internal sealed partial class SelfTestRunner
         }
         bool posed = false,
             pressed = false;
+        var real = Rig.RealScale.Real(VRRig.Instance.Hand(hand).position, headT.position);
+        float ahead = Vector3.Dot(real - headT.position, Flat(headT.forward));
+        float under = headT.position.y - real.y;
         Fist(hand, forward);
         for (float until = Now + 0.1f; Now < until; )
         {
@@ -374,13 +379,18 @@ internal sealed partial class SelfTestRunner
             yield return null;
         }
         bool holding = c.data.currentItem != null;
+        // One Update so PhysicalInteraction.TrackHeldItem has picked the holding hand.
+        yield return null;
+        bool inTappingHand = LocalHold.ItemInLeftHand == hand;
         var note = F(
-            $"posed {posed}, pressed while closed {early}, grip interact pressed {pressed}, holding {holding}"
+            $"posed {posed} ({ahead:0.000} m ahead of the eyes, {under:0.000} m under them), pressed while closed {early}, grip interact pressed {pressed}, holding {holding}, in the tapping hand {inTappingHand}"
         );
         if (!posed)
             Fail("the tap was not in the thumbs-up pose, so the step proves nothing: " + note);
         else if (!holding)
             Fail("the quick posed tap picked nothing up: " + note);
+        else if (!inTappingHand)
+            Fail("the quick posed tap's item landed in the other hand: " + note);
         else
             Note(note);
         yield return DropHeld();
