@@ -160,6 +160,7 @@ internal sealed partial class SelfTestRunner
         yield return MpStep("climb", 200f, true, MpClimb());
         yield return MpStep("two-hand", 90f, true, MpTwoHand());
         yield return MpStep("feed", 180f, true, Feed());
+        yield return MpStep("feed-fetch-front", 90f, true, FeedFetchFront());
         yield return MpSocialSteps();
         MpFinish("script done");
     }
@@ -1719,6 +1720,71 @@ internal sealed partial class SelfTestRunner
                 + note;
     }
 
+    /// <summary>
+    /// feed-fetch-front: the food lies at the host's feet, and A stoops for it and carries it to the side the host stands
+    /// on, as the modded run of #119 did by chance. The controller stays well off the host's mouth, so however the host's
+    /// body holds the food on them, standing there feeds nobody (<see cref="HandOver.PlaceRadius"/>).
+    /// <see cref="SpawnSide"/> took this case out of the other fetches.
+    /// </summary>
+    IEnumerator FeedFetchFront()
+    {
+        yield return FreeHands();
+        if (!stepOk)
+            yield break;
+        // A 0.7 m spawn along the line then lands about 0.5 m from the host (#119's run: 0.54 m).
+        yield return WalkTo(HostCenter, 1.2f, true);
+        if (!stepOk)
+            yield break;
+        var c = Character.localCharacter;
+        var host = Host();
+        yield return GrabReachable(
+            i => IsFood(i) && i.canUseOnFriend,
+            null,
+            NearItems,
+            3,
+            spawn: MpFood,
+            spawnSide: Flat(host.Center - c.Center)
+        );
+        if (!stepOk || stepSkip != null)
+            yield break;
+        var item = HeldItem();
+        cpItemId = item.itemID;
+        bool left = LocalHold.ItemInLeftHand;
+        float consumedBefore = c.data.lastConsumedItem;
+        var driver = AvatarPoseDriver.Of(c);
+        Face(HostPart(host, BodypartType.Head));
+        VRRig.Instance.RotateYaw(left ? 90f : -90f);
+        yield return CarryFoodBack(left);
+        float closest = float.MaxValue;
+        float place = float.MaxValue;
+        float inZone = 0f;
+        bool used = false;
+        // Past what the dwell and the cast took in #119's run (0.3 s, then 1.15 s in all).
+        for (float end = Now + 3f; Now < end && item != null && HeldItem() == item; )
+        {
+            var mouth = HostPart(host, BodypartType.Head);
+            float gap = Social.SocialHands.FeedGap(item, mouth);
+            closest = Mathf.Min(closest, gap);
+            if (gap <= Social.SocialHands.FeedRadius)
+                inZone += Time.unscaledDeltaTime;
+            if (driver != null && driver.HeldItemGap >= 0f)
+                place = Mathf.Min(place, Vector3.Distance(driver.HeldItemPlace, mouth));
+            used |= item.isUsingSecondary || c.input.useSecondaryIsPressed;
+            yield return null;
+        }
+        var note = F(
+            $"standing beside the host, the food came within {closest:0.00} m of their mouth, {inZone:0.0} s in the zone, its place on the controller no nearer than {place:0.00} m (limit {HandOver.PlaceRadius:0.00}), {FlatDistance(c.Center, host.Center):0.00} m level"
+        );
+        bool fed = item == null || c.data.lastConsumedItem != consumedBefore;
+        if ((fed || used) && place <= HandOver.PlaceRadius)
+            stepSkip =
+                "this stance put the controller at the host's mouth, so the feed was fair: " + note;
+        else if (fed || used)
+            Fail($"the host was {(fed ? "fed" : "getting fed")} with the controller away: {note}");
+        else
+            stepNote = "no feed: " + note;
+    }
+
     /// <summary>The food low at the holding side and a little back, out of a host's mouth zone on the walk in.</summary>
     IEnumerator CarryFoodBack(bool left)
     {
@@ -1788,6 +1854,7 @@ internal sealed partial class SelfTestRunner
     /// and did not take is passed over for the next, and only the last miss fails (MP run 13, #100: a Bugle rolled
     /// onto a 45 degree slope under the reaching hand and vr.434 never reached its pointing).
     /// With <paramref name="spawn"/> (a prefab name) the host first spawns one at A's feet (<see cref="MpRequest.SpawnItem"/>)
+    /// (on <paramref name="spawnSide"/>, by default <see cref="SpawnSide"/>)
     /// and that is the first try. Candidates lie within <see cref="MpFetchRange"/> of the host and the tries stop after
     /// <see cref="MpFetchSeconds"/> (MP run 15, #103: a fetch for food 175 m off ran out its step and stranded A).</remarks>
     IEnumerator GrabReachable(
@@ -1796,7 +1863,8 @@ internal sealed partial class SelfTestRunner
         float range = NearItems,
         int tries = 3,
         bool nextOnMiss = false,
-        string spawn = null
+        string spawn = null,
+        Vector3? spawnSide = null
     )
     {
         var c = Character.localCharacter;
@@ -1804,7 +1872,7 @@ internal sealed partial class SelfTestRunner
         if (spawn != null && first == null)
         {
             stepSkip = null;
-            yield return Ask(MpRequest.SpawnItem, 5f, SpawnSide(c), spawn);
+            yield return Ask(MpRequest.SpawnItem, 5f, spawnSide ?? SpawnSide(c), spawn);
             if (stepSkip == null)
             {
                 bool Spawned(Item x) => ok(x) && x.name.StartsWith(spawn, StringComparison.Ordinal);

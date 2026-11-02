@@ -120,7 +120,7 @@ def moddedb:
     end;
 # Every checkpoint MpScript writes (SelfTestRunner.MpTest.cs); one A never wrote means its script stopped early.
 def expected: ["join", "walk-to-host", "emote", "ping", "ping-seen", "scene-button", "board", "regroup", "luggage", "grab",
-  "drop", "pickup", "throw", "eat", "holster", "climb", "two-hand", "feed", "feed-refuse", "reach-deny", "reach-look", "reach",
+  "drop", "pickup", "throw", "eat", "holster", "climb", "two-hand", "feed", "feed-fetch-front", "feed-refuse", "reach-deny", "reach-look", "reach",
   "vr.421-reach-out-cone", "vr.422-reach-out-idle", "vr.423-reach-out-hands-full", "vr.424-reach-out-far",
   "kick-mode", "carry", "pack", "vr.330-pack-stash", "vr.434-point-friend-pack", "pal-jump", "vr.420-reach-out-ledge", "campfire-far", "spectate",
   "save-untouched"];
@@ -211,6 +211,10 @@ def expected: ["join", "walk-to-host", "emote", "ping", "ping-seen", "scene-butt
           and any(seen($y)[]; (.local | not) and .name == "SendFeedDataRPC")
        then "PASS feed: B was fed by A (SendFeedDataRPC, GetFedItemRPC on B)"
        else "FAIL feed: B missed SendFeedDataRPC from A or GetFedItemRPC on itself" end)
+    elif $x.name == "feed-fetch-front" then
+      (if any(after($y)[]; .name == "SendFeedDataRPC" and .on == $x.item)
+       then "FAIL feed-fetch-front: B got a feed RPC for the \($x.item) A only carried past it"
+       else "PASS feed-fetch-front: B got no feed RPC for the \($x.item) A only carried past it" end)
     elif $x.name == "feed-refuse" then
       # A feed starts with SendFeedDataRPC on the item fed: count only those on the refused item. The window also
       # holds the end of the feed step before it (GetFedItemRPC and Consume arrive about 0.1 s after that checkpoint).

@@ -407,6 +407,7 @@ public partial class AvatarPoseDriver
         float dt = Time.fixedDeltaTime;
         var body = item.rig;
         HeldItemGap = Vector3.Distance(body.position, target);
+        HeldItemPlace = target;
         bool left = Pose.ItemInLeftHand;
         // The arm, not the item: the ragdoll hand against where its controller puts the hand bone, and against where
         // the item's grip puts it.

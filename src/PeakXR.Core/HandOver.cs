@@ -74,6 +74,15 @@ public sealed class HandOver
 
     public static bool Still(float levelSpeed) => levelSpeed < StillSpeed;
 
+    /// <summary>Both the feeder and the friend: a friend who walks into food held out is not being fed either.</summary>
+    public static bool Still(float feederSpeed, float friendSpeed) =>
+        Still(feederSpeed) && Still(friendSpeed);
+
+    /// <summary>How far (m) from the mouth or chest the item's controller-held place may be for the dwell to count: the
+    /// player holds it there, it did not only come to rest there. The body weld keeps an item on a friend with the
+    /// controller elsewhere (#119: 0.63 m off, fed in 1.15 s).</summary>
+    public const float PlaceRadius = 0.35f;
+
     private bool applying;
     private float outFor;
     private float inFor;
@@ -85,15 +94,18 @@ public sealed class HandOver
     /// <param name="ownUse">The item has a trigger use of its own (a torch, a spool): when it is not
     /// <paramref name="usable"/> there is no hand-over at all, so its trigger stays its own and nothing is refused.</param>
     /// <param name="dt">Seconds since the last update, for the <see cref="Grace"/>; 0 gives none.</param>
-    /// <param name="still">The feeder's body is nearly still (<see cref="Still"/>): the <see cref="Dwell"/> only counts
-    /// then, and starts over when they move before it is done.</param>
+    /// <param name="still">The feeder and the friend are nearly still (<see cref="Still(float, float)"/>): the
+    /// <see cref="Dwell"/> only counts then, and starts over when one moves before it is done.</param>
+    /// <param name="placeGap">The item's controller-held place from the mouth or chest (m): the <see cref="Dwell"/>
+    /// only counts within <see cref="PlaceRadius"/>. The trigger does not read it.</param>
     public HandOverState Update(
         bool inZone,
         bool trigger,
         bool usable,
         bool ownUse = false,
         float dt = 0f,
-        bool still = true
+        bool still = true,
+        float placeGap = 0f
     )
     {
         if (!inZone && applying && usable && (trigger || dwelt) && (outFor += dt) < Grace)
@@ -106,16 +118,16 @@ public sealed class HandOver
         }
         var state = Step(trigger, usable);
         if (Dwell > 0f && state is HandOverState.None or HandOverState.Hint)
-            state = DwellStep(usable, state, dt, still);
+            state = DwellStep(usable, state, dt, still && placeGap <= PlaceRadius);
         applying = state == HandOverState.Apply;
         return state;
     }
 
     /// <summary>Held in the zone for <see cref="Dwell"/>: an item they can take is applied for as long as it stays;
-    /// one they cannot is refused once per visit. The feeder moving restarts a dwell not yet done.</summary>
-    private HandOverState DwellStep(bool usable, HandOverState state, float dt, bool still)
+    /// one they cannot is refused once per visit. Anything but <paramref name="counts"/> restarts a dwell not yet done.</summary>
+    private HandOverState DwellStep(bool usable, HandOverState state, float dt, bool counts)
     {
-        if (still)
+        if (counts)
             inFor += dt;
         else if (inFor < Dwell)
             inFor = 0f;

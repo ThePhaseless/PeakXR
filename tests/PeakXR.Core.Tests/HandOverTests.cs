@@ -272,4 +272,83 @@ public class HandOverTests
         Assert.Equal(0.35f, HandOver.DwellAt(chest: true));
         Assert.True(HandOver.DwellAt(chest: true) > 0f);
     }
+
+    [Fact]
+    public void TheDwellCountsOnlyWithTheItemsControllerHeldPlaceAtTheSpot()
+    {
+        // #119: the body weld held a bag on the host's head with the controller 0.63 m off, and food went in 1.15 s.
+        var h = Mouth();
+        for (int i = 0; i < 20; i++)
+            Assert.Equal(
+                HandOverState.Hint,
+                h.Update(true, false, true, false, 0.1f, true, placeGap: 0.63f)
+            );
+        Assert.Equal(
+            HandOverState.Hint,
+            h.Update(true, false, true, false, 0.1f, true, placeGap: HandOver.PlaceRadius)
+        );
+        Assert.Equal(
+            HandOverState.Hint,
+            h.Update(true, false, true, false, 0.1f, true, placeGap: 0.2f)
+        );
+        Assert.Equal(
+            HandOverState.Apply,
+            h.Update(true, false, true, false, 0.1f, true, placeGap: 0.2f)
+        );
+    }
+
+    [Fact]
+    public void TheControllerLeavingThePlaceStartsTheDwellOver()
+    {
+        var h = Mouth();
+        h.Update(true, false, true, false, 0.2f, true, placeGap: 0.1f);
+        h.Update(true, false, true, false, 0.01f, true, placeGap: 0.5f);
+        Assert.Equal(
+            HandOverState.Hint,
+            h.Update(true, false, true, false, 0.2f, true, placeGap: 0.1f)
+        );
+    }
+
+    [Fact]
+    public void TheTriggerStillFeedsAtOnceWithThePlaceFarOff()
+    {
+        var h = Mouth();
+        h.Update(true, false, true, false, 0.01f, true, placeGap: 0.63f);
+        Assert.Equal(
+            HandOverState.Apply,
+            h.Update(true, true, true, false, 0.01f, true, placeGap: 0.63f)
+        );
+    }
+
+    [Fact]
+    public void AnItemTheyCannotTakeIsNotRefusedWithThePlaceFarOff()
+    {
+        var h = Mouth();
+        for (int i = 0; i < 20; i++)
+            Assert.NotEqual(
+                HandOverState.Refuse,
+                h.Update(true, false, false, false, 0.1f, true, placeGap: 0.63f)
+            );
+    }
+
+    [Fact]
+    public void BothMoversHaveToBeStill()
+    {
+        Assert.True(HandOver.Still(0.1f, 0.1f));
+        Assert.False(HandOver.Still(0.6f, 0.1f));
+        // A friend walking into food held out is no hand-over.
+        Assert.False(HandOver.Still(0.1f, 0.6f));
+    }
+
+    [Fact]
+    public void ABandageOnTheChestOfAFriendWalkedIntoDoesNotCount()
+    {
+        // docs/controls.md: "Passing close never starts one."
+        var h = new HandOver { Dwell = HandOver.DwellAt(chest: true) };
+        for (int i = 0; i < 20; i++)
+            Assert.NotEqual(
+                HandOverState.Apply,
+                h.Update(true, false, true, false, 0.1f, still: false, placeGap: 0.1f)
+            );
+    }
 }

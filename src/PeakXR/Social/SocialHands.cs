@@ -1351,10 +1351,13 @@ internal sealed class SocialHands : IGripExtension
     /// Feed or heal as a hand-over (<see cref="HandOver"/>): a canUseOnFriend item held at another player's mouth, or a
     /// healing item on their torso, for the zone's dwell (<see cref="HandOver.DwellAt"/>), or the holding hand's
     /// trigger squeezed there, holds the game's use-on-friend (Item.StartUseSecondary, Item.cs:977, its cast and ring)
-    /// while it stays. Passing close never spends one (external review row 9): the item has to rest there, and at the
-    /// mouth the feeder must stand nearly still for the dwell (#93: walking up with food at chest height fed them). A teal ring marks the
-    /// mouth or chest while in range and through the cast. An item they cannot take is refused at the mouth after the
-    /// dwell or on the squeeze (CharacterInteractible.HasItemCanUseOnFriend, :90), and so is a bot (:128).
+    /// while it stays. Passing close never spends one (external review row 9): the item has to rest there with its
+    /// controller-held place there too, and the feeder and the friend must stand nearly still for the dwell (#93: walking
+    /// up with food at chest height fed them; #119: a friend's body held the food on them with the controller 0.63 m
+    /// off). A friend's copy has a live velocity: their own client's <c>averageVelocity</c> arrives in every sync package
+    /// (CharacterSyncer.cs:116-117) and their ragdoll simulates here between them (CharacterMovement.cs:295, :683-697). A
+    /// teal ring marks the mouth or chest while in range and through the cast. An item they cannot take is refused at
+    /// the mouth after the dwell or on the squeeze (CharacterInteractible.HasItemCanUseOnFriend, :90), and so is a bot (:128).
     /// </summary>
     private bool UpdateFeed(Character c, float dt)
     {
@@ -1402,22 +1405,24 @@ internal sealed class SocialHands : IGripExtension
         atFriendMouth = inZone && !usable;
         // Food held at their mouth feeds as at your own, a bandage on their chest as on your own body.
         handOver.Dwell = HandOver.DwellAt(chest: part == BodypartType.Torso);
-        var v = c.data.avarageVelocity;
-        // Food fed by the mouth dwell only when the feeder stands nearly still (#93): never on the walk up.
-        bool still = part == BodypartType.Torso || HandOver.Still(new Vector2(v.x, v.z).magnitude);
+        var spot = PartPosition(who, part, point);
+        float feederSpeed = LevelSpeed(c);
+        float friendSpeed = LevelSpeed(who);
+        float placeGap = PlaceGap(c, spot);
         var state = handOver.Update(
             inZone,
             VRInput.Hand(left).Trigger > HandOverTrigger,
             usable,
             item.CanUsePrimary(),
             dt,
-            still
+            // Never on the walk up, or as a friend walks into it (#93, #119).
+            HandOver.Still(feederSpeed, friendSpeed),
+            placeGap
         );
         if (!inZone && state == HandOverState.Apply)
             feedCandidate = who;
         if (usable && (inZone || state == HandOverState.Apply))
             FeedTarget = who.refs.interactible;
-        var spot = PartPosition(who, part, point);
         switch (state)
         {
             case HandOverState.Hint:
@@ -1429,7 +1434,7 @@ internal sealed class SocialHands : IGripExtension
             case HandOverState.Apply:
                 // The friend stays marked while the game's feed cast fills its ring at the hand.
                 Affordance.Mark(left, spot, DenyReason.NeedsFriend, DenyHint.At(spot));
-                LogApplied(c, item, spot, left);
+                LogApplied(c, item, spot, left, placeGap, feederSpeed, friendSpeed);
                 return FeedTarget != null;
             default:
                 feedLogged = false;
@@ -1439,9 +1444,33 @@ internal sealed class SocialHands : IGripExtension
 
     private bool feedLogged;
 
-    /// <summary>Once per hand-over, as it applies: where the item is and how far it lags its controller, which tells
-    /// food held to the mouth from food a friend's body held there (#119).</summary>
-    private void LogApplied(Character c, Item item, Vector3 spot, bool left)
+    private static float LevelSpeed(Character ch)
+    {
+        var v = ch.data.avarageVelocity;
+        return new Vector2(v.x, v.z).magnitude;
+    }
+
+    /// <summary>The item's controller-held place from <paramref name="spot"/> (m); with no hand-carried pose, infinite:
+    /// nothing says the player holds it there.</summary>
+    private static float PlaceGap(Character c, Vector3 spot)
+    {
+        var driver = Avatar.AvatarPoseDriver.Of(c);
+        return driver != null && driver.HeldItemGap >= 0f
+            ? Vector3.Distance(driver.HeldItemPlace, spot)
+            : float.PositiveInfinity;
+    }
+
+    /// <summary>Once per hand-over, as it applies: where the item is, how far it lags its controller, and the gates the
+    /// dwell read, which tells food held to the mouth from food a friend's body held there (#119).</summary>
+    private void LogApplied(
+        Character c,
+        Item item,
+        Vector3 spot,
+        bool left,
+        float placeGap,
+        float feederSpeed,
+        float friendSpeed
+    )
     {
         if (feedLogged)
             return;
@@ -1449,7 +1478,7 @@ internal sealed class SocialHands : IGripExtension
         var driver = Avatar.AvatarPoseDriver.Of(c);
         Plugin.Log.LogInfo(
             System.FormattableString.Invariant(
-                $"[interact.social] hand-over applies: {item.name} {FeedGap(item, spot):0.00} m from the spot, {(driver != null ? driver.HeldItemGap : -1f):0.00} m from its place on the controller, trigger {VRInput.Hand(left).Trigger:0.00}"
+                $"[interact.social] hand-over applies: {item.name} {FeedGap(item, spot):0.00} m from the spot, {(driver != null ? driver.HeldItemGap : -1f):0.00} m from its place on the controller, that place {placeGap:0.00} m from the spot, trigger {VRInput.Hand(left).Trigger:0.00}, feeder {feederSpeed:0.00} m/s, friend {friendSpeed:0.00} m/s"
             )
         );
     }

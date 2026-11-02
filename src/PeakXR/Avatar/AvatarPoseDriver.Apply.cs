@@ -117,6 +117,10 @@ public partial class AvatarPoseDriver
     /// not hand-carried. Read by the self-test (vr.87).</summary>
     internal float HeldItemGap { get; private set; } = -1f;
 
+    /// <summary>Where the controller holds the item this physics tick; valid while <see cref="HeldItemGap"/> is not
+    /// negative. Read by the hand-over (#119): the item itself can rest on a friend with the controller elsewhere.</summary>
+    internal Vector3 HeldItemPlace { get; private set; }
+
     /// <summary>The free item whose colliders ignore this body's, and those colliders (local physics only).</summary>
     private Item passItem;
     private Collider[] passItemColliders;
