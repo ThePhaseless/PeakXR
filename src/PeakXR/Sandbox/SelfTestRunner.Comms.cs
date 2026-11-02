@@ -257,7 +257,8 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// vr.462 (#130): a tap on the drop button with nothing in hand. The game ignores it (CharacterItems.cs:259), and
-    /// it is the same button as the other hand's ping, so it gets NothingHeld at that hand, and no ping goes out.
+    /// it is the same button as the other hand's ping, so it gets NothingHeld at that hand, and no ping goes out. An
+    /// item with <c>UIData.canDrop</c> off gets CantDrop and stays in the hand.
     /// </summary>
     IEnumerator EmptyDropCueStep()
     {
@@ -297,8 +298,33 @@ internal sealed partial class SelfTestRunner
         EndGlance();
         if (stepOk && PingInput.LastPinged(pinger) != before)
             Fail("the tap on the drop button pinged");
+        if (!stepOk)
+            yield break;
+        string emptyNote = cueNote;
+        // An item the game will not drop: said too, and still in the hand. No stock item is known to have it off.
+        yield return GiveAndHold(FindItem(SandboxActions.Items, AppleFragment));
+        if (!stepOk)
+            yield break;
+        var kept = HeldItem();
+        bool hold = LocalHold.ItemInLeftHand;
+        kept.UIData.canDrop = false;
+        try
+        {
+            Affordance.ResetGate();
+            mark = CueMark();
+            yield return TapDrop();
+            yield return ExpectCue(hold, DenyReason.CantDrop, mark, tint: true);
+        }
+        finally
+        {
+            if (kept != null)
+                kept.UIData.canDrop = true;
+        }
+        if (stepOk && HeldItem() != kept)
+            Fail("the item the game keeps left the hand: " + cueNote);
         else if (stepOk)
-            stepNote = cueNote;
+            stepNote = emptyNote + "; an item the game keeps: " + cueNote;
+        yield return DropHeld();
     }
 
     /// <summary>

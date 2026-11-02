@@ -1484,6 +1484,18 @@ internal static class PhysicalInteraction
                     action != GripPressAction.Extension && !throws && GripHooks.HeldRelease(hook),
                     hand.Armed
                 );
+                if (
+                    result == GripReleaseAction.Keep
+                    && GripIntent.DropRefused(
+                        item.UIData.canDrop,
+                        hand.Armed,
+                        handVelocity.magnitude,
+                        cfg.ThrowSpeed,
+                        cfg.PhysicalThrow,
+                        cfg.ReleaseToDrop
+                    )
+                )
+                    Affordance.DenyAtHand(hand.Left, DenyReason.CantDrop, default, item);
                 // Mid-cast the game keeps the item (CharacterItems.DoDropping, CharacterItems.cs:254-258). A fist's
                 // trigger squeezed after the pickup landed starts the item's use, and opening the fist ends that cast
                 // on the game's next use read (:209-212), a frame after this release was refused as too soon: it waits
@@ -1587,6 +1599,50 @@ internal static class PhysicalInteraction
             dropPending = true;
             releaseDropAt = Time.time;
         }
+    }
+
+    /// <summary>A drop the game ignores (CharacterItems.cs:259): an item it keeps says so. With nothing in hand the
+    /// button shares the upper row with the ping on the other hand, so a player pinging with the wrong hand hears why
+    /// and sees where (#130); not where that is untrue, nor in the credits, whose skip takes any button
+    /// (<see cref="UI.RunFlow.RunFlowRuntime"/>).</summary>
+    private static void CueIgnoredDrop(Character c, VRRig rig, InteractConfig cfg)
+    {
+        var held = c.data.currentItem;
+        if (held != null)
+        {
+            if (!held.UIData.canDrop)
+                Affordance.DenyAtHand(LocalHold.ItemInLeftHand, DenyReason.CantDrop, default, held);
+            return;
+        }
+        if (
+            !UI.RunFlow.RunFlowRuntime.CreditsWaiting
+            && !Ping.PingConfig.Instance.PingButtonDown()
+            && ButtonName.TryParse(
+                cfg.DropButton,
+                VRInput.LeftHanded,
+                out bool dropLeft,
+                out var drop
+            )
+            && ControllerLabels.ForAction(
+                VRAction.Ping,
+                VRInput.LeftHanded,
+                LocalHold.ItemInLeftHand,
+                out bool pingLeft,
+                out _
+            )
+            && PingRules.EmptyDropNamesPing(
+                drop,
+                dropLeft,
+                pingLeft,
+                c.data.isClimbingAnything,
+                c.data.carriedPlayer != null
+            )
+        )
+            Affordance.DenyAtHand(
+                dropLeft,
+                DenyReason.NothingHeld,
+                DenyHint.On(rig.Hand(!dropLeft))
+            );
     }
 
     private static Hand Other(Hand hand) => hand.Left ? RightHand : LeftHand;
@@ -3208,18 +3264,8 @@ internal static class PhysicalInteraction
 
         // Drop: button fallback with the game's hold-to-charge, or a one-frame press+release from a hand release.
         DropEdge.Update(cfg.DropButtonDown(), dt);
-        // With nothing in hand the game does nothing with a drop (CharacterItems.cs:259). It shares the upper button
-        // with the ping on the other hand, so a player pinging with the wrong hand hears why and sees where (#130).
-        if (
-            DropEdge.Pressed
-            && c.data.currentItem == null
-            && ButtonName.TryParse(cfg.DropButton, VRInput.LeftHanded, out bool dropLeft, out _)
-        )
-            Affordance.DenyAtHand(
-                dropLeft,
-                DenyReason.NothingHeld,
-                DenyHint.On(rig.Hand(!dropLeft))
-            );
+        if (DropEdge.Pressed)
+            CueIgnoredDrop(c, rig, cfg);
         input.dropWasPressed |= DropEdge.Pressed;
         input.dropIsPressed |= DropEdge.Held;
         input.dropWasReleased |= DropEdge.Released;

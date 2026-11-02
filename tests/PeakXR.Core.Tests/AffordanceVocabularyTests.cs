@@ -70,7 +70,15 @@ public class AffordanceVocabularyTests
         Assert.True(DenyReason.TooSteep > DenyReason.Blocked);
         Assert.Equal(DenyReason.DangerSoon + 1, DenyReason.MicAlwaysOn);
         Assert.Equal(DenyReason.HappenedHere + 1, DenyReason.NothingHeld);
-        Assert.Equal(DenyReason.NothingHeld + 1, DenyReason.Count);
+        Assert.Equal(DenyReason.NothingHeld + 1, DenyReason.CantDrop);
+        Assert.Equal(DenyReason.CantDrop + 1, DenyReason.Count);
+    }
+
+    [Fact]
+    public void CantDrop_SaysItStays()
+    {
+        Assert.Equal("Can't drop this", DenyText.Label(DenyReason.CantDrop));
+        Assert.Equal("It stays in your hand", DenyText.Hint(DenyReason.CantDrop));
     }
 
     [Fact]
