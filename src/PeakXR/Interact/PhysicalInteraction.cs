@@ -3208,6 +3208,18 @@ internal static class PhysicalInteraction
 
         // Drop: button fallback with the game's hold-to-charge, or a one-frame press+release from a hand release.
         DropEdge.Update(cfg.DropButtonDown(), dt);
+        // With nothing in hand the game does nothing with a drop (CharacterItems.cs:259). It shares the upper button
+        // with the ping on the other hand, so a player pinging with the wrong hand hears why and sees where (#130).
+        if (
+            DropEdge.Pressed
+            && c.data.currentItem == null
+            && ButtonName.TryParse(cfg.DropButton, VRInput.LeftHanded, out bool dropLeft, out _)
+        )
+            Affordance.DenyAtHand(
+                dropLeft,
+                DenyReason.NothingHeld,
+                DenyHint.On(rig.Hand(!dropLeft))
+            );
         input.dropWasPressed |= DropEdge.Pressed;
         input.dropIsPressed |= DropEdge.Held;
         input.dropWasReleased |= DropEdge.Released;

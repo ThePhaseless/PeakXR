@@ -69,7 +69,15 @@ public class AffordanceVocabularyTests
         Assert.Equal(30, (int)DenyReason.Blocked);
         Assert.True(DenyReason.TooSteep > DenyReason.Blocked);
         Assert.Equal(DenyReason.DangerSoon + 1, DenyReason.MicAlwaysOn);
-        Assert.Equal(DenyReason.HappenedHere + 1, DenyReason.Count);
+        Assert.Equal(DenyReason.HappenedHere + 1, DenyReason.NothingHeld);
+        Assert.Equal(DenyReason.NothingHeld + 1, DenyReason.Count);
+    }
+
+    [Fact]
+    public void NothingHeld_SaysWherePingLives()
+    {
+        Assert.Equal("Nothing to drop", DenyText.Label(DenyReason.NothingHeld));
+        Assert.Equal("Ping on the other hand", DenyText.Hint(DenyReason.NothingHeld));
     }
 
     [Fact]

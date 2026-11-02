@@ -42,6 +42,7 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.123-ping-dotted", 20f, PingDottedStep());
         yield return HandStep("vr.124-button-ping-preview", 25f, ButtonPingPreviewStep());
         yield return HandStep("vr.461-point-squeeze-no-ping", 20f, PointSqueezeNoPingStep());
+        yield return HandStep("vr.462-empty-drop-cue", 15f, EmptyDropCueStep());
         yield return HandStep("vr.448-ping-aim-open-point", 25f, PingAimOpenPointStep());
         // ---- WP6 gap round: wheels
         yield return WheelGapSteps();
@@ -252,6 +253,52 @@ internal sealed partial class SelfTestRunner
             Fail("pointing and squeezing the trigger still pings: " + note);
         else
             stepNote = note;
+    }
+
+    /// <summary>
+    /// vr.462 (#130): a tap on the drop button with nothing in hand. The game ignores it (CharacterItems.cs:259), and
+    /// it is the same button as the other hand's ping, so it gets NothingHeld at that hand, and no ping goes out.
+    /// </summary>
+    IEnumerator EmptyDropCueStep()
+    {
+        ClearStrayItems();
+        var pinger = LocalPinger();
+        if (pinger == null || PingInput.LastPinged == null)
+        {
+            stepSkip = "no PointPinger or interact.ping not installed";
+            yield break;
+        }
+        if (HeldItem() != null)
+        {
+            stepSkip = "a hand holds something";
+            yield break;
+        }
+        if (
+            !ButtonName.TryParse(
+                Interact.InteractConfig.Instance.DropButton,
+                VRInput.LeftHanded,
+                out bool left,
+                out var control
+            )
+            || control != VRControl.Secondary
+        )
+        {
+            stepSkip = "Interaction.DropButton is not an upper button";
+            yield break;
+        }
+        yield return PingCooldownOver(pinger);
+        float before = PingInput.LastPinged(pinger);
+        Affordance.ResetGate();
+        LookAtHand(left);
+        yield return Wait(0.3f);
+        float mark = CueMark();
+        yield return TapDrop();
+        yield return ExpectCue(left, DenyReason.NothingHeld, mark);
+        EndGlance();
+        if (stepOk && PingInput.LastPinged(pinger) != before)
+            Fail("the tap on the drop button pinged");
+        else if (stepOk)
+            stepNote = cueNote;
     }
 
     /// <summary>

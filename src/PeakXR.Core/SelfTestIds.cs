@@ -124,6 +124,7 @@ public static class SelfTestIds
         "vr.123-ping-dotted",
         "vr.124-button-ping-preview",
         "vr.461-point-squeeze-no-ping",
+        "vr.462-empty-drop-cue",
         "vr.448-ping-aim-open-point",
         "vr.126-wheel-climbing-refused",
         "vr.127-thumbs-up",

@@ -122,6 +122,10 @@ public enum DenyReason : byte
     /// helicopter summoned). Pin glyph, teal ring at the spot, the notice bell.</summary>
     HappenedHere,
 
+    /// <summary>The drop button with nothing in hand: on the upper button, where the other hand's pings, so a player
+    /// expecting a ping here gets told (#130).</summary>
+    NothingHeld,
+
     /// <summary>Number of reasons; not a reason.</summary>
     Count,
 }
@@ -241,6 +245,7 @@ public static class DenyText
             DenyReason.Revived => "Friends revived",
             DenyReason.NoRevive => "No revive this climb",
             DenyReason.HappenedHere => "Here",
+            DenyReason.NothingHeld => "Nothing to drop",
             _ => "",
         };
 
@@ -292,6 +297,7 @@ public static class DenyText
             DenyReason.UseOtherHand => "Use your other hand",
             DenyReason.Stuck => "Get free first",
             DenyReason.NoRevive => "Keep them safe instead",
+            DenyReason.NothingHeld => "Ping on the other hand",
             _ => "",
         };
 
