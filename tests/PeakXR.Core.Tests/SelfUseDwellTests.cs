@@ -13,7 +13,8 @@ public class SelfUseDwellTests
     private const float TorsoRadius = 0.22f;
     private const float Exit = 0.05f;
 
-    /// <summary>How far a held bandage reaches from the grip towards the chest (HeldItemPoints.Nearest).</summary>
+    /// <summary>How far a small held item reaches from the grip towards the chest (HeldItemPoints.Nearest). Big items
+    /// reach far more; see <see cref="ABigItemRestedAwayFromTheBodyStartsNothing"/>.</summary>
     private const float ItemReach = 0.06f;
 
     private static readonly BodySlot[] Slots = BodySlotLayout.Create(
@@ -42,7 +43,13 @@ public class SelfUseDwellTests
 
     /// <summary>Plays a hand along a straight line at <paramref name="speed"/>, then holds it there
     /// <paramref name="settle"/> seconds, as a player does before opening the grip. True if the use ever started.</summary>
-    private static bool Carry(Vector3 from, Vector3 to, float speed, float settle)
+    private static bool Carry(
+        Vector3 from,
+        Vector3 to,
+        float speed,
+        float settle,
+        float reach = ItemReach
+    )
     {
         var use = new SelfUseDwell();
         float length = Vector3.Distance(from, to);
@@ -50,7 +57,7 @@ public class SelfUseDwellTests
         for (float t = 0f; t < end; t += Dt)
         {
             var hand = Vector3.Lerp(from, to, MathF.Min(1f, t * speed / length));
-            if (use.Update(hand, Torso(hand) <= Exit, Slot(hand), Dt))
+            if (use.Update(hand, Contact(hand, reach), Slot(hand), Dt))
                 return true;
         }
         return false;
@@ -74,6 +81,15 @@ public class SelfUseDwellTests
     [InlineData(0.2f)]
     public void ACarryToABeltSlotAndAPauseThereStartsNothing(float speed) =>
         Assert.False(Carry(FrontHold, RightSlot, speed, settle: 1f));
+
+    [Theory]
+    [InlineData(0.8f)]
+    [InlineData(0.2f)]
+    public void ABigItemCarriedToAnyBeltSlotStartsNothing(float speed)
+    {
+        for (int i = 0; i < 3; i++)
+            Assert.False(Carry(FrontHold, Anchors()[i], speed, settle: 1f, reach: 0.6f));
+    }
 
     [Theory]
     [InlineData(0.8f)]
@@ -204,4 +220,250 @@ public class SelfUseDwellTests
     [Fact]
     public void AFriendsChestWaitsAsLongAsYourOwnBody() =>
         Assert.Equal(SelfUseDwell.BodyDwell, HandOver.DwellAt(chest: true));
+
+    /// <summary>The body press as HeldGestures feeds it: the item touches, and the hand itself is at the torso.</summary>
+    private static bool Contact(Vector3 hand, float reach) =>
+        BodyZones.TorsoDistance(hand, Eyes, Vector3.UnitZ, TorsoRadius) - reach <= Exit
+        && BodyZones.HandAtTorso(hand, Eyes, Vector3.UnitZ, TorsoRadius);
+
+    private static bool Rests(Vector3 hand, float reach, float seconds)
+    {
+        var use = new SelfUseDwell();
+        bool started = false;
+        for (float t = 0f; t < seconds; t += Dt)
+            started |= use.Update(hand, Contact(hand, reach), false, Dt);
+        return started;
+    }
+
+    /// <summary>Beside the hip with the arm hanging, as a player stands holding something.</summary>
+    private static Vector3 HipHang => Eyes + new Vector3(0.25f, -0.8f, 0f);
+
+    [Theory]
+    [InlineData(0.39f)] // Bandages' far corner
+    [InlineData(0.60f)] // First Aid Kit
+    [InlineData(0.77f)] // Aloe Vera
+    public void ABigItemRestedAwayFromTheBodyStartsNothing(float reach)
+    {
+        Assert.True(
+            BodyZones.TorsoDistance(FrontHold, Eyes, Vector3.UnitZ, TorsoRadius) - reach <= Exit,
+            "the item itself has to reach the torso from there, or this proves nothing"
+        );
+        Assert.False(Rests(FrontHold, reach, 2f));
+        Assert.False(Rests(HipHang, reach, 2f));
+    }
+
+    [Theory]
+    [InlineData(0.06f)]
+    [InlineData(0.60f)]
+    public void AnyItemHeldToTheChestStillStarts(float reach) =>
+        Assert.True(Rests(Eyes + new Vector3(0.05f, -0.45f, 0.08f), reach, 1f));
+
+    [Fact]
+    public void AHandOutFromTheChestByAPalmStillCounts() =>
+        Assert.True(
+            BodyZones.HandAtTorso(
+                Eyes + new Vector3(0f, -0.45f, 0.25f),
+                Eyes,
+                Vector3.UnitZ,
+                TorsoRadius
+            )
+        );
+
+    [Fact]
+    public void AnItemOnTheOtherForearmCountsOnlyWithTheHandThere()
+    {
+        // HeldGestures' forearm radius. Hands idling side by side in front are 0.3 m apart: a kit reaches the other arm
+        // from there, and that is not a press.
+        const float Radius = 0.12f;
+        var other = new Vector3(0f, 1.1f, 0.4f);
+        var arm = other - Vector3.UnitZ * 0.17f;
+        Assert.True(BodyZones.HandAtForearm(arm, other, Vector3.UnitZ, Radius));
+        Assert.True(
+            BodyZones.HandAtForearm(arm + Vector3.UnitX * 0.2f, other, Vector3.UnitZ, Radius)
+        );
+        Assert.False(
+            BodyZones.HandAtForearm(arm + Vector3.UnitX * 0.3f, other, Vector3.UnitZ, Radius)
+        );
+    }
+
+    [Fact]
+    public void LosingContactStartsTheDwellOver()
+    {
+        var use = new SelfUseDwell();
+        var chest = Eyes + new Vector3(0.05f, -0.45f, 0.08f);
+        for (float t = 0f; t < 0.5f; t += Dt)
+            use.Update(chest, true, false, Dt);
+        Assert.True(use.Fraction > 0.5f);
+        use.Update(chest, false, false, Dt);
+        Assert.Equal(0f, use.Fraction);
+        for (float t = 0f; t < 0.5f; t += Dt)
+            Assert.False(use.Update(chest, true, false, Dt));
+    }
+
+    [Fact]
+    public void TheDwellsAndTheStillRadiusAreTheseValues()
+    {
+        // Felt on a headset (#147): a change here is a change players feel, not a refactor.
+        Assert.Equal(0.6f, SelfUseDwell.BodyDwell);
+        Assert.Equal(0.3f, SelfUseDwell.MouthDwell);
+        Assert.Equal(0.5f, SelfUseDwell.FaceDwell);
+        Assert.Equal(0.05f, HandStill.Radius);
+    }
+
+    /// <summary>Plays a physical step: head and hand move together at <paramref name="speed"/> for a second.</summary>
+    private static bool StepsWithHandStill(float speed, float dwell, bool onBody)
+    {
+        var use = new SelfUseDwell { Dwell = dwell };
+        var from = Eyes + new Vector3(0.05f, -0.45f, 0.08f);
+        bool started = false;
+        for (float t = 0f; t < 1f; t += Dt)
+        {
+            var walked = Vector3.UnitZ * (speed * t);
+            var hand = from + walked;
+            started |= use.Update(
+                onBody ? HandStill.OnBody(hand, Eyes + walked, Quaternion.Identity) : hand,
+                true,
+                false,
+                Dt
+            );
+        }
+        return started;
+    }
+
+    [Theory]
+    [InlineData(0.6f)] // over the chest's limit of 8 cm/s
+    [InlineData(0.3f)] // over the mouth's limit of 17 cm/s
+    public void AHandRestingOnTheBodyStaysRestingAsTheBodySteps(float dwell)
+    {
+        Assert.False(StepsWithHandStill(0.3f, dwell, onBody: false));
+        Assert.True(StepsWithHandStill(0.3f, dwell, onBody: true));
+    }
+
+    [Fact]
+    public void AHandMovingOverAStillBodyStillMoves()
+    {
+        var hand = new Vector3(0.1f, 1.1f, 0.2f);
+        Assert.Equal(
+            0.3f,
+            Vector3.Distance(
+                HandStill.OnBody(hand, Eyes, Quaternion.Identity),
+                HandStill.OnBody(hand + Vector3.UnitX * 0.3f, Eyes, Quaternion.Identity)
+            ),
+            3
+        );
+    }
+
+    [Fact]
+    public void AHeadTurnDoesNotMoveARestingHandOnTheBody()
+    {
+        // The neck pivot stays where it is when the head turns about it, which is the point of measuring from there.
+        var neck = BodySlotLayout.Neck(Eyes, Quaternion.Identity);
+        var turn = Quaternion.CreateFromAxisAngle(Vector3.UnitY, 0.6f);
+        var turned = neck - Vector3.Transform(neck - Eyes, turn);
+        var hand = new Vector3(0.1f, 1.1f, 0.2f);
+        Assert.True(
+            Vector3.Distance(
+                HandStill.OnBody(hand, Eyes, Quaternion.Identity),
+                HandStill.OnBody(hand, turned, turn)
+            ) <= HandStill.Radius
+        );
+    }
+
+    [Fact]
+    public void WipingOnTheChestAsksForAStillHandAfterASecond()
+    {
+        var use = new SelfUseDwell();
+        var chest = Eyes + new Vector3(0.05f, -0.45f, 0.08f);
+        for (float t = 0f; t < 0.9f; t += Dt)
+        {
+            use.Update(chest + new Vector3(0.2f * MathF.Sin(t * 12f), 0f, 0f), true, false, Dt);
+            Assert.False(use.NeedsStill);
+        }
+        for (float t = 0.9f; t < 1.1f; t += Dt)
+            use.Update(chest + new Vector3(0.2f * MathF.Sin(t * 12f), 0f, 0f), true, false, Dt);
+        Assert.True(use.NeedsStill);
+        Assert.False(use.Active);
+        use.Update(chest, false, false, Dt);
+        Assert.False(use.NeedsStill);
+    }
+
+    [Fact]
+    public void AFastCarryAcrossTheTorsoIsNotToldToHoldStill()
+    {
+        var use = new SelfUseDwell();
+        var from = Eyes + new Vector3(-0.3f, -0.4f, 0.1f);
+        for (float t = 0f; t < 0.75f; t += Dt)
+        {
+            use.Update(from + Vector3.UnitX * (0.8f * t), true, false, Dt);
+            Assert.False(use.NeedsStill);
+        }
+    }
+
+    [Fact]
+    public void AUseUnderWayIsNotToldToHoldStill()
+    {
+        var use = new SelfUseDwell();
+        var chest = Eyes + new Vector3(0.05f, -0.45f, 0.08f);
+        for (float t = 0f; t < 2f; t += Dt)
+            use.Update(chest, true, false, Dt);
+        Assert.True(use.Active);
+        Assert.False(use.NeedsStill);
+    }
+
+    [Fact]
+    public void AnItemThatJustArrivedIsNotToldToHoldStill()
+    {
+        // The hand is still, and the use waits for it to move: "hold still" would say the opposite.
+        var use = new SelfUseDwell();
+        var chest = Eyes + new Vector3(0.05f, -0.45f, 0.08f);
+        use.Arrive(chest);
+        for (float t = 0f; t < 2f; t += Dt)
+            use.Update(chest, true, false, Dt);
+        Assert.False(use.NeedsStill);
+    }
+
+    [Fact]
+    public void AHandRestingAtASlotIsToldItCanLetGo()
+    {
+        var use = new SelfUseDwell();
+        for (float t = 0f; t < SelfUseDwell.BodyDwell - 2f * Dt; t += Dt)
+        {
+            use.Update(RightSlot, true, true, Dt);
+            Assert.False(use.Parked);
+        }
+        for (int i = 0; i < 4; i++)
+            use.Update(RightSlot, true, true, Dt);
+        Assert.True(use.Parked);
+        // Moving on, or out of the slot, takes it away at once.
+        use.Update(RightSlot + Vector3.UnitX * 0.3f, true, true, Dt);
+        Assert.False(use.Parked);
+        for (float t = 0f; t < 1f; t += Dt)
+            use.Update(RightSlot, true, true, Dt);
+        use.Update(RightSlot, true, false, Dt);
+        Assert.False(use.Parked);
+    }
+
+    [Fact]
+    public void ReachingYourOwnSlotEndsAFriendsCastAtOnceAndItsNearRefusalStaysSpent()
+    {
+        var over = new HandOver { Dwell = HandOver.DwellAt(chest: true) };
+        Assert.Equal(HandOverState.Apply, over.Update(true, false, true, false, 1f));
+        // At the slot: the hand-over lets go now, not after its grace, so the release is not refused as mid-use.
+        over.EndZone();
+        Assert.Equal(
+            HandOverState.None,
+            over.Update(false, false, true, false, Dt, still: false, nearGap: 0.3f)
+        );
+
+        // A refused visit to the near band, a rest at a slot inside it, and on: the visit has not ended.
+        var near = new HandOver { Dwell = HandOver.MouthDwell };
+        HandOverState Step(bool still) =>
+            near.Update(false, false, false, false, 0.2f, still, 0.3f, 0.3f, true);
+        Step(true);
+        Assert.Equal(HandOverState.Refuse, Step(true));
+        near.EndZone();
+        Assert.Equal(HandOverState.None, Step(false));
+        Step(true);
+        Assert.Equal(HandOverState.None, Step(true));
+    }
 }

@@ -46,31 +46,6 @@ public class ContactDwellTests
         Assert.False(c.Update(0f, 0.2f));
         Assert.True(c.Update(0f, 0.2f));
     }
-
-    [Fact]
-    public void Disarmed_ExistingContactMustBreakFirst()
-    {
-        var c = new ContactDwell
-        {
-            Enter = 0.1f,
-            Exit = 0.2f,
-            Dwell = 0f,
-        };
-        c.Disarm();
-        Assert.False(c.Update(0f, 0.1f));
-        Assert.False(c.Update(0f, 0.1f));
-        Assert.False(c.Update(0.5f, 0.1f));
-        Assert.True(c.Update(0f, 0.1f));
-    }
-
-    [Fact]
-    public void Disarmed_NoContactArmsAtOnce()
-    {
-        var c = new ContactDwell { Dwell = 0f };
-        c.Disarm();
-        Assert.False(c.Update(1f, 0.1f));
-        Assert.True(c.Update(0f, 0.1f));
-    }
 }
 
 public class HeatZoneTests

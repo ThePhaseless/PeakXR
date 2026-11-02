@@ -90,6 +90,18 @@ internal static class HeldGestures
     /// <summary>The face gesture holds primary this frame (self-test reads it).</summary>
     public static bool AtFace => facing;
 
+    /// <summary>Where a resting hand is measured (<see cref="HandStill.OnBody"/>).</summary>
+    internal static System.Numerics.Vector3 RestPoint(bool left) =>
+        HandStill.OnBody(
+            VRInput.Hand(left).Position.N(),
+            VRInput.HeadPosition.N(),
+            VRInput.HeadRotation.N()
+        );
+
+    /// <summary>An item arrived in this hand (drawn from a slot, picked up at the body): it did not come here to be used,
+    /// so the hand has to move once first.</summary>
+    internal static void Arrive(bool left) => BodyUse.Arrive(RestPoint(left));
+
     public static void Tick(VRRig rig, ItemGesturesConfig cfg, float dt)
     {
         var hand = ItemGestures.HoldingHand(rig);
@@ -97,8 +109,9 @@ internal static class HeldGestures
         {
             Mouth.Reset();
             ResetBody();
-            // An item drawn from a slot or picked up at the body: it did not come here to be used.
-            BodyUse.Arrive(VRInput.Hand(ItemGestures.HoldLeft).Position.N());
+            // Back from a menu with the item still in hand. A new item's hand is not known yet: TrackHeldItem runs later
+            // this frame and calls this again for the right hand.
+            Arrive(ItemGestures.HoldLeft);
             ResetFace();
             tooting = false;
         }
@@ -146,7 +159,7 @@ internal static class HeldGestures
         if (read && !ReadZone.Allowed(hand.position.N(), ItemGestures.NearHips))
             distance = float.PositiveInfinity;
         bool on = FaceUse.Update(
-            VRInput.Hand(left).Position.N(),
+            RestPoint(left),
             Face.Update(distance, dt),
             Inventory.BodyInventory.Instance.TakesHeld(Character.localCharacter, left),
             dt
@@ -279,6 +292,7 @@ internal static class HeldGestures
             BodyZones.TorsoDistance(point, head.position.N(), flat.N(), TorsoRadius),
             BodyZones.TorsoDistance(itemPoint, head.position.N(), flat.N(), TorsoRadius)
         );
+        bool handThere = BodyZones.HandAtTorso(point, head.position.N(), flat.N(), TorsoRadius);
 
         // The other forearm, unless both hands are on the item.
         bool onForearm = false;
@@ -306,6 +320,12 @@ internal static class HeldGestures
             {
                 distance = Mathf.Max(arm, 0f);
                 onForearm = true;
+                handThere = BodyZones.HandAtForearm(
+                    point,
+                    otherReal,
+                    other.Fingers().N(),
+                    ForearmRadius
+                );
             }
         }
 
@@ -313,18 +333,23 @@ internal static class HeldGestures
         bool left = ItemGestures.HoldLeft;
         bool was = BodyUse.Active;
         bool on = BodyUse.Update(
-            VRInput.Hand(left).Position.N(),
-            Body.Update(distance, dt),
+            RestPoint(left),
+            // The item's reach decides contact, the hand decides whether it means it; a use under way rides that out.
+            Body.Update(distance, dt) && (was || handThere),
             Inventory.BodyInventory.Instance.TakesHeld(Character.localCharacter, left),
             dt
         );
-        if (BodyUse.Settling)
+        if (BodyUse.Settling || BodyUse.NeedsStill)
         {
-            // Nothing is spent yet, and leaving is free: say where it is going before the game's cast ring takes over.
-            var spot = onForearm ? other.position : chest;
-            Affordance.Mark(left, spot, DenyReason.HappenedHere, DenyHint.At(spot));
-            Affordance.Progress(left, BodyUse.Fraction);
+            // Nothing is spent yet, and leaving is free: say what it takes before the game's cast ring takes over. At
+            // the hand, as the chest point is inside the torso and unseen.
+            var spot = onForearm ? other.position : hand.position;
+            Affordance.Mark(left, spot, DenyReason.HappenedHere, DenyHint.At(spot), "Hold still");
+            if (BodyUse.Settling)
+                Affordance.Progress(left, BodyUse.Fraction);
         }
+        else if (BodyUse.Parked)
+            SlotCue(rig, left);
         if (on && !was)
         {
             // A short wrap: the holding hand, and the arm being wrapped.
@@ -334,6 +359,23 @@ internal static class HeldGestures
         }
         if (on)
             GestureRequests.Primary();
+    }
+
+    /// <summary>A rest at a slot started nothing, on purpose (<see cref="SelfUseDwell"/>): say what the slot does instead,
+    /// which matters most with the <c>Chest</c> layout, whose slots cover most of the chest.</summary>
+    private static void SlotCue(VRRig rig, bool left)
+    {
+        var inv = Inventory.BodyInventory.Instance;
+        var c = Character.localCharacter;
+        int slot = inv.HeldSlot(c, left);
+        if (slot < 0)
+            return;
+        var at = rig.Origin.TransformPoint(inv.Anchor(slot));
+        var refusal = inv.StowRefusal(c, slot);
+        if (refusal == DenyReason.None)
+            Affordance.Mark(left, at, DenyReason.HappenedHere, DenyHint.At(at), "Let go to stow");
+        else
+            Affordance.Hover(left, at, refusal);
     }
 
     /// <summary>The chest the held item is pressed against: this far under the eyes, metres.</summary>

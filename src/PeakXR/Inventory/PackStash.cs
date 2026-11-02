@@ -115,6 +115,12 @@ internal sealed class PackStash : IGripExtension
     /// <summary>The holding hand is in a pack this frame (self-test).</summary>
     public bool Over { get; private set; }
 
+    /// <summary>The pack the hand is in takes the item, or will as soon as the item's own cast ends: a use under way
+    /// counts as no refusal here, or a use could never be carried into a pack (#147).</summary>
+    public bool WouldTake => Over && verdictPastCast == DenyReason.None;
+
+    private DenyReason verdictPastCast;
+
     public bool ClaimPress(in GripHookContext ctx) => false;
 
     public void BeginPress(in GripHookContext ctx) { }
@@ -606,10 +612,18 @@ internal sealed class PackStash : IGripExtension
             !fromBehind ? Behind(visuals.transform)
             : spotted && pocket >= 0 ? PocketSpots[pocket]
             : packAt;
+        bool canBackpack = held.UIData.canBackpack && selected.IsSome;
+        verdictPastCast = PackDrop.Refusal(
+            BodyInventory.SwitchBlockedBeyondCast(c),
+            DenyReason.CantSwitch,
+            canBackpack,
+            pocket,
+            fromBehind
+        );
         return PackDrop.Refusal(
             blocked,
             blocked ? BodyInventory.BlockReason(c) : DenyReason.None,
-            held.UIData.canBackpack && selected.IsSome,
+            canBackpack,
             pocket,
             fromBehind
         );

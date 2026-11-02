@@ -5,7 +5,8 @@ namespace PeakXR.Core;
 
 /// <summary>
 /// Whether a hand has stopped: it stays within <see cref="Radius"/> of where it stopped. A displacement, not a speed,
-/// so tremor and tracking noise do not read as motion, and a slow carry cannot pass as a stop (#147).
+/// so tremor and tracking noise do not read as motion. A carry slow enough to stay inside the radius for a whole dwell
+/// does pass as a stop: under about 8 cm/s for the body's 0.6 s, 17 cm/s for the mouth's 0.3 s (#147).
 /// </summary>
 public sealed class HandStill
 {
@@ -17,7 +18,7 @@ public sealed class HandStill
     private bool anchored;
 
     /// <summary>True while <paramref name="hand"/> stays near the last place it stopped; false on the frame it leaves,
-    /// which makes this the new place. Tracking space, so walking and turning do not count.</summary>
+    /// which makes this the new place. Feed it <see cref="OnBody"/>.</summary>
     public bool Update(Vector3 hand)
     {
         if (anchored && Vector3.DistanceSquared(hand, anchor) <= Radius * Radius)
@@ -28,6 +29,11 @@ public sealed class HandStill
     }
 
     public void Reset() => anchored = false;
+
+    /// <summary>The hand as a stop is measured: tracking space, so stick walking and turning do not count, from the neck
+    /// pivot, so neither does a physical step or lean that carries the hand along with the body.</summary>
+    public static Vector3 OnBody(Vector3 hand, Vector3 head, Quaternion headRotation) =>
+        hand - BodySlotLayout.Neck(head, headRotation);
 }
 
 /// <summary>
@@ -54,6 +60,8 @@ public sealed class SelfUseDwell
     private readonly HandStill still = new();
     private float timer;
     private bool waitForMove;
+    private float contactFor;
+    private float parkedFor;
 
     /// <summary>The use is held this frame.</summary>
     public bool Active { get; private set; }
@@ -64,7 +72,19 @@ public sealed class SelfUseDwell
     /// <summary>How far the dwell has run, 0 to 1.</summary>
     public float Fraction => MathF.Min(timer / Dwell, 1f);
 
-    /// <param name="hand">The holding hand, tracking space.</param>
+    /// <summary>A wiping or rubbing hand: at the body this long with no rest gets told what it takes. A carry across the
+    /// torso at a hand's speed is gone sooner.</summary>
+    public const float NudgeAfter = 1f;
+
+    /// <summary>At the body for <see cref="NudgeAfter"/>, in motion, so nothing starts (an item that just arrived is
+    /// waiting for the opposite, a move, and is left out).</summary>
+    public bool NeedsStill => !Active && !waitForMove && contactFor >= NudgeAfter;
+
+    /// <summary>Rested for a <see cref="Dwell"/> at a place that takes the item: the rest started nothing, so say what
+    /// it would take instead.</summary>
+    public bool Parked => parkedFor >= Dwell;
+
+    /// <param name="hand">The holding hand (<see cref="HandStill.OnBody"/>).</param>
     /// <param name="contact">The item is at the body part this frame.</param>
     /// <param name="putAway">Opening the grip here would stow the held item.</param>
     /// <param name="dt">Seconds since the last update.</param>
@@ -72,12 +92,15 @@ public sealed class SelfUseDwell
     {
         bool resting = still.Update(hand);
         waitForMove &= resting;
+        parkedFor = putAway && resting ? parkedFor + dt : 0f;
         if (!contact || putAway)
         {
             timer = 0f;
+            contactFor = 0f;
             Active = false;
             return false;
         }
+        contactFor += dt;
         // Under way it rides out a wiping or wrapping motion; only leaving the body or reaching a slot ends it.
         if (Active)
             return true;
@@ -105,6 +128,8 @@ public sealed class SelfUseDwell
     {
         still.Reset();
         timer = 0f;
+        contactFor = 0f;
+        parkedFor = 0f;
         waitForMove = false;
         Active = false;
     }

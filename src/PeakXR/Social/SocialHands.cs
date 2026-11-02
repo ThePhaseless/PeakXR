@@ -1438,6 +1438,9 @@ internal sealed class SocialHands : IGripExtension
         bool looking =
             eye != null
             && Vector3.Angle(eye.forward, spot - eye.position) <= HandOver.NearLookDegrees;
+        // Your own slot ends a use on a friend now, not after the grace: the release there must not be refused as mid-use.
+        if (putAway)
+            handOver.EndZone();
         var state = handOver.Update(
             inZone && !putAway,
             trigger,
@@ -1446,7 +1449,7 @@ internal sealed class SocialHands : IGripExtension
             dt,
             // Never on the walk up, as a friend walks into it, or with the hand on its way somewhere (#93, #119, #147). A
             // real nearGap, not an infinite one: that would end the near band's visit and repeat its refusal.
-            feedHand.Update(VRInput.Hand(left).Position.N())
+            feedHand.Update(Interact.Physical.HeldGestures.RestPoint(left))
                 && !putAway
                 && HandOver.Still(feederSpeed, friendSpeed),
             placeGap - grow,

@@ -152,7 +152,7 @@ public sealed class HandOver
         outFor = 0f;
         if (!inZone || (!usable && ownUse))
         {
-            ResetZone();
+            EndZone();
             if (nearGap > NearPlaceRadius + NearExitMargin)
                 nearRefused = false;
             if (nearGap <= NearPlaceRadius && !inZone && (usable || !ownUse))
@@ -271,12 +271,15 @@ public sealed class HandOver
 
     public void Reset()
     {
-        ResetZone();
+        EndZone();
         nearFor = 0f;
         nearRefused = false;
     }
 
-    private void ResetZone()
+    /// <summary>Ends this time in the zone, its grace and any use it holds, at once: the hand reached your own slot
+    /// (#147), and a release there must not be refused as mid-use. The near band's visit is not over, so its refusal
+    /// stays spent (<see cref="Reset"/> ends both).</summary>
+    public void EndZone()
     {
         armed = false;
         refused = false;

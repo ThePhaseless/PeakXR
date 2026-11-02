@@ -390,6 +390,8 @@ internal static class PhysicalInteraction
         {
             LocalHold.ItemInLeftHand =
                 now - pendingTime < PendingSeconds ? pendingLeft : VRInput.LeftHanded;
+            // Here, not in HeldGestures.Tick: that ran earlier this frame, with the hand the last item was in (#147).
+            Physical.HeldGestures.Arrive(LocalHold.ItemInLeftHand);
             var into = LocalHold.ItemInLeftHand ? LeftHand : RightHand;
             bool grabbed = into.Target is Item wanted && SameInstance(wanted, item);
             into.Armed = ReleaseArming.OnArrive(into.Grip.Held, into.Action, grabbed);
@@ -3191,7 +3193,7 @@ internal static class PhysicalInteraction
             // Food carried past the mouth does not eat: the hand has to stop there, and a slot or pack that would take
             // it wins (an apple is big enough to reach the mouth from the shoulder slot), #147.
             atMouth = MouthUse.Update(
-                VRInput.Hand(primaryHand.Left).Position.N(),
+                Physical.HeldGestures.RestPoint(primaryHand.Left),
                 Mouth.Update(
                     head.N(),
                     rig.Head.rotation.N(),
