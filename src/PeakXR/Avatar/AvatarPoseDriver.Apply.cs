@@ -344,6 +344,20 @@ public partial class AvatarPoseDriver
     /// <summary>This tick's closed <see cref="HoldGate"/>, or null. Traced.</summary>
     private string holdGateWhy;
     private float lastLeanDegrees;
+    private float lastHoldYaw;
+    private float peakLookRate;
+
+    /// <summary>The body heading's smoothed rate (deg/s) as <see cref="HoldBody"/> reads it: <see cref="BodyLean.HeadBias"/>'s
+    /// trail.</summary>
+    internal float SwingRate { get; private set; }
+
+    /// <summary>A tick the hold doesn't read still counts the heading: the next it reads would take the whole gap (from 0
+    /// on the first, at any heading) for one step's turn and arm the hold under a still head.</summary>
+    private void SeedHoldLook()
+    {
+        lastHoldYaw = Rig.RigDriver.BodyHeading(Owner, lastHoldYaw);
+        SwingRate = 0f;
+    }
 
     /// <summary>What the game says about <paramref name="c"/>'s body this tick, for <see cref="HoldGate"/> (the lean's
     /// body hold here, rig.camera's view hold).</summary>
@@ -369,6 +383,7 @@ public partial class AvatarPoseDriver
                 movement != null && AvatarPatches.MaxAngle != null
                     ? AvatarPatches.MaxAngle(movement)
                     : 50f,
+            Outside = Locomotion.LocomotionInput.OutsideNow,
         };
     }
 
@@ -397,13 +412,22 @@ public partial class AvatarPoseDriver
         float dt = Time.fixedDeltaTime;
         float bendRate = dt > 0f ? (LeanDegrees - lastLeanDegrees) / dt : 0f;
         lastLeanDegrees = LeanDegrees;
+        float yaw = Rig.RigDriver.BodyHeading(c, lastHoldYaw);
+        float step = Mathf.DeltaAngle(lastHoldYaw, yaw);
+        lastHoldYaw = yaw;
+        // A snap arms the hold on its own step, though it leaves no swing for the eye to trail.
+        bool snap = BodyLean.IsSnap(step, SwingRate);
+        SwingRate = BodyLean.SwingRate(SwingRate, step, dt);
+        float lookRate = snap && dt > 0f ? step / dt : SwingRate;
+        peakLookRate = Mathf.Max(peakLookRate, Mathf.Abs(lookRate));
         var a = bodyHold.Update(
             new System.Numerics.Vector2(centre.x, centre.z),
             new System.Numerics.Vector2(velocity.x, velocity.z),
             LeanDegrees >= 1f,
             free,
             dt,
-            bendRate
+            bendRate,
+            lookRate
         );
         if (a == System.Numerics.Vector2.Zero)
             return;
@@ -467,6 +491,7 @@ public partial class AvatarPoseDriver
             SpreadTwist(true, false);
             SpreadTwist(false, false);
             FadeUnreached();
+            SeedHoldLook();
             if (rigReady)
                 RestoreFingers();
             return;
@@ -474,6 +499,7 @@ public partial class AvatarPoseDriver
         if (!EnsureRig())
         {
             FadeUnreached();
+            SeedHoldLook();
             return;
         }
         var refs = Owner.refs;
@@ -536,12 +562,27 @@ public partial class AvatarPoseDriver
         }
         FadeUnreached();
 
-        // The local player's head is hidden and the camera hangs off it, so only other characters get head look.
-        if (cfg.HeadLook && head != null && Pose.HasHead && !Owner.IsLocal)
+        if (cfg.HeadLook && head != null && Pose.HasHead)
         {
-            var look = Owner.data.lookValues;
-            var delta = GripMath.HeadDelta(Pose.HeadRotation.N(), look.x, look.y, 70f).U();
-            head.transform.rotation = delta * head.transform.rotation;
+            if (Owner.IsLocal)
+            {
+                // The local head is hidden from the eyes, so it takes only what the body's own heading (BodyFacing) leaves
+                // out, for the mirror, the photobooth, shadows and the game's head-forward readers
+                // (MushroomZombie.cs:516, AntiSphere.cs:199). Within the eye sample's band nothing moves the eye model.
+                float neck = BodyTurn.HeadOnNeck(
+                    AvatarPatches.BodyFacing.Heading,
+                    Rig.RigDriver.LookHeading(Owner, AvatarPatches.BodyFacing.Heading)
+                );
+                if (neck != 0f)
+                    head.transform.rotation =
+                        Quaternion.AngleAxis(neck, Vector3.up) * head.transform.rotation;
+            }
+            else
+            {
+                var look = Owner.data.lookValues;
+                var delta = GripMath.HeadDelta(Pose.HeadRotation.N(), look.x, look.y, 70f).U();
+                head.transform.rotation = delta * head.transform.rotation;
+            }
         }
 
         ApplyFingers();
@@ -575,6 +616,7 @@ public partial class AvatarPoseDriver
         forward.y = 0f;
         var eye = head.transform.TransformPoint(eyeInHead);
         UnleanedEye = eye - hip.transform.position;
+        UnleanedYaw = Rig.RigDriver.BodyHeading(c, 0f);
         var target = Pose.HeadPosition + AnimatedOffset();
         LeanGate = ClosedGate(c, w, forward);
         bool allowed = false;
@@ -677,6 +719,9 @@ public partial class AvatarPoseDriver
     /// relative to it, so the head on the calibrated eyes is upright.</summary>
     internal Vector3? UnleanedEye { get; private set; }
 
+    /// <summary>The body's heading (degrees) on the step that read <see cref="UnleanedEye"/>.</summary>
+    internal float UnleanedYaw { get; private set; }
+
     private float nextLeanTrace;
 
     /// <summary>Lean trace, avatar side (local player only): the gate, the eased weight, what the head asks of the
@@ -698,9 +743,10 @@ public partial class AvatarPoseDriver
                 : torsoPhys;
         Plugin.Log.LogInfo(
             System.FormattableString.Invariant(
-                $"[avatar.local] lean t{Time.unscaledTime:0.00} gate {LeanGate ?? "open"} weight {leanWeight:0.00} spine {(spine != null ? spine.partType.ToString() : "none")} want f{Vector3.Dot(want, f):0.000} r{Vector3.Dot(want, r):0.000} u{want.y:0.000} bend {LeanDegrees:0.0} eye-shift f{Vector3.Dot(EyeLeanShift, f):0.000} shoulder-shift f{Vector3.Dot(LeanShoulderShift, f):0.000} r{Vector3.Dot(LeanShoulderShift, r):0.000} leg-shift f{Vector3.Dot(LegShiftNow, f):0.000} r{Vector3.Dot(LegShiftNow, r):0.000} hold {(bodyHold.Holding ? "1" : "0 (" + (holdGateWhy ?? bodyHold.Why) + ")")} | phys torso-hip f{Vector3.Dot(torsoPhys, f):0.000} shoulders-hip f{Vector3.Dot(shoulderPhys, f):0.000} r{Vector3.Dot(shoulderPhys, r):0.000} hip ({hipPos.x:0.000},{hipPos.y:0.000},{hipPos.z:0.000}) head-height {c.data.currentHeadHeight:0.000} target {c.data.targetHeadHeight:0.000} anim-offset {AnimatedOffset().magnitude:0.000}"
+                $"[avatar.local] lean t{Time.unscaledTime:0.00} gate {LeanGate ?? "open"} weight {leanWeight:0.00} spine {(spine != null ? spine.partType.ToString() : "none")} want f{Vector3.Dot(want, f):0.000} r{Vector3.Dot(want, r):0.000} u{want.y:0.000} bend {LeanDegrees:0.0} eye-shift f{Vector3.Dot(EyeLeanShift, f):0.000} shoulder-shift f{Vector3.Dot(LeanShoulderShift, f):0.000} r{Vector3.Dot(LeanShoulderShift, r):0.000} leg-shift f{Vector3.Dot(LegShiftNow, f):0.000} r{Vector3.Dot(LegShiftNow, r):0.000} hold {(bodyHold.Holding ? "1" : "0 (" + (holdGateWhy ?? bodyHold.Why) + ")")} hold-off {bodyHold.AnchorOffset:0.000} | phys torso-hip f{Vector3.Dot(torsoPhys, f):0.000} shoulders-hip f{Vector3.Dot(shoulderPhys, f):0.000} r{Vector3.Dot(shoulderPhys, r):0.000} hip ({hipPos.x:0.000},{hipPos.y:0.000},{hipPos.z:0.000}) head-height {c.data.currentHeadHeight:0.000} target {c.data.targetHeadHeight:0.000} anim-offset {AnimatedOffset().magnitude:0.000} frame {Time.frameCount} jolt {bodyHold.TakeJolt():0.0} look {peakLookRate:0} spent {bodyHold.Spent:0.00} facing-off {Mathf.DeltaAngle(Rig.RigDriver.BodyHeading(Owner, 0f), Rig.RigDriver.LookHeading(Owner, 0f)):0}"
             )
         );
+        peakLookRate = 0f;
     }
 
     private static Quaternion TipRotation(TwoBoneIKConstraint ik) =>

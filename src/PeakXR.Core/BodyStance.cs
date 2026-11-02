@@ -137,8 +137,17 @@ public sealed class StanceWalk
     /// Run 20's trace: the spring-back follows the trail at the push's end, up to 0.19 m on 0.17 m (#52).</summary>
     public float FeetLead = 0.2f;
 
-    /// <summary>Seconds a debt must hold still (within <see cref="Start"/>) before it is walked.</summary>
+    /// <summary>Seconds a debt must hold still (the view within <see cref="Start"/>: the debt's change plus the body's
+    /// travel) before it is walked.</summary>
     public float Delay = 1.5f;
+
+    /// <summary>Body turn (degrees) since the feet last stepped past which the walk takes <see cref="TurnDelay"/>.</summary>
+    public float TurnedDegrees = 20f;
+
+    /// <summary>The delay (s) just after a body turn past <see cref="TurnedDegrees"/>: the head came to rest before the body
+    /// came, so there is no glance left to wait out, and the feet the turn swung pull the body over them all this time
+    /// (vr.45b: 0.1-0.34 m of slide peers see before the walk).</summary>
+    public float TurnDelay = 0.3f;
 
     /// <summary>A debt past this (m, the lean limit) is walked at once.</summary>
     public float AtOnce = 0.35f;
@@ -202,6 +211,10 @@ public sealed class StanceWalk
     /// stops shuffling for peers.</summary>
     public int MaxPushes = 6;
 
+    /// <summary>A follow-up push gets no <see cref="FeetLead"/> after a settle that sprang back less than this (m): T8-1,
+    /// vr.45 swung about +-0.17 m over five pushes on 0.000-0.008 m of spring-back with feet-behind 0.21-0.29 m.</summary>
+    public float NoLeadSpringBack = 0.02f;
+
     /// <summary>How long the last push held its request (s), for the trace.</summary>
     public float PushSeconds { get; private set; }
 
@@ -218,6 +231,7 @@ public sealed class StanceWalk
 
     Vector2 _blockedAt;
     Vector2 _heldAt;
+    Vector2 _heldTravel;
     float _heldFor;
     Vector2 _heading;
     float _best;
@@ -232,7 +246,15 @@ public sealed class StanceWalk
     Vector2 _feet;
     Vector2 _feetStand;
     float _yaw;
+    float _sinceTurn = float.MaxValue;
     float _steppedYaw = float.NaN;
+    bool _noLead;
+
+    /// <summary>The current or last push's direction, in the frame of the debt, for the trace.</summary>
+    public Vector2 Heading => _heading;
+
+    /// <summary>The heading (degrees) the gait last stepped the feet at, for the trace.</summary>
+    public float SteppedYaw => _steppedYaw;
 
     /// <summary>The walk's phase this update.</summary>
     public StanceWalkPhase State { get; private set; }
@@ -251,6 +273,9 @@ public sealed class StanceWalk
 
     /// <summary>Seconds in the current phase.</summary>
     public float PhaseSeconds { get; private set; }
+
+    /// <summary>Seconds the debt has held on the view (traced: a creep that restarts it walks late).</summary>
+    public float HeldSeconds => _heldFor;
 
     /// <summary>Debt (m) when the current or last push began.</summary>
     public float PushFrom { get; private set; }
@@ -279,6 +304,7 @@ public sealed class StanceWalk
     {
         float dist = debt.Length();
         _feet = feet;
+        _sinceTurn = MathF.Abs(BodySlotLayout.DeltaAngle(_yaw, yaw)) > 0.01f ? 0f : _sinceTurn + dt;
         _yaw = yaw;
         // The gait has stepped the feet at this heading; a body that cannot be walked (the stick, a landing) gets new ones.
         if (float.IsNaN(_steppedYaw) || !canWalk || eased > GaitInput)
@@ -292,11 +318,10 @@ public sealed class StanceWalk
         }
         // The delay runs from when the debt is owed: time under Start does not count, or the first few cm of a new
         // lean or turn read as held (run 11, vr.45: a 0.06 m debt walked 0.36 s before the lean's hold began).
-        if (dist <= Start || Vector2.Distance(debt, _heldAt) > Start)
-        {
-            _heldAt = debt;
-            _heldFor = 0f;
-        }
+        // Held on the view: a creeping body moves the debt with the head still (run 23: runaways walked only at AtOnce).
+        _heldTravel += _step;
+        if (dist <= Start || (debt - _heldAt + _heldTravel).Length() > Start)
+            HoldFrom(debt);
         else
             _heldFor += dt;
         // A debt that moved off a leftover is a new debt, which waits its own delay: the old held spot may still read
@@ -304,8 +329,7 @@ public sealed class StanceWalk
         if ((Blocked || Rested) && Vector2.Distance(debt, _blockedAt) > Start)
         {
             Blocked = Rested = false;
-            _heldAt = debt;
-            _heldFor = 0f;
+            HoldFrom(debt);
         }
         PhaseSeconds += dt;
         Closest = MathF.Min(Closest, dist);
@@ -325,7 +349,7 @@ public sealed class StanceWalk
                     !Blocked
                     && (!Rested || dist > AtOnce)
                     && dist > Start
-                    && (dist > AtOnce || _heldFor >= Delay)
+                    && (dist > AtOnce || HeldLongEnough)
                 )
                 {
                     _fruitless = 0;
@@ -348,11 +372,16 @@ public sealed class StanceWalk
                     {
                         // The head moved on, not the body back: a new debt, which waits its own delay.
                         Enter(StanceWalkPhase.Idle);
-                        _heldAt = debt;
-                        _heldFor = 0f;
+                        HoldFrom(debt);
                         return Vector2.Zero;
                     }
-                    if (_stallFor < StillSeconds && PhaseSeconds < SettleMax)
+                    // A body still moving at the max isn't judged yet, or its rest is read in passing (run Z-3 t122.91:
+                    // 0.093 m rested at -0.153 m/s went on to 0.167 m, a 14.9 degree lean).
+                    if (
+                        _stallFor < StillSeconds
+                        && PhaseSeconds
+                            < SettleMax + (velocity.Length() >= 2f * StillSpeed ? 1f : 0f)
+                    )
                         return Vector2.Zero;
                     if (dist <= Again)
                     {
@@ -378,6 +407,22 @@ public sealed class StanceWalk
         }
     }
 
+    /// <summary>The debt has waited out its delay: <see cref="TurnDelay"/> from the end of a body turn past
+    /// <see cref="TurnedDegrees"/> the feet haven't stepped for, only just after it, as a lean later on is a lean, whose
+    /// <see cref="Delay"/> lets a glance return.</summary>
+    bool HeldLongEnough =>
+        _sinceTurn < Delay
+        && MathF.Abs(BodySlotLayout.DeltaAngle(_steppedYaw, _yaw)) > TurnedDegrees
+            ? _heldFor >= TurnDelay && _sinceTurn >= TurnDelay
+            : _heldFor >= Delay;
+
+    void HoldFrom(Vector2 debt)
+    {
+        _heldAt = debt;
+        _heldTravel = Vector2.Zero;
+        _heldFor = 0f;
+    }
+
     /// <summary>The feet's stand in body axes. They last stood for the heading they stepped at: a turn swings the body
     /// over them, so after a smooth 180 they read about 0.14 m off their rest (the mass centre 0.07 m ahead of the hip)
     /// with no trail to see (run 21, vr.300: 0 at each push's end, -0.12 m after each settle, 0.12-0.14 m of spring-back).</summary>
@@ -390,6 +435,8 @@ public sealed class StanceWalk
     {
         float dist = debt.Length();
         Enter(StanceWalkPhase.Push);
+        // A settle that kept its place shows these feet pull nothing back: walking on for them only overshoots again.
+        _noLead = Pushes > 0 && SpringBack < NoLeadSpringBack;
         Pushes++;
         PushFrom = Closest = _best = dist;
         _stallFor = 0f;
@@ -407,7 +454,8 @@ public sealed class StanceWalk
             debt - velocity * (CoastSeconds + eased / (2f * MathF.Max(InputSlew, 0.1f)) + dt);
         // The body settles over its feet: feet trailing it pull it back after the coast, so walk on (FeetLead at most).
         FeetBehind = FeetTrail();
-        rest += _heading * Math.Clamp(FeetBehind, 0f, FeetLead);
+        if (!_noLead)
+            rest += _heading * Math.Clamp(FeetBehind, 0f, FeetLead);
         float restDist = rest.Length();
         float along = Vector2.Dot(rest, _heading);
         // Done once the body would come to rest under the view, but not before the gait has stepped; before that only
@@ -488,7 +536,7 @@ public sealed class OwnMotion
     /// input's run-down 0.5 s at most), so travel after that is something else's.</summary>
     public float MaxCoastSeconds = 1f;
 
-    /// <summary>Look change (degrees) in one go past which the body creeps on after <see cref="PoseSeconds"/>, settling
+    /// <summary>Farthest look (degrees) from where one go began past which the body creeps on after <see cref="PoseSeconds"/>, settling
     /// its turned pose over planted feet: run 20, vr.45b t203.4-205.1 0.13 m at 0.06-0.14 m/s after +90, vr.273
     /// t223.8-227.6 0.1 m at 0.03 m/s after 180. Less stays inside the view hold.</summary>
     public float SettleTurnDegrees = 20f;
@@ -507,17 +555,34 @@ public sealed class OwnMotion
     float _stillFor;
     float _poseFor;
     float _turned;
+    Vector2 _turnFrom;
+    float _facing;
+    float _facingFrom;
     float _settleFor;
     float _settleStill;
     Vector2 _look;
     bool _haveLook;
 
+    /// <summary>The creep after a large look change is still running (<see cref="Settling"/>).</summary>
+    public bool SettlingTurn { get; private set; }
+
     /// <param name="walking">The stance walk is walking or settling.</param>
     /// <param name="levelSpeed">The body's level speed (m/s).</param>
     /// <param name="look">The character's look (yaw, pitch) in degrees, as the head drives it.</param>
     /// <param name="outside">An outside force acts this update: wind, an impulse, a slide, a moving ground.</param>
+    /// <param name="held"><see cref="BodyHold.Holding"/>.</param>
+    /// <param name="heading">The body's heading (degrees), when it doesn't keep to the look (<see cref="BodyTurn"/>):
+    /// its turn counts as a look of its own, and the hands a turning head brings along pull the body before that.</param>
     /// <returns>This update's body travel is PeakXR's own.</returns>
-    public bool Update(bool walking, float levelSpeed, Vector2 look, bool outside, float dt)
+    public bool Update(
+        bool walking,
+        float levelSpeed,
+        Vector2 look,
+        bool outside,
+        float dt,
+        bool held = false,
+        float? heading = null
+    )
     {
         // Held still a while, not one slow update: a body springing back toward its planted feet passes through
         // zero at the turn and creeps at the end (run 10, vr.45 t837.25-837.85: the view followed that tail).
@@ -530,6 +595,7 @@ public sealed class OwnMotion
             _coasting = true;
         else if (_stillFor >= StillSeconds || _coastFor >= MaxCoastSeconds)
             _coasting = false;
+        float facing = heading ?? look.X;
         if (_haveLook && dt > 0f)
         {
             float yaw = (look.X - _look.X) % 360f;
@@ -538,28 +604,45 @@ public sealed class OwnMotion
                 : yaw < -180f ? yaw + 360f
                 : yaw;
             float moved = new Vector2(yaw, look.Y - _look.Y).Length();
-            if (moved / dt > LookRate)
+            float bodyTurned = MathF.Abs(BodySlotLayout.DeltaAngle(_facing, facing));
+            if (MathF.Max(moved, bodyTurned) / dt > LookRate)
             {
+                if (_poseFor <= 0f)
+                {
+                    _turnFrom = _look;
+                    _facingFrom = _facing;
+                }
                 _poseFor = PoseSeconds;
-                _turned += moved;
+                _turned = MathF.Max(
+                    _turned,
+                    MathF.Max(
+                        new Vector2(
+                            BodySlotLayout.DeltaAngle(_turnFrom.X, look.X),
+                            look.Y - _turnFrom.Y
+                        ).Length(),
+                        MathF.Abs(BodySlotLayout.DeltaAngle(_facingFrom, facing))
+                    )
+                );
                 _settleFor = _settleStill = 0f;
             }
             else
                 _poseFor = MathF.Max(0f, _poseFor - dt);
         }
         _look = look;
+        _facing = facing;
         _haveLook = true;
-        bool settling = Settling(levelSpeed, outside, dt);
-        return !outside && (walking || _coasting || _poseFor > 0f || settling);
+        SettlingTurn = Settling(levelSpeed, outside, held, dt);
+        return !outside && (walking || _coasting || _poseFor > 0f || SettlingTurn);
     }
 
     /// <summary>The creep after a large look change is still running: once the pose window has passed, until the body
-    /// is still, too fast to be creeping, or pushed, at most <see cref="SettleMaxSeconds"/>.</summary>
-    bool Settling(float levelSpeed, bool outside, float dt)
+    /// is still, too fast to be creeping, or pushed, at most <see cref="SettleMaxSeconds"/>. A body
+    /// <see cref="BodyHold"/> holds is neither: its creep comes at let-go, so the clock starts then.</summary>
+    bool Settling(float levelSpeed, bool outside, bool held, float dt)
     {
         if (_turned < SettleTurnDegrees)
         {
-            // One look's worth at a time: small looks far apart do not add up.
+            // One look's worth at a time: small looks far apart do not add up, nor does sway on the spot.
             if (_poseFor <= 0f)
                 _turned = 0f;
             return false;
@@ -571,8 +654,8 @@ public sealed class OwnMotion
         }
         if (_poseFor > 0f)
             return true;
-        _settleFor += dt;
-        _settleStill = levelSpeed < SettleStillSpeed ? _settleStill + dt : 0f;
+        _settleFor = held ? 0f : _settleFor + dt;
+        _settleStill = !held && levelSpeed < SettleStillSpeed ? _settleStill + dt : 0f;
         if (
             levelSpeed > SettleMaxSpeed
             || _settleStill >= StillSeconds
@@ -593,5 +676,6 @@ public sealed class OwnMotion
         _poseFor = 0f;
         _turned = 0f;
         _haveLook = false;
+        SettlingTurn = false;
     }
 }

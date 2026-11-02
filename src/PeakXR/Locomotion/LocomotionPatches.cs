@@ -41,7 +41,7 @@ internal static class LocomotionPatches
     /// Character.AddForce(Vector3, float, float) (Character.cs:1396, internal): the game's whole-body push, used by
     /// AOE blasts, waterfalls, tornadoes, move zones, launches, knockback collisions, Bing Bong and lava
     /// (AOE.cs:172, WaterfallPusher.cs:32, Tornado.cs:301, PlayerMoveZone.cs:44, CollisionModifier.cs:79). Marks an
-    /// outside force on the local body, which the stance walk never walks back.
+    /// outside force on the local body, which the stance walk never walks back. A force of no size moves nothing.
     /// </summary>
     [HarmonyPatch]
     internal static class Push
@@ -53,9 +53,12 @@ internal static class LocomotionPatches
                 new[] { typeof(UnityEngine.Vector3), typeof(float), typeof(float) }
             );
 
-        private static void Prefix(Character __instance)
+        private static void Prefix(Character __instance, UnityEngine.Vector3 move)
         {
-            if (__instance == Character.localCharacter)
+            if (
+                __instance == Character.localCharacter
+                && UnityEngine.Vector3.SqrMagnitude(move) > 1e-6f
+            )
                 LocomotionInput.OutsideForceAt = UnityEngine.Time.time;
         }
     }
@@ -63,7 +66,8 @@ internal static class LocomotionPatches
     /// <summary>
     /// Character.RPCA_AddForceAtPosition(Vector3, Vector3, float) (Character.cs:458, [PunRPC]): impulses from wind
     /// (WindChillZone.cs:250), mobs, bonks, arrows, axes and rollers (Beetle.cs:27, ArrowShooter.cs:128,
-    /// SwingingAxe.cs:161). Marks an outside force on the local body, as <see cref="Push"/>.
+    /// SwingingAxe.cs:161). Marks an outside force on the local body, as <see cref="Push"/>. A storm sends this every
+    /// physics step in bounds, with zero force in shelter (WindChillZone.cs:175, :240-250): that is no force (#140).
     /// </summary>
     [HarmonyPatch]
     internal static class Impulse
@@ -75,9 +79,12 @@ internal static class LocomotionPatches
                 new[] { typeof(UnityEngine.Vector3), typeof(UnityEngine.Vector3), typeof(float) }
             );
 
-        private static void Prefix(Character __instance)
+        private static void Prefix(Character __instance, UnityEngine.Vector3 force)
         {
-            if (__instance == Character.localCharacter)
+            if (
+                __instance == Character.localCharacter
+                && UnityEngine.Vector3.SqrMagnitude(force) > 1e-6f
+            )
                 LocomotionInput.OutsideForceAt = UnityEngine.Time.time;
         }
     }

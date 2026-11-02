@@ -368,6 +368,112 @@ internal static class AvatarPatches
         }
     }
 
+    /// <summary>
+    /// Character.SetRotation (Character.cs:1526, from CharacterRagdoll.RotateCharacter, CharacterRagdoll.cs:201-205) stands
+    /// the whole animated pose on the look each physics step, which swings the feet across the ground on every glance. The
+    /// local VR body stands on <see cref="BodyTurn"/>'s heading instead, whatever turns the head. Only the look's branch
+    /// (Character.cs:1540-1543): a carrier, rope or wall keeps the game's. Peers turn this body to the synced look as
+    /// ever (their own CharacterRagdoll, on <c>lookValues</c>).
+    /// </summary>
+    [HarmonyPatch]
+    internal static class BodyFacing
+    {
+        private static readonly BodyTurn Turn = new();
+
+        /// <summary>The local body's heading (degrees), NaN while it keeps to the look. A rig turn since the last physics
+        /// step counts: the next step stands on it, and the eye the pose starts from has to turn with it now, or a 45
+        /// degree snap reads as a 17 degree lean (vr.300; <see cref="BodyLean.HeadBias"/>).</summary>
+        internal static float Heading => Turn.HeadingAt(RigYaw());
+
+        private static float RigYaw()
+        {
+            var rig = VRRig.Instance;
+            return rig != null && rig.Origin != null ? rig.Origin.eulerAngles.y : Turn.RigYaw;
+        }
+
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(Character), "SetRotation");
+
+        private static void Postfix(Character __instance)
+        {
+            // Inside CharacterRagdoll.RotateCharacter: a throw skips the animation's evaluation and ResetRotation
+            // (CharacterRagdoll.cs:165-178) on every physics step, a frozen body. The look's own rotation stands then.
+            try
+            {
+                var c = __instance;
+                if (!c.IsLocal)
+                    return;
+                float rigTurn = Turn.TurnRig(RigYaw());
+                var d = c.data;
+                var flat = d.lookDirection_Flat;
+                if (
+                    !VRSession.Active
+                    || !Rig.RigDriver.ViewOnBody
+                    || Driver(c) == null
+                    || d.carrier != null
+                    || d.isRopeClimbing
+                    || d.isClimbing
+                    || flat.sqrMagnitude < 1e-4f
+                )
+                {
+                    Turn.Reset();
+                    return;
+                }
+                // An outside force moves the body, not its feet against it: a glance stays out of it as ever.
+                var inputs = AvatarPoseDriver.GateInputs(c);
+                inputs.Outside = false;
+                // isGrounded can drop for one tick (CharacterMovement.cs:757), and a tick of catch-up is 14 degrees.
+                inputs.Grounded = d.sinceGrounded < 0.1f;
+                Turn.Update(
+                    Mathf.Atan2(flat.x, flat.z) * Mathf.Rad2Deg,
+                    HoldGate.Free(inputs),
+                    Time.fixedDeltaTime,
+                    rigTurn
+                );
+                c.refs.rigCreator.transform.rotation = Quaternion.Euler(0f, Turn.Heading, 0f);
+            }
+            catch (System.Exception e)
+            {
+                Turn.Reset();
+                PatchGuard.Fail<AvatarFeature>(e);
+            }
+        }
+    }
+
+    /// <summary>
+    /// CharacterAnimations.Update (CharacterAnimations.cs:253-254) leans the pose for the ground's slope along
+    /// <c>data.groundedForward</c> and <c>groundedRight</c>, which the look sets (Character.cs:1325-1330) and nothing else
+    /// reads. Under <see cref="BodyFacing"/> the slope that counts is along the body's heading: on the look's, a glance on
+    /// a beach bends the standing body, which rocks 0.05 m out and back over its feet (vr.302).
+    /// </summary>
+    [HarmonyPatch]
+    internal static class FloorLean
+    {
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(CharacterAnimations), "Update");
+
+        private static void Prefix(CharacterAnimations __instance)
+        {
+            try
+            {
+                var c = animationsCharacter(__instance);
+                if (c == null || !c.IsLocal || float.IsNaN(BodyFacing.Heading))
+                    return;
+                var d = c.data;
+                if (d.sinceGrounded >= 0.2f)
+                    return;
+                var turn = Quaternion.Euler(0f, BodyFacing.Heading, 0f);
+                // HelperFunctions.GroundDirection (HelperFunctions.cs:213), internal.
+                d.groundedForward = -Vector3.Cross(turn * Vector3.left, d.groundNormal);
+                d.groundedRight = -Vector3.Cross(turn * Vector3.forward, d.groundNormal);
+            }
+            catch (System.Exception e)
+            {
+                PatchGuard.Fail<AvatarFeature>(e);
+            }
+        }
+    }
+
     /// <summary>HideTheBody.Update (HideTheBody.cs:39-50, private) shows a body only for remote, passed-out or dead
     /// characters. While rig.camera shows the local body from outside (a detached takeover view: tumbling, rocket),
     /// show all of it, head included, as vanilla does for a body seen from outside; when the view returns, vanilla's

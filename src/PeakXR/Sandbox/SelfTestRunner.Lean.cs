@@ -228,6 +228,8 @@ internal sealed partial class SelfTestRunner
                 );
             // The walk back under the head, the view still tracked: no walk may move it.
             yield return Settle(rig, leanOrigin, b => leanOrigin = b);
+            if (stanceTimedOut)
+                fails.Add(F($"lean {name}: the walk was still running at the judge"));
         }
         notes.Add(
             leanWalked
@@ -285,6 +287,8 @@ internal sealed partial class SelfTestRunner
         );
         if (walked < 0.1f)
             fails.Add(F($"far lean walked only {walked:0.000} m while leaning past the limit"));
+        // This judge follows Track, not Settle: the slow leans' last Settle timing out is no walk it waited for.
+        stanceTimedOut = false;
         JudgeSettled(c, "standing up", eyesOff, fails);
         if (origin > MaxLeanDrift)
             fails.Add(F($"far lean moved the view {origin:0.000} m"));
@@ -308,8 +312,9 @@ internal sealed partial class SelfTestRunner
     const float NeckSwing = 0.1f;
 
     /// <summary>Most the body may bend once it stands under a turned head (degrees): no lean is left to ask for, and
-    /// the old lean-back peers saw was 16 degrees.</summary>
-    const float MaxStanceLean = 8f;
+    /// the old lean-back peers saw was 16 degrees. <see cref="TurnSkip.MaxLean"/>'s 0.09 m reads 7.4 degrees plus sway by
+    /// design, so 8 sat on that cluster; a runaway reads 12-20.</summary>
+    const float MaxStanceLean = 10f;
 
     /// <summary>
     /// <c>vr.45b-head-turn</c>: the scripted head on the calibrated spot turns in the room (no snap turn) to 90, 180
@@ -319,9 +324,9 @@ internal sealed partial class SelfTestRunner
     /// (<see cref="BodyStance"/>, player.locomotion) steps the body under the head with the game's move input once the
     /// turn has held for its delay. After each turn has settled (the delay and the walk) it fails when the avatar's eyes
     /// (the eye model, <see cref="ModelEyesOff"/>) are more than <see cref="MaxStanceLeftover"/> off the view, the
-    /// drawn eyes more than <see cref="MaxDrawnEyeOff"/> off it, or the body bends more than
-    /// <see cref="MaxStanceLean"/>; over the whole step it fails when the view (the rig origin, which only the head may
-    /// move) moves more than <see cref="MaxLeanDrift"/>.
+    /// drawn eyes more than <see cref="MaxDrawnEyeOff"/> off it, or the body bent more than
+    /// <see cref="MaxStanceLean"/> at any time since the turn stopped; over the whole step it fails when the view (the
+    /// rig origin, which only the head may move) moves more than <see cref="MaxLeanDrift"/>.
     /// </summary>
     IEnumerator HeadTurnStep()
     {
@@ -392,10 +397,14 @@ internal sealed partial class SelfTestRunner
                 )
             );
             JudgeSettled(c, at, off.magnitude, fails);
-            if (driver.LeanDegrees > MaxStanceLean)
-                fails.Add(
-                    F($"{at}: the body bends {driver.LeanDegrees:0.0} deg under a turned head")
-                );
+            JudgePeakBend(at, fails, notes);
+            // BodyTurn leaves a glance alone, not a turned head: the body comes round.
+            float facing = Mathf.DeltaAngle(
+                RigDriver.BodyHeading(c, 0f),
+                RigDriver.LookHeading(c, 0f)
+            );
+            if (Mathf.Abs(facing) > 6f)
+                fails.Add(F($"{at}: the body faces {facing:0} deg off the settled head"));
         }
         JudgeRise("over the turns", rig, viewY, groundY, fails, notes);
         ReleaseHead();
@@ -420,6 +429,7 @@ internal sealed partial class SelfTestRunner
     /// the player sees the ground before its feet. Once settled (the delay and the walk) the avatar's eyes must be
     /// at least <see cref="MinStepBack"/> behind the view along the look and the mass centre at least that far back
     /// from where it stood; looking level again, the eyes must be back under the view (<see cref="JudgeSettled"/>).
+    /// Both times the body may not bend past <see cref="MaxStanceLean"/> after the look stops (<see cref="JudgePeakBend"/>).
     /// Over the whole step the view (rig origin) may not move more than <see cref="MaxLeanDrift"/>.
     /// </summary>
     IEnumerator LookDownStep()
@@ -490,15 +500,27 @@ internal sealed partial class SelfTestRunner
                     $"{at}: eyes {behind:0.000} m behind the view ({off.magnitude:0.000} m off; renderers {gap:0.000} m off the eye model), mass centre {back:0.000} m back, lean {driver.LeanDegrees:0.0} deg, debt {RigDriver.StanceDebt.magnitude:0.000} m"
                 )
             );
-            if (pitch > 0f && (behind < MinStepBack || back < MinStepBack))
-                fails.Add(
-                    F(
-                        $"{at}: the body stood {back:0.000} m back, its eyes {behind:0.000} m behind the view, want {MinStepBack:0.00} m"
-                    )
-                );
+            if (pitch > 0f)
+            {
+                if (stanceTimedOut)
+                    fails.Add(F($"{at}: the walk was still running at the judge"));
+                else
+                {
+                    if (behind < MinStepBack || back < MinStepBack)
+                        fails.Add(
+                            F(
+                                $"{at}: the body stood {back:0.000} m back, its eyes {behind:0.000} m behind the view, want {MinStepBack:0.00} m"
+                            )
+                        );
+                    JudgePeakBend(at, fails, notes);
+                }
+            }
             // Looking down the head bone carries the renderers forward of the unbent model: judged level only.
-            if (pitch <= 0f)
+            else
+            {
                 JudgeSettled(c, at + " looking level again", off.magnitude, fails);
+                JudgePeakBend(at + " looking level again", fails, notes);
+            }
         }
         JudgeRise("over the look", rig, viewY, groundY, fails, notes);
         ReleaseHead();
@@ -517,22 +539,39 @@ internal sealed partial class SelfTestRunner
             stepNote = note;
     }
 
-    /// <summary>Least step back (m) vr.273 wants at a 60 degree look down.</summary>
-    const float MinStepBack = 0.2f;
+    /// <summary>Least step back (m) vr.273 wants at a 60 degree look down: what's asked less what
+    /// <see cref="StanceWalk.Again"/> lets a walk leave, about 0.118 m. A property: <see cref="MaxStanceLeftover"/> is in
+    /// another part of this class, whose static fields have no set order.</summary>
+    static float MinStepBack => BodyStance.StepBack(-60f) - MaxStanceLeftover;
 
     static readonly float StanceDelay = new StanceWalk().Delay;
+
+    static bool StanceQuiet => !RigDriver.FollowWalking && !LocomotionInput.StanceOwed;
+
+    /// <summary>Longest wait for a walk: its delay, then three pushes (0.8 s) and their settles (1.5 s).</summary>
+    static readonly float StanceWaitMax = StanceDelay + 7f;
+
+    /// <summary>The last <see cref="Settle"/> ran out with the walk still going: nothing read then is a settled stance.</summary>
+    static bool stanceTimedOut;
+
+    /// <summary>Most the body bent (degrees) over the last <see cref="Settle"/>.</summary>
+    static float settlePeakBend;
 
     /// <summary>The view's range (m), with its level and vertical parts apart: the view's height rides the hip
     /// (run 10, vr.45: the hip rose 0.037 m during the walks), its level place only the head and outside forces.</summary>
     static string ViewMoved(Bounds b) =>
         F($"{b.size.magnitude:0.000} m (level {FlatSize(b):0.000}, height {b.size.y:0.000})");
 
-    /// <summary>Recenters on the current head and waits for it, so the room anchor sits on the calibrated spot, then
+    /// <summary>Waits out a walk the setup's turn owes, so it runs in every run and the step starts from feet that have
+    /// stepped. Recenters on the current head and waits for it, so the room anchor sits on the calibrated spot, then
     /// for a stance walk the setup's turn started or still owes to end (run 10, vr.302: a walk from the setup ran
     /// through the glance). Turns the lean trace on for the stance step that follows (run 10 logged none in vr.45b or vr.300-304).</summary>
     static IEnumerator RecenterHead(VRRig rig)
     {
-        RigDriver.TraceLeanUntil = Time.unscaledTime + 40f;
+        RigDriver.TraceLeanUntil = Time.unscaledTime + 70f;
+        yield return WaitFor(() => StanceQuiet, StanceWaitMax);
+        if (!StanceQuiet)
+            LogStanceTimeout("pre-recenter");
         bool recentered = false;
         Action onRecenter = () => recentered = true;
         rig.Recentered += onRecenter;
@@ -541,38 +580,43 @@ internal sealed partial class SelfTestRunner
         rig.Recentered -= onRecenter;
         yield return Wait(0.8f);
         // As Settle: a debt the setup's turn left is walked only after the delay.
-        yield return WaitFor(
-            () => !RigDriver.FollowWalking && !LocomotionInput.StanceOwed,
-            StanceDelay + 3f
-        );
-        if (RigDriver.FollowWalking || LocomotionInput.StanceOwed)
+        yield return WaitFor(() => StanceQuiet, StanceDelay + 3f);
+        if (!StanceQuiet)
             LogStanceTimeout("recenter");
     }
 
     /// <summary>Waits out the stance walk's delay (a held debt walks after <see cref="StanceWalk.Delay"/>), then while a
-    /// walk runs or is still owed (at most 3 s more), tracking the rig origin meanwhile. The delay runs from when the
-    /// debt holds still, which after a turn is after the ragdoll's swing: cf6aa3e judged vr.300's smooth turn just
-    /// before its walk started.</summary>
+    /// walk runs or is still owed (up to <see cref="StanceWaitMax"/>), tracking the rig origin and the peak bend
+    /// meanwhile. Running out sets <see cref="stanceTimedOut"/>, so a timeout fails by name, not on a mid-walk number.
+    /// The delay runs from when the debt holds still, which after a turn is after the ragdoll's swing: cf6aa3e judged
+    /// vr.300's smooth turn just before its walk started.</summary>
     static IEnumerator Settle(VRRig rig, Bounds origin, Action<Bounds> done)
     {
+        stanceTimedOut = false;
+        settlePeakBend = 0f;
+        var c = Character.localCharacter;
+        var driver = c != null ? AvatarPoseDriver.Of(c) : null;
         float t0 = Now;
-        float delay = StanceDelay;
-        while (
-            Now - t0 < delay + 0.5f
-            || ((RigDriver.FollowWalking || LocomotionInput.StanceOwed) && Now - t0 < delay + 3f)
-        )
+        while (Now - t0 < StanceDelay + 0.5f || (!StanceQuiet && Now - t0 < StanceWaitMax))
         {
             yield return null;
             origin.Encapsulate(rig.Origin.position);
+            if (driver != null)
+                settlePeakBend = Mathf.Max(settlePeakBend, driver.LeanDegrees);
         }
-        if (RigDriver.FollowWalking || LocomotionInput.StanceOwed)
+        if (!StanceQuiet)
+        {
+            stanceTimedOut = true;
             LogStanceTimeout("settle");
+        }
         // 1 s more: after a turn the lean takes the walk's leftover only once the walk is done (TurnSkip lets go at 2/s).
         float t1 = Now;
         while (Now - t1 < 1f)
         {
             yield return null;
             origin.Encapsulate(rig.Origin.position);
+            if (driver != null)
+                settlePeakBend = Mathf.Max(settlePeakBend, driver.LeanDegrees);
         }
         done(origin);
     }

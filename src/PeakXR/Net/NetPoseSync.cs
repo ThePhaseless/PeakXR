@@ -270,7 +270,9 @@ internal sealed class NetPoseSync
         // The pose was built on the rendered (interpolated) hip: convert from that, or peers get its 0.05-0.1 m
         // gap to the physics hip as a walking lean (#97).
         var frame = localDriver.PoseHip is { } built ? N(built) : root;
-        var local = PoseFrame.ToLocal(world, frame, yaw);
+        // A peer's copy faces the look (CharacterSyncer.cs:33-55 sends no rotation): the head goes in the body's frame, so a
+        // body off a glance bends nothing there. The wire is the same to an older peer, which gets the straighter head too.
+        var local = PoseFrame.ToLocal(world, frame, yaw, Rig.RigDriver.BodyHeading(character, yaw));
 
         gate.Rate = PoseRate.ForPeers(NetPoseFeature.SendRate.Value, peers.Count);
         if (!gate.ShouldSend(now, local))

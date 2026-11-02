@@ -35,6 +35,14 @@ internal static class LocomotionInput
     /// (self-test: a step judges the stance once none is owed).</summary>
     internal static bool StanceOwed { get; private set; }
 
+    /// <summary>The body still creeps after a large look change (<see cref="OwnMotion.SettlingTurn"/>): the lean leaves
+    /// that travel out (<see cref="TurnSkip"/>).</summary>
+    internal static bool TurnSettling { get; private set; }
+
+    /// <summary>An outside force, a slide, or steep or moving ground moves the body this update: <see cref="BodyHold"/> stays
+    /// off it, whatever its strength (#139).</summary>
+    internal static bool OutsideNow { get; private set; }
+
     /// <summary><c>Time.realtimeSinceStartup</c> the last stance walk started (self-test: vr.45 checks a held lean
     /// is stepped under only after the walk's delay).</summary>
     internal static float StanceWalkStartedAt { get; private set; } = float.NegativeInfinity;
@@ -342,6 +350,8 @@ internal static class LocomotionInput
         VoiceInput.PushToTalkHeld = false;
         Ramp.Reset();
         hadBody = false;
+        TurnSettling = false;
+        OutsideNow = false;
         BodyGestures.Reset();
     }
 
@@ -402,6 +412,8 @@ internal static class LocomotionInput
             Own.Reset();
             RigDriver.FollowWalking = false;
             StanceOwed = false;
+            TurnSettling = false;
+            OutsideNow = false;
             return NVector2.Zero;
         }
 
@@ -439,6 +451,7 @@ internal static class LocomotionInput
             Time.time - OutsideForceAt < OutsideSeconds
             || data.sinceFallSlide < HoldGate.SlideCooldown
             || data.isGrounded && OnMovingOrSteepGround(c);
+        OutsideNow = outside;
         if (lastOwn && canFollow && !outside)
             Follow.Absorb(new NVector2(delta.x, delta.z), dt);
         var debt3 = rig.Origin.InverseTransformVector(RigDriver.StanceDebt);
@@ -463,6 +476,7 @@ internal static class LocomotionInput
         var feet = (RigDriver.FeetMid(c) - RigDriver.ViewRoot(c)) * toTracking;
         var phase = Stance.State;
         float phaseFor = Stance.PhaseSeconds;
+        float bodyYaw = RigDriver.BodyHeading(c, rig.Origin.eulerAngles.y);
         var worldRequest = Stance.Update(
             new NVector2(worldDebt.x, worldDebt.z),
             new NVector2(levelVelocity.x, levelVelocity.z),
@@ -470,10 +484,19 @@ internal static class LocomotionInput
             canFollow && !outside,
             dt,
             new NVector2(feet.x, feet.z),
-            RigDriver.BodyHeading(c, rig.Origin.eulerAngles.y)
+            bodyYaw
         );
         if (Stance.State != phase)
-            TraceStance(phase, phaseFor, debt.Length(), worldRequest.Length());
+            TraceStance(
+                phase,
+                phaseFor,
+                debt.Length(),
+                worldRequest.Length(),
+                new NVector2(worldDebt.x, worldDebt.z),
+                new NVector2(feet.x, feet.z),
+                bodyYaw,
+                new NVector2(levelVelocity.x, levelVelocity.z)
+            );
         var request3 =
             Quaternion.Inverse(rig.Origin.rotation)
             * new Vector3(worldRequest.X, 0f, worldRequest.Y);
@@ -500,8 +523,11 @@ internal static class LocomotionInput
                 level.Length(),
                 new NVector2(data.lookValues.x, data.lookValues.y),
                 outside,
-                dt
+                dt,
+                AvatarPoseDriver.Of(c) is { BodyHeld: true },
+                bodyYaw
             );
+        TurnSettling = canFollow && Own.SettlingTurn;
         FollowGap = NVector2.Distance(head, Follow.Anchor);
         // A walk that cannot get the body within the lean limit (a wall, a ledge, a friend) ends in the recenter.
         bool stalled = Stance.Blocked && debt.Length() > LocomotionConfig.LeanRadius;
@@ -525,7 +551,7 @@ internal static class LocomotionInput
             var armless = ArmlessVelocity(c);
             Plugin.Log.LogInfo(
                 System.FormattableString.Invariant(
-                    $"[player.locomotion] room t{Time.unscaledTime:0.00} head-anchor {FollowGap:0.000} debt ({debt.X:0.000},{debt.Y:0.000}) body-delta ({delta.x:0.000},{delta.z:0.000}) follow {canFollow} walking {Stance.Walking} blocked {Stance.Blocked} stick fwd {stick.Y:0.00} right {stick.X:0.00} body-v ({bodyVelocity.x:0.000},{bodyVelocity.z:0.000}) armless-v ({armless.x:0.000},{armless.z:0.000})"
+                    $"[player.locomotion] room t{Time.unscaledTime:0.00} head-anchor {FollowGap:0.000} debt ({debt.X:0.000},{debt.Y:0.000}) body-delta ({delta.x:0.000},{delta.z:0.000}) follow {canFollow} walking {Stance.Walking} blocked {Stance.Blocked} held {Stance.HeldSeconds:0.00} stick fwd {stick.Y:0.00} right {stick.X:0.00} body-v ({bodyVelocity.x:0.000},{bodyVelocity.z:0.000}) armless-v ({armless.x:0.000},{armless.z:0.000})"
                 )
             );
         }
@@ -534,13 +560,24 @@ internal static class LocomotionInput
 
     /// <summary>Lean trace only: one line per stance walk phase change (push, settle, done, given up), so a run shows
     /// each push's length and how far the body sprang back after it (run 10: walks of a few frames, 85 % back).</summary>
-    private static void TraceStance(StanceWalkPhase from, float seconds, float debt, float request)
+    private static void TraceStance(
+        StanceWalkPhase from,
+        float seconds,
+        float debt,
+        float request,
+        NVector2 worldDebt,
+        NVector2 feet,
+        float yaw,
+        NVector2 velocity
+    )
     {
         if (Time.unscaledTime >= RigDriver.TraceLeanUntil && !Diagnostics.DebugLog.Verbose)
             return;
+        var heading = Stance.Heading;
+        var bodyFeet = YawMath.Rotate(feet, -yaw);
         Plugin.Log.LogInfo(
             System.FormattableString.Invariant(
-                $"[player.locomotion] stance t{Time.unscaledTime:0.00} {from} {seconds:0.00} s -> {Stance.State}{(Stance.Blocked ? " (blocked)" : Stance.Rested ? " (rested)" : "")}: debt {debt:0.000} m, push {Stance.Pushes} from {Stance.PushFrom:0.000} m, closest {Stance.Closest:0.000} m, request {request:0.00}, push-len {Stance.PushSeconds:0.00} s, headway {Stance.Headway:0.000} m, spring-back {Stance.SpringBack:0.000} m, feet-behind {Stance.FeetBehind:0.000} m, slew {Stance.InputSlew:0.0}/s"
+                $"[player.locomotion] stance t{Time.unscaledTime:0.00} {from} {seconds:0.00} s -> {Stance.State}{(Stance.Blocked ? " (blocked)" : Stance.Rested ? " (rested)" : "")}: debt {debt:0.000} m, push {Stance.Pushes} from {Stance.PushFrom:0.000} m, closest {Stance.Closest:0.000} m, request {request:0.00}, push-len {Stance.PushSeconds:0.00} s, headway {Stance.Headway:0.000} m, spring-back {Stance.SpringBack:0.000} m, feet-behind {Stance.FeetBehind:0.000} m, slew {Stance.InputSlew:0.0}/s, along {NVector2.Dot(worldDebt, heading):0.000} across {NVector2.Dot(worldDebt, new NVector2(heading.Y, -heading.X)):0.000} feet f{bodyFeet.Y:0.000} r{bodyFeet.X:0.000} yaw-off {Mathf.DeltaAngle(Stance.SteppedYaw, yaw):0.0} v-along {NVector2.Dot(velocity, heading):0.000} push-off {Mathf.DeltaAngle(yaw, YawMath.Yaw(heading)):0}"
             )
         );
     }

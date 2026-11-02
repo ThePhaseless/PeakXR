@@ -767,6 +767,56 @@ public class StanceWalkTests
         Assert.NotEqual(Vector2.Zero, Hold(w, new Vector2(0.075f, 0f), 0.2f));
     }
 
+    /// <summary>Seconds to the first request on a debt from 0.15 m growing at <paramref name="rate"/> (m/s) with the body
+    /// moving at <paramref name="velocity"/>; NaN if none comes in <paramref name="seconds"/>.</summary>
+    static float FirstRequest(float rate, Vector2 velocity, float seconds)
+    {
+        var w = new StanceWalk();
+        var debt = new Vector2(0.15f, 0f);
+        for (float t = 0f; t < seconds; t += Dt)
+        {
+            if (w.Update(debt, velocity, 0f, canWalk: true, Dt) != Vector2.Zero)
+                return t;
+            debt.X += rate * Dt;
+        }
+        return float.NaN;
+    }
+
+    [Fact]
+    public void ACreepingDebt_UnderAStillHead_WalksAtTheDelay()
+    {
+        // Run 23: a creep moved the debt 0.05 m in just under the delay, the hold-still test kept resetting and all three
+        // runaways walked only at AtOnce. The body's own travel leaves the view still.
+        float at = FirstRequest(0.05f, new Vector2(-0.05f, 0f), 3f);
+        Assert.True(at is >= 1.4f and <= 1.6f, $"first request at {at:0.00} s");
+    }
+
+    [Fact]
+    public void ABodyCarryingTheView_IsNotHeld()
+    {
+        float at = FirstRequest(0f, new Vector2(0.1f, 0f), 3f);
+        Assert.True(float.IsNaN(at), $"first request at {at:0.00} s");
+    }
+
+    [Fact]
+    public void ADebtMovingWithNoBodyTravel_KeepsWaiting()
+    {
+        float at = FirstRequest(0.05f, Vector2.Zero, 3f);
+        Assert.True(float.IsNaN(at), $"first request at {at:0.00} s");
+    }
+
+    [Fact]
+    public void Heading_IsAlongThePush()
+    {
+        var w = new StanceWalk();
+        var debt = new Vector2(0.3f, 0f);
+        for (float t = 0f; t < w.Delay + 3f * Dt; t += Dt)
+            w.Update(debt, Vector2.Zero, 0f, canWalk: true, Dt);
+        Assert.Equal(StanceWalkPhase.Push, w.State);
+        TestUtil.Near(1f, w.Heading.X, 1e-5f);
+        TestUtil.Near(0f, w.Heading.Y, 1e-5f);
+    }
+
     [Fact]
     public void ATurnBeforeTheWalk_LeavesTheFeetLeadWhole()
     {
@@ -781,7 +831,10 @@ public class StanceWalkTests
                 w.Update(Vector2.Zero, Vector2.Zero, 0f, canWalk: true, Dt, stand);
             // The turn: the debt arrives and the feet read differently, the body creeping too fast to count as still.
             for (float t = 0f; t < w.Delay + 3f * Dt; t += Dt)
+            {
                 w.Update(debt, new Vector2(0.1f, 0f), 0f, canWalk: true, Dt, stand + creep);
+                debt.X -= 0.1f * Dt;
+            }
             Assert.Equal(StanceWalkPhase.Push, w.State);
             float travel = 0f;
             for (int i = 0; i < 500 && w.State == StanceWalkPhase.Push; i++)
@@ -990,6 +1043,62 @@ public class StanceWalkTests
         Assert.True(behind > coast - w.FeetLead - 0.01f, $"feet behind: ran on to {behind:0.000}");
     }
 
+    /// <summary>A first push that coasts past the view, then springs <paramref name="springBack"/> m back and rests 0.25 m
+    /// past it; then the follow-up push over feet it leaves behind. The debt when that push ends, along the first push:
+    /// negative is short of the view, positive past it.</summary>
+    static float FollowUpEnd(float springBack)
+    {
+        var w = new StanceWalk();
+        var debt = new Vector2(0.3f, 0f);
+        var stand = new Vector2(0f, -0.04f);
+        var ahead = new Vector2(0.5f, 0f);
+        for (float t = 0f; t < w.Delay + 3f * Dt; t += Dt)
+            w.Update(debt, Vector2.Zero, 0f, canWalk: true, Dt, stand);
+        while (w.State == StanceWalkPhase.Push || debt.X > -0.25f - springBack)
+        {
+            w.Update(debt, ahead, 0f, canWalk: true, Dt, stand);
+            debt.X -= 0.5f * Dt;
+        }
+        for (float back = 0f; back < springBack; back += 0.5f * Dt)
+        {
+            w.Update(debt, -ahead, 0f, canWalk: true, Dt, stand);
+            debt.X += 0.5f * Dt;
+        }
+        for (int i = 0; i < 500 && w.State == StanceWalkPhase.Settle; i++)
+            w.Update(debt, Vector2.Zero, 0f, canWalk: true, Dt, stand);
+        Assert.Equal(StanceWalkPhase.Push, w.State);
+        Assert.Equal(2, w.Pushes);
+        float travel = 0f;
+        for (int i = 0; i < 500 && w.State == StanceWalkPhase.Push; i++)
+        {
+            w.Update(debt, -ahead, 0f, canWalk: true, Dt, stand + new Vector2(travel, 0f));
+            debt.X += 0.5f * Dt;
+            travel += 0.5f * Dt;
+        }
+        Assert.Equal(StanceWalkPhase.Settle, w.State);
+        return debt.X;
+    }
+
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(0.012f)]
+    public void AFollowUp_AfterASettleThatKeptItsPlace_HasNoFeetLead(float springBack)
+    {
+        // T8-1 vr.45: five pushes over 9 s, swinging about +-0.17 m, each settle just over Again with 0.000-0.008 m of
+        // spring-back and feet-behind 0.21-0.29 m. Those feet pulled nothing back, so walking on for them overshot again.
+        float end = FollowUpEnd(springBack);
+        Assert.True(end < 0f, $"ended {end:0.000} m past the view, want short of it by the coast");
+    }
+
+    [Theory]
+    [InlineData(0.03f)]
+    [InlineData(0.08f)]
+    public void AFollowUp_AfterASpringBack_KeepsTheFeetLead(float springBack)
+    {
+        float end = FollowUpEnd(springBack);
+        Assert.True(end > 0f, $"ended {-end:0.000} m short of the view, want past it by the lead");
+    }
+
     [Fact]
     public void BodyThatSpringsBack_WhileTheHeadDrifts_GivesUp()
     {
@@ -1084,11 +1193,290 @@ public class StanceWalkTests
         Assert.True(w.SpringBack > 0.05f, $"spring-back {w.SpringBack:0.000}");
         Assert.InRange(w.Headway, 0.03f, 0.2f);
     }
+
+    /// <summary>A walk that has just pushed, settling on <paramref name="debt"/>.</summary>
+    static StanceWalk Settling(Vector2 debt)
+    {
+        var w = new StanceWalk();
+        w.Update(new Vector2(0.5f, 0f), Vector2.Zero, 0f, canWalk: true, Dt);
+        w.Update(debt, new Vector2(1.3f, 0f), 0f, canWalk: true, Dt);
+        Assert.Equal(StanceWalkPhase.Settle, w.State);
+        return w;
+    }
+
+    static void Coast(StanceWalk w, ref Vector2 debt, float speed, float seconds)
+    {
+        for (float t = 0f; t < seconds; t += Dt)
+        {
+            debt.X -= speed * Dt;
+            w.Update(debt, new Vector2(speed, 0f), 0f, canWalk: true, Dt);
+        }
+    }
+
+    [Fact]
+    public void ABodyStillMoving_AtSettleMax_IsNotJudgedYet()
+    {
+        var debt = new Vector2(0.1f, 0f);
+        var w = Settling(debt);
+        Coast(w, ref debt, 2f * w.StillSpeed, w.SettleMax + 0.5f);
+        Assert.Equal(StanceWalkPhase.Settle, w.State);
+        Assert.False(w.Rested);
+    }
+
+    [Fact]
+    public void ABodyThatKeepsMoving_IsJudgedASecondPastSettleMax()
+    {
+        var debt = new Vector2(0.1f, 0f);
+        var w = Settling(debt);
+        w.Again = 0.2f;
+        Coast(w, ref debt, 2f * w.StillSpeed, w.SettleMax + 1f + 2f * Dt);
+        Assert.True(w.Rested);
+    }
+
+    [Fact]
+    public void ACreepUnderTwiceStillSpeed_IsJudgedAtSettleMax()
+    {
+        var debt = new Vector2(0.09f, 0f);
+        var w = Settling(debt);
+        Coast(w, ref debt, 1.5f * w.StillSpeed, w.SettleMax + 2f * Dt);
+        Assert.True(w.Rested);
+    }
+
+    [Fact]
+    public void ACreepGrowingAcrossSettleMax_IsWalkedAgain_NotLeftToTheLean()
+    {
+        // Run Z-3 t122.91: the settle judged 0.093 m with the body at -0.153 m/s and called it rested; it went on to
+        // 0.167 m with nothing left to walk it, and the lean bent 14.9 degrees.
+        var debt = new Vector2(0.03f, 0f);
+        var w = Settling(debt);
+        Coast(w, ref debt, -0.06f, 1.2f);
+        Coast(w, ref debt, -0.153f, 0.8f);
+        Assert.False(w.Rested);
+        Assert.True(debt.X > w.Again);
+        Coast(w, ref debt, 0f, w.StillSeconds + 2f * Dt);
+        Assert.Equal(StanceWalkPhase.Push, w.State);
+    }
+
+    /// <summary>A body turning from 0 to <paramref name="to"/> at 120 deg/s, its eyes 0.24 m out dragging the debt along.</summary>
+    static void TurnBody(StanceWalk w, ref Vector2 debt, float to, float seconds)
+    {
+        float yaw = 0f;
+        for (float t = 0f; t < seconds; t += Dt)
+        {
+            yaw = MathF.Min(to, yaw + 120f * Dt);
+            debt = YawMath.Rotate(new Vector2(0f, 0.24f), yaw) - new Vector2(0f, 0.24f);
+            w.Update(debt, Vector2.Zero, 0f, canWalk: true, Dt, default, yaw);
+        }
+    }
+
+    /// <summary>Seconds of a held debt, at heading <paramref name="yaw"/>, to the first request; NaN within 3 s.</summary>
+    static float SecondsToWalk(StanceWalk w, Vector2 debt, float yaw)
+    {
+        for (float t = 0f; t < 3f; t += Dt)
+        {
+            if (w.Update(debt, Vector2.Zero, 0f, canWalk: true, Dt, default, yaw) != Vector2.Zero)
+                return t;
+        }
+        return float.NaN;
+    }
+
+    [Fact]
+    public void ABodyTurnPastTwentyDegrees_IsWalkedSoonAfterItEnds()
+    {
+        // vr.45b: the turned feet pull the body over them through the whole delay, 0.1-0.34 m for peers to see slide, and
+        // the wait has done its job: the head has been at rest since before the body came.
+        var w = new StanceWalk();
+        w.Update(Vector2.Zero, Vector2.Zero, 0f, canWalk: true, Dt, default, 0f);
+        var debt = Vector2.Zero;
+        TurnBody(w, ref debt, 60f, 0.5f);
+        float wait = SecondsToWalk(w, debt, 60f);
+        Assert.InRange(wait, w.TurnDelay - 2f * Dt, w.TurnDelay + 2f * Dt);
+    }
+
+    [Fact]
+    public void ABodyTurnUnderTwentyDegrees_WaitsTheFullDelay()
+    {
+        var w = new StanceWalk();
+        w.Update(Vector2.Zero, Vector2.Zero, 0f, canWalk: true, Dt, default, 0f);
+        var debt = new Vector2(0.1f, 0f);
+        for (float t = 0f; t < 0.1f; t += Dt)
+            w.Update(debt, Vector2.Zero, 0f, canWalk: true, Dt, default, 0f);
+        debt = new Vector2(0.2f, 0f);
+        for (float t = 0f; t < 0.1f; t += Dt)
+            w.Update(debt, Vector2.Zero, 0f, canWalk: true, Dt, default, 15f);
+        Assert.InRange(SecondsToWalk(w, debt, 15f), w.Delay - w.TurnDelay, w.Delay + 2f * Dt);
+    }
+
+    [Fact]
+    public void ALeanLongAfterATurnThatOwedNoWalk_WaitsTheFullDelay()
+    {
+        // The feet stand off the heading until a walk steps them, but a lean a while on is a lean: vr.45 wants its delay.
+        var w = new StanceWalk();
+        w.Update(Vector2.Zero, Vector2.Zero, 0f, canWalk: true, Dt, default, 0f);
+        for (float t = 0f; t < 0.5f; t += Dt)
+            w.Update(
+                Vector2.Zero,
+                Vector2.Zero,
+                0f,
+                canWalk: true,
+                Dt,
+                default,
+                MathF.Min(60f, t * 120f)
+            );
+        for (float t = 0f; t < w.Delay + Dt; t += Dt)
+            w.Update(Vector2.Zero, Vector2.Zero, 0f, canWalk: true, Dt, default, 60f);
+        Assert.InRange(
+            SecondsToWalk(w, new Vector2(0.2f, 0f), 60f),
+            w.Delay - 2f * Dt,
+            w.Delay + 2f * Dt
+        );
+    }
 }
 
 public class OwnMotionTests
 {
     const float Dt = 1f / 90f;
+
+    /// <summary>A look of <paramref name="degrees"/> over a third of a second, then the pose window.</summary>
+    static OwnMotion AfterALook(float degrees)
+    {
+        var own = new OwnMotion();
+        float yaw = 0f;
+        own.Update(false, 0f, Vector2.Zero, false, Dt);
+        for (float t = 0f; t < 1f / 3f; t += Dt)
+        {
+            yaw += degrees * 3f * Dt;
+            own.Update(false, 0.05f, new Vector2(yaw, 0f), false, Dt);
+        }
+        for (float t = 0f; t < own.PoseSeconds + Dt; t += Dt)
+            own.Update(false, 0.05f, new Vector2(yaw, 0f), false, Dt);
+        return own;
+    }
+
+    [Fact]
+    public void ABodyTurningUnderAStillLook_IsAsMuchALookAsTheLook()
+    {
+        // BodyTurn brings the body round a second after the head stopped, and its creep comes after that.
+        const float dt = 1f / 72f;
+        var own = new OwnMotion();
+        own.Update(false, 0f, new Vector2(90f, 0f), false, dt, heading: 0f);
+        for (float t = 0f; t < 2f; t += dt)
+            own.Update(false, 0f, new Vector2(90f, 0f), false, dt, heading: 0f);
+        Assert.False(own.Update(false, 0f, new Vector2(90f, 0f), false, dt, heading: 0f));
+        for (float h = 120f * dt; h < 90f; h += 120f * dt)
+            Assert.True(own.Update(false, 0.02f, new Vector2(90f, 0f), false, dt, heading: h));
+        Assert.True(own.Update(false, 0.02f, new Vector2(90f, 0f), false, dt, heading: 90f));
+        Assert.True(own.SettlingTurn);
+    }
+
+    [Fact]
+    public void ALargeLook_ReportsSettling_UntilTheBodyIsStill()
+    {
+        var own = AfterALook(90f);
+        var look = new Vector2(90f, 0f);
+        Assert.True(own.SettlingTurn);
+        for (float t = 0f; t < 1f; t += Dt)
+        {
+            own.Update(false, 0.05f, look, false, Dt);
+            Assert.True(own.SettlingTurn, $"creeping t {t:0.00}");
+        }
+        for (float t = 0f; t < own.StillSeconds + Dt; t += Dt)
+            own.Update(false, 0.005f, look, false, Dt);
+        Assert.False(own.SettlingTurn);
+    }
+
+    [Fact]
+    public void SettlingEnds_AfterSettleMaxSeconds_AndOnAnOutsideForce()
+    {
+        var own = AfterALook(90f);
+        var look = new Vector2(90f, 0f);
+        Assert.True(own.SettlingTurn);
+        for (float t = 0f; t < own.SettleMaxSeconds + Dt; t += Dt)
+            own.Update(false, 0.05f, look, false, Dt);
+        Assert.False(own.SettlingTurn);
+
+        own = AfterALook(90f);
+        Assert.True(own.SettlingTurn);
+        own.Update(false, 0.05f, look, outside: true, Dt);
+        Assert.False(own.SettlingTurn);
+    }
+
+    [Fact]
+    public void AHeldBody_KeepsSettling_PastTheMaxAndStillSpeed()
+    {
+        // BodyHold keeps the body still while it wants to creep: the slide comes at let-go, which T8 read 0.135 m. Neither
+        // the clock nor the stillness may run out behind the hold, or that slide lands in the view.
+        var own = AfterALook(90f);
+        var look = new Vector2(90f, 0f);
+        for (float t = 0f; t < own.SettleMaxSeconds + 1f; t += Dt)
+        {
+            own.Update(false, 0.005f, look, false, Dt, held: true);
+            Assert.True(own.SettlingTurn, $"held t {t:0.00}");
+        }
+        for (float t = 0f; t < own.SettleMaxSeconds - 0.1f; t += Dt)
+        {
+            Assert.True(own.Update(false, 0.05f, look, false, Dt), $"sliding t {t:0.00}");
+            Assert.True(own.SettlingTurn, $"sliding t {t:0.00}");
+        }
+    }
+
+    [Fact]
+    public void AHeldBody_StopsSettling_OnAnOutsideForceOrTooFast()
+    {
+        var look = new Vector2(90f, 0f);
+        var own = AfterALook(90f);
+        own.Update(false, 0.005f, look, false, Dt, held: true);
+        Assert.True(own.SettlingTurn);
+        own.Update(false, 0.005f, look, outside: true, Dt, held: true);
+        Assert.False(own.SettlingTurn);
+        own = AfterALook(90f);
+        own.Update(false, own.SettleMaxSpeed + 0.1f, look, false, Dt, held: true);
+        Assert.False(own.SettlingTurn);
+    }
+
+    [Fact]
+    public void IdleSway_AddsUpToNoTurn()
+    {
+        // A still player's head sways: each frame past LookRate at 90 Hz is 0.12 degrees, and summed they reach
+        // SettleTurnDegrees in 2 s with the look going nowhere.
+        var own = new OwnMotion();
+        own.Update(false, 0f, Vector2.Zero, false, Dt);
+        for (int i = 0; i < 450; i++)
+        {
+            own.Update(false, 0.05f, new Vector2(i % 2 == 0 ? 0.12f : 0f, 0f), false, Dt);
+            Assert.False(own.SettlingTurn, $"frame {i}");
+        }
+    }
+
+    [Fact]
+    public void AGlanceOutAndBack_IsAsLargeAsItsFarthestLook()
+    {
+        // Ending where it began is still a large look: the body creeps on after it (vr.302).
+        var own = new OwnMotion();
+        own.Update(false, 0f, Vector2.Zero, false, Dt);
+        float yaw = 0f;
+        for (int i = 0; i < 30; i++)
+            own.Update(false, 0.05f, new Vector2(yaw += 1f, 0f), false, Dt);
+        for (int i = 0; i < 30; i++)
+            own.Update(false, 0.05f, new Vector2(yaw -= 1f, 0f), false, Dt);
+        for (float t = 0f; t < own.PoseSeconds + Dt; t += Dt)
+            own.Update(false, 0.05f, new Vector2(yaw, 0f), false, Dt);
+        Assert.True(own.SettlingTurn);
+    }
+
+    [Fact]
+    public void ASmallLook_NeverReportsSettling()
+    {
+        var own = new OwnMotion();
+        own.Update(false, 0f, Vector2.Zero, false, Dt);
+        float yaw = 0f;
+        for (float t = 0f; t < 2f; t += Dt)
+        {
+            yaw = MathF.Min(10f, yaw + 30f * Dt);
+            own.Update(false, 0.05f, new Vector2(yaw, 0f), false, Dt);
+            Assert.False(own.SettlingTurn, $"t {t:0.00}");
+        }
+    }
 
     [Fact]
     public void DriftWithNoWalk_IsNotAddedToTheDebtTheWalkerPays()

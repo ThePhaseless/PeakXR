@@ -732,7 +732,7 @@ internal sealed class SocialHands : IGripExtension
         }
         var headRot = VRInput.HeadRotation.N();
         float yaw = reachYaw.Update(
-            BodySlotLayout.HeadYawDeg(headRot),
+            Rig.RigDriver.BodyYawInput(headRot, reachYaw.LookDownPitch),
             BodySlotLayout.HeadPitchDeg(headRot),
             dt
         );

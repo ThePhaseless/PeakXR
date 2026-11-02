@@ -33,6 +33,7 @@ internal sealed partial class Observer
     string peakxrVersion;
     PropertyInfo vrActive;
     PropertyInfo driverFresh;
+    PropertyInfo driverLean;
     bool vrEverActive;
     bool xrEverActive;
     bool stereoEver;
@@ -100,6 +101,20 @@ internal sealed partial class Observer
                 .Raw("a", Hs(a))
                 .Raw("b", Hs(b))
         );
+    }
+
+    /// <summary>The bend PeakXR gives A's avatar on B (<c>AvatarPoseDriver.LeanDegrees</c>, internal): mp-check reads it
+    /// over the windows A names for vr.306-glance-peer. A sample of 0.5 s misses a glance, so it has its own interval.</summary>
+    void SampleLean(Character remote)
+    {
+        var driver = remote != null ? remote.GetComponent("AvatarPoseDriver") : null;
+        if (driver == null)
+            return;
+        driverLean ??= driver
+            .GetType()
+            .GetProperty("LeanDegrees", BindingFlags.Instance | BindingFlags.NonPublic);
+        if (driverLean?.GetValue(driver) is float deg)
+            Write(new JsonLine().Str("type", "lean").Num("t", Unix).Num("deg", deg));
     }
 
     /// <summary>A's avatar on B: whether PeakXR drives it from A's poses, and its head and hand bones in A's frame

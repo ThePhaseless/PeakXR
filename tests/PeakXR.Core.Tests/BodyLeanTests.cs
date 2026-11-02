@@ -210,6 +210,164 @@ public class BodyLeanHeadBiasTests
         // The step's world eye against the frame's calibrated eye reads the 0.1 m walk as a backward lean.
         Assert.True(Vector3.Distance(gap, hipStep + eyeFromHip - calibrated) > 0.09f);
     }
+
+    [Fact]
+    public void ALookThatTurnedSinceTheStep_TurnsTheStepsEye()
+    {
+        // The next step stands the pose on the new look (CharacterRagdoll.RotateCharacter), so the eye read on the old one
+        // reads as a lean by the turn's chord: vr.300's 45 degree snap wanted f-0.072 r-0.183 for one step and bent 18.5.
+        var eyeAtOldLook = new Vector3(0f, 1f, 0.26f);
+        var eyeAtNewLook = new Vector3(
+            0.26f * MathF.Sin(MathF.PI / 4f),
+            1f,
+            0.26f * MathF.Cos(MathF.PI / 4f)
+        );
+        var hip = new Vector3(4f, 1f, 7f);
+        var bias = BodyLean.HeadBias(eyeAtOldLook, hip, hip, turned: 45f);
+        TestUtil.Near(eyeAtNewLook, bias, 1e-5f);
+    }
+
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(7f)]
+    [InlineData(-7.5f)]
+    public void AHeadSwing_AtThe30FpsRate_KeepsTheStepsEye(float turned)
+    {
+        // A swing's eye trails it by about a 30 fps frame: 2-3 degrees of bend at 400 deg/s, which took the load off the feet.
+        // Without it the body slid 0.082-0.122 m after a glance with the hold on (vr.302, #123); with it 0.025-0.029 m.
+        var eye = new Vector3(0f, 1f, 0.26f);
+        var hip = new Vector3(4f, 1f, 7f);
+        TestUtil.Near(
+            hip + eye - hip,
+            BodyLean.HeadBias(eye, hip, hip, turned, turned / BodyLean.SwingLagSeconds),
+            1e-5f
+        );
+    }
+
+    [Theory]
+    [InlineData(25f, 100f)]
+    [InlineData(30f, 100f)]
+    [InlineData(40f, 100f)]
+    [InlineData(60f, 100f)]
+    [InlineData(90f, 100f)]
+    [InlineData(144f, 100f)]
+    [InlineData(25f, 200f)]
+    [InlineData(30f, 200f)]
+    [InlineData(40f, 200f)]
+    [InlineData(60f, 200f)]
+    [InlineData(90f, 200f)]
+    [InlineData(144f, 200f)]
+    [InlineData(25f, 300f)]
+    [InlineData(90f, 300f)]
+    [InlineData(25f, 400f)]
+    [InlineData(40f, 400f)]
+    [InlineData(90f, 400f)]
+    public void ASwing_TrailsTheSame_AtEveryFrameRate(float fps, float rate)
+    {
+        // The fix was measured at 25-40 fps, where the turn since the last physics step happens to be about a frame: at 90 Hz
+        // that step is 3-4x shorter. At 25 fps and 400 deg/s a frame turns 16 degrees, past SwingTrail, and must not flip.
+        // The band is the smoothing's ripple on 50 Hz steps: 5.2-7.3 at 30 fps and 200 deg/s, where the old rule read 6.7.
+        var (least, most) = TrailDegrees(fps, rate);
+        float want = MathF.Min(rate * BodyLean.SwingLagSeconds, BodyLean.MaxSwingLag);
+        Assert.True(
+            least > want - 2f && most < want + 2f,
+            $"{fps} fps, {rate} deg/s: trail {least:0.0}-{most:0.0}, want {want:0.0}"
+        );
+    }
+
+    /// <summary>A look ramping to <paramref name="rate"/> over 0.25 s, written once a rendered frame, read on 50 Hz physics
+    /// steps as HoldBody and ApplyLean read it: how far the eye trails the look at its steady rate, least and most.</summary>
+    static (float Least, float Most) TrailDegrees(float fps, float rate)
+    {
+        const float Tick = 0.02f;
+        float frame = 1f / fps;
+        float yaw = 0f,
+            stepYaw = 0f,
+            swing = 0f,
+            nextTick = 0f,
+            least = float.MaxValue,
+            most = float.MinValue;
+        var eye = new Vector3(0f, 1f, 0.26f);
+        for (float t = 0f; t < 2f; t += frame)
+        {
+            while (nextTick <= t)
+            {
+                swing = BodyLean.SwingRate(swing, yaw - stepYaw, Tick);
+                stepYaw = yaw;
+                nextTick += Tick;
+            }
+            yaw += rate * MathF.Min(1f, t / 0.25f) * frame;
+            if (t < 1f)
+                continue;
+            float turned = yaw - stepYaw;
+            var bias = BodyLean.HeadBias(eye, Vector3.Zero, Vector3.Zero, turned, swing);
+            float trail = turned - MathF.Atan2(bias.X, bias.Z) * 180f / MathF.PI;
+            least = MathF.Min(least, trail);
+            most = MathF.Max(most, trail);
+        }
+        return (least, most);
+    }
+
+    [Theory]
+    [InlineData(8f, 2)]
+    [InlineData(5f, 5)]
+    public void TheRate_ReadsThrough_ATickThatCarriesAFrame(float step, int nthEmpty)
+    {
+        // 200 deg/s at 25 and at 40 fps: one physics step carries a whole frame, read raw 2x and 1.25x the rate, and the
+        // step with no frame in it reads 0.
+        const float Tick = 0.02f;
+        float swing = 0f;
+        for (int i = 0; i < 100; i++)
+        {
+            swing = BodyLean.SwingRate(swing, (i + 1) % nthEmpty == 0 ? 0f : step, Tick);
+            if (i > 20)
+                Assert.True(swing is > 150f and < 250f, $"step {i}: read {swing:0}");
+        }
+    }
+
+    [Theory]
+    [InlineData(0f, 45f)]
+    [InlineData(0f, 15f)]
+    [InlineData(200f, 52f)]
+    public void ASnap_LeavesNoRateToTrail(float rate, float step)
+    {
+        // A smoothed 45 degree step reads 740 deg/s, so the eye would trail by the 8 degree limit for 0.1 s after a snap
+        // that has already landed: a bend under a still head, which the snap fix removed (vr.300, #123).
+        Assert.Equal(0f, BodyLean.SwingRate(rate, step, 0.02f));
+        Assert.True(BodyLean.IsSnap(step, rate));
+    }
+
+    [Theory]
+    [InlineData(320f, 16f)]
+    [InlineData(200f, 14f)]
+    [InlineData(0f, 14.9f)]
+    public void AFastSwingsStep_IsNoSnap(float rate, float step)
+    {
+        Assert.False(BodyLean.IsSnap(step, rate));
+        Assert.True(BodyLean.SwingRate(rate, step, 0.02f) > 0f);
+    }
+
+    [Theory]
+    [InlineData(15f)]
+    [InlineData(-45f)]
+    public void ATurnPastASwing_TurnsTheStepsEye(float turned)
+    {
+        var eye = new Vector3(0f, 1f, 0.26f);
+        var hip = new Vector3(4f, 1f, 7f);
+        var bias = BodyLean.HeadBias(eye, hip, hip, turned);
+        float rad = turned * MathF.PI / 180f;
+        TestUtil.Near(new Vector3(0.26f * MathF.Sin(rad), 1f, 0.26f * MathF.Cos(rad)), bias, 1e-5f);
+    }
+
+    [Fact]
+    public void ALookThatTurnedSinceTheStep_KeepsTheGapBetweenEyes()
+    {
+        // Only the step's eye turns: the frame's calibrated eye already stands on the new look.
+        var hip = new Vector3(4f, 1f, 7f);
+        var calibrated = hip + new Vector3(0.1f, 1f, 0.1f);
+        var bias = BodyLean.HeadBias(new Vector3(-0.26f, 1f, 0f), hip, calibrated, turned: -90f);
+        TestUtil.Near(new Vector3(-0.1f, 0f, -0.36f), bias, 1e-5f);
+    }
 }
 
 public class BodyLeanHeldHeadTests

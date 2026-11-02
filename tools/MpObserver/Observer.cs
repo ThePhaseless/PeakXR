@@ -24,6 +24,7 @@ namespace MpObserver;
 internal sealed partial class Observer : MonoBehaviour
 {
     const float SampleInterval = 0.5f;
+    const float LeanInterval = 0.1f;
     const float PollInterval = 0.25f;
     const float JoinWaitMinutes = 10f;
     const int MaxLogLines = 300;
@@ -188,6 +189,7 @@ internal sealed partial class Observer : MonoBehaviour
         float joinedAt = -1f;
         float nextSample = 0f;
         float nextPoll = 0f;
+        float nextLean = 0f;
         end = Now + JoinWaitMinutes * 60f;
         while (!finished)
         {
@@ -198,6 +200,11 @@ internal sealed partial class Observer : MonoBehaviour
                 {
                     joinedAt = Now;
                 }
+            }
+            if (modded && Now >= nextLean)
+            {
+                nextLean = Now + LeanInterval;
+                SampleLean(FirstRemote());
             }
             if (Now >= nextPoll)
             {
