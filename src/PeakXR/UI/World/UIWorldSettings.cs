@@ -67,7 +67,8 @@ public enum StatusOverlayMode
     /// view (ui.status). Falls back to <see cref="HeadLocked"/> when that feature is not running.</summary>
     Peripheral,
 
-    /// <summary>Status effect overlays drawn on a head-locked quad (correct in both eyes).</summary>
+    /// <summary>Status effect overlays drawn on a head-locked quad, moved ahead of each eye as it renders
+    /// (<c>Render.EyeLockedOverlays</c>), so their pattern has no stereo offset.</summary>
     HeadLocked,
     Off,
 }

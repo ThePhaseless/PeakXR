@@ -26,6 +26,26 @@ internal static class RenderPatches
     }
 
     /// <summary>
+    /// Scoutmaster.DoVisuals (A/Scoutmaster.cs:234, sets _GrainMult at :167 and :244) drives the chase's Scary full-screen
+    /// grain. It samples at the same UV in both eyes, whose texture centres are 0.24 tan apart, so the grain sits past
+    /// infinity and jumps 24 times a second. 0 is the game's own photosensitive state. Its Bayer dither is pixel scale and stays.
+    /// </summary>
+    [HarmonyPatch]
+    internal static class ScoutmasterGrain
+    {
+        private static readonly int GrainMultId = Shader.PropertyToID("_GrainMult");
+
+        private static MethodBase TargetMethod() =>
+            GameMember.Method(typeof(Scoutmaster), "DoVisuals");
+
+        private static void Postfix(Scoutmaster __instance)
+        {
+            if (VRSession.Active && __instance.mat != null)
+                __instance.mat.SetFloat(GrainMultId, 0f);
+        }
+    }
+
+    /// <summary>
     /// RenderScaleSetting.ApplyValue (RenderScaleSetting.cs:18) writes the shared URP asset's renderScale and
     /// switches upscaling to STP below Native. In VR the render.fixes values own the asset instead.
     /// </summary>

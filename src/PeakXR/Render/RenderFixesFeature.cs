@@ -25,7 +25,8 @@ public enum VRAntialiasing
 /// What MultiPass would still do per eye is made the same for both: culling, and with it the shadow cascades
 /// (<see cref="EyeCulling"/>, checked by <see cref="RenderPatches.EyeShadowCascades"/>), and the post dither
 /// noise (<see cref="RenderPatches.DitherSameInBothEyes"/>).
-/// The <c>CameraQuad</c> status overlays, sized from the mono frustum, are placed per eye by ui.world.
+/// The <c>CameraQuad</c> status overlays, sized from the mono frustum, are placed head-locked by ui.world and moved ahead
+/// of each eye by <see cref="EyeMatrixFeature"/> (<c>Render.EyeLockedOverlays</c>).
 /// </summary>
 public sealed class RenderFixesFeature : Feature
 {
@@ -45,6 +46,7 @@ public sealed class RenderFixesFeature : Feature
     internal static ConfigEntry<bool> ComfortSettings;
     internal static ConfigEntry<bool> LensFlare;
     internal static ConfigEntry<bool> SharedEyeCulling;
+    internal static ConfigEntry<bool> EyeLockedOverlays;
     internal static ConfigEntry<float> PerfLogSeconds;
 
     public override string Id => "render.fixes";
@@ -214,6 +216,15 @@ public sealed class RenderFixesFeature : Feature
                     + "only to compare."
             )
         );
+        EyeLockedOverlays = Plugin.Settings.Bind(
+            section,
+            "EyeLockedOverlays",
+            true,
+            new ConfigDescription(
+                "Draw head-locked effects (storm, rain, status flashes) once per eye so their pattern has no stereo "
+                    + "offset. Turn off only to compare."
+            )
+        );
         PerfLogSeconds = Plugin.Settings.Bind(
             section,
             "PerfLogSeconds",
@@ -239,6 +250,7 @@ public sealed class RenderFixesFeature : Feature
         Patch(typeof(RenderPatches.DitherSameInBothEyes));
         Patch(typeof(RenderPatches.XRShadowCull));
         Patch(typeof(RenderPatches.EyeShadowCascades));
+        Patch(typeof(RenderPatches.ScoutmasterGrain));
 
         var go = new GameObject("PeakXR.RenderFixes") { hideFlags = HideFlags.HideAndDontSave };
         Object.DontDestroyOnLoad(go);

@@ -3,6 +3,8 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using PeakXR.Core;
+using PeakXR.Render;
+using PeakXR.UI.Common;
 using PeakXR.UI.World;
 using PeakXR.VR;
 using PeakXR.XR;
@@ -22,6 +24,9 @@ internal sealed partial class SelfTestRunner
 {
     /// <summary>Frames a readback may take before the check says the eye could not be read.</summary>
     private const float EyeReadSeconds = 3f;
+
+    /// <summary>The drawn fade above which the fade sphere shows (FadeSphere.Apply), so a frame is not the scene's own.</summary>
+    private const float FadedAbove = 0.001f;
 
     /// <summary>vr.02c: the panel on show at the title, the connection popup offline or the title menu with its buttons
     /// otherwise, is in both eyes' pixels.</summary>
@@ -166,6 +171,9 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         yield return WaitFor(() => ViewClear, 5f);
+        yield return PanelSettled(root);
+        if (!stepOk)
+            yield break;
 
         int passes = display.GetRenderPassCount();
         var on = new EyeImages(passes);
@@ -232,6 +240,46 @@ internal sealed partial class SelfTestRunner
         stepNote = string.IsNullOrEmpty(stepNote) ? note : stepNote + "; " + note;
     }
 
+    /// <summary>Waits until <paramref name="root"/> stops changing. A modal fades in by Lerp (Zorro.UI.Modal/Modal.cs:80)
+    /// and its plate is added once the fade lifts the content past 1 % (<see cref="BackplateView.Counts"/>), so reads taken
+    /// as it opens hold the panel's own change in the noise (#131). This watches the canvas, never the pixels, so an
+    /// undrawn panel still settles and fails at the reads.</summary>
+    IEnumerator PanelSettled(Canvas root)
+    {
+        var steady = new SteadyFrames();
+        var graphics = new List<UnityEngine.UI.Graphic>();
+        float end = Now + DrawnPixels.SettleSeconds;
+        while (steady.Feed(PanelLook(root, graphics)) < DrawnPixels.SettledFrames)
+        {
+            if (Now > end)
+            {
+                Fail(
+                    $"'{root.name}' still changing after {DrawnPixels.SettleSeconds:0} s, {graphics.Count} graphics"
+                );
+                yield break;
+            }
+            yield return null;
+        }
+    }
+
+    /// <summary>What is on a panel: each drawn graphic and its alpha to a sixteenth, fine enough for a fade and coarse
+    /// enough that its last slow steps end. A plate's own colour is left out: <see cref="BackdropProbe"/> eases it for
+    /// as long as the scene behind it moves.</summary>
+    static int PanelLook(Canvas root, List<UnityEngine.UI.Graphic> graphics)
+    {
+        root.GetComponentsInChildren(false, graphics);
+        int look = 17;
+        foreach (var g in graphics)
+        {
+            if (!g.isActiveAndEnabled)
+                continue;
+            float alpha = g.canvasRenderer.GetAlpha() * g.canvasRenderer.GetInheritedAlpha();
+            look = unchecked(look * 31 + g.GetInstanceID());
+            look = unchecked(look * 31 + Mathf.RoundToInt(alpha * 16f));
+        }
+        return look;
+    }
+
     /// <summary>A layer no project setting names that the camera draws, or -1.</summary>
     static int FreeLayer(Camera cam)
     {
@@ -244,33 +292,55 @@ internal sealed partial class SelfTestRunner
     private sealed class EyeImages
     {
         public readonly byte[][] Pixels;
+        public readonly Matrix4x4[] Views;
+        public readonly Matrix4x4[] Projections;
+        public readonly Rect[] Viewports;
         public int Width;
         public int Height;
         public int Pending;
         public string Problem;
 
-        public EyeImages(int passes) => Pixels = new byte[passes][];
+        public EyeImages(int passes)
+        {
+            Pixels = new byte[passes][];
+            Views = new Matrix4x4[passes];
+            Projections = new Matrix4x4[passes];
+            Viewports = new Rect[passes];
+        }
     }
 
     /// <summary>One frame of every eye target, read when the render context ends: endCameraRendering fires after the
-    /// first eye pass, with the second eye's target still holding an older frame.</summary>
+    /// first eye pass, with the second eye's target still holding an older frame. A frame under a fade is skipped: its
+    /// blink would read as a change in whatever two reads compare (a red on #5 was one), and
+    /// <see cref="EyeImages.Problem"/> names a fade that outlasts <paramref name="seconds"/>.</summary>
     static IEnumerator ReadEyes(
         Camera cam,
         UnityEngine.XR.XRDisplaySubsystem display,
-        EyeImages into
+        EyeImages into,
+        float seconds = EyeReadSeconds
     )
     {
         bool started = false;
+        float faded = 0f;
         Action<ScriptableRenderContext, List<Camera>> hook = null;
         hook = (_, cameras) =>
         {
             if (!cameras.Contains(cam))
                 return;
+            if (FadeView.Alpha > FadedAbove)
+            {
+                faded = FadeView.Alpha;
+                return;
+            }
             RenderPipelineManager.endContextRendering -= hook;
             started = true;
             for (int i = 0; i < into.Pixels.Length; i++)
             {
                 int eye = i;
+                var record = EyeMatrixFeature.Eyes[eye & 1];
+                into.Views[eye] = record.View;
+                into.Projections[eye] = record.Proj;
+                into.Viewports[eye] = record.Viewport;
                 var target = display.GetRenderTextureForRenderPass(eye);
                 if (target == null)
                 {
@@ -301,7 +371,7 @@ internal sealed partial class SelfTestRunner
         RenderPipelineManager.endContextRendering += hook;
         try
         {
-            float deadline = Time.unscaledTime + EyeReadSeconds;
+            float deadline = Time.unscaledTime + seconds;
             while ((!started || into.Pending > 0) && Time.unscaledTime < deadline)
                 yield return null;
         }
@@ -310,17 +380,19 @@ internal sealed partial class SelfTestRunner
             RenderPipelineManager.endContextRendering -= hook;
         }
         if (!started || into.Pending > 0)
-            into.Problem ??= started
-                ? "eye readback never came back"
+            into.Problem ??=
+                started ? "eye readback never came back"
+                : faded > 0f
+                    ? F($"every frame for {seconds:0.0} s was inside a fade (drawn {faded:0.00})")
                 : "the head camera did not render";
     }
 
-    void SaveEye(EyeImages eyes, string shot)
+    void SaveEye(EyeImages eyes, string shot, int eye = 0)
     {
-        if (eyes.Pixels[0] == null)
+        if (eyes.Pixels[eye] == null)
             return;
         var png = ImageConversion.EncodeArrayToPNG(
-            eyes.Pixels[0],
+            eyes.Pixels[eye],
             GraphicsFormat.R8G8B8A8_UNorm,
             (uint)eyes.Width,
             (uint)eyes.Height

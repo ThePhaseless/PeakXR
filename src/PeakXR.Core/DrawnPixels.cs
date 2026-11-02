@@ -17,6 +17,13 @@ public static class DrawnPixels
     /// panel, the title's connection popup, covers about 7 % of an eye; a laser dot well under 1 %.</summary>
     public const float MinShare = 0.01f;
 
+    /// <summary>Frames in a row a panel must look the same before its pixels are read. In the logged runs a popup's plate
+    /// came about 60 ms after it opened, two or three frames.</summary>
+    public const int SettledFrames = 6;
+
+    /// <summary>How long a panel may keep changing before the check says so by name.</summary>
+    public const float SettleSeconds = 3f;
+
     /// <summary>Share of pixels whose red, green or blue moved by at least <see cref="ChannelStep"/>; 0 for empty or
     /// differently sized images.</summary>
     public static float ChangedShare(byte[] a, byte[] b)
@@ -39,4 +46,19 @@ public static class DrawnPixels
     /// <summary>Whether a panel is in the eye: <paramref name="signal"/> is the share changed by hiding it,
     /// <paramref name="noise"/> the share changed by one more frame with it shown.</summary>
     public static bool PanelDrawn(float noise, float signal) => signal - noise >= MinShare;
+}
+
+/// <summary>Frames since a panel's look last changed; the look is any number that differs when the panel does.</summary>
+public sealed class SteadyFrames
+{
+    private int last;
+    private int frames = -1;
+
+    /// <summary>Takes this frame's look; returns how many frames in a row it has now matched the one before.</summary>
+    public int Feed(int look)
+    {
+        frames = frames >= 0 && look == last ? frames + 1 : 0;
+        last = look;
+        return frames;
+    }
 }
