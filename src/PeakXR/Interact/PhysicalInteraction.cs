@@ -2531,9 +2531,22 @@ internal static class PhysicalInteraction
             )
                 ? Vector3.Angle(above.normal, Vector3.up)
                 : -1f;
+            // The game's own sample a little past its last accepted climb point (SampleWall, CharacterClimbing.cs:413-422):
+            // what it probably refused (#60). climbNormal only updates on an accepted sample.
+            string sample = Physics.Linecast(
+                c.data.climbPos + c.data.climbNormal * 0.4f,
+                c.data.climbPos + Vector3.up * 0.05f - c.data.climbNormal,
+                out var next,
+                HelperFunctions.terrainMapMask,
+                QueryTriggerInteraction.Ignore
+            )
+                ? System.FormattableString.Invariant(
+                    $"{Vector3.Angle(next.normal, Vector3.up):0} deg from up on {next.collider.name}"
+                )
+                : "nothing";
             Plugin.Log.LogInfo(
                 System.FormattableString.Invariant(
-                    $"[interact.climb] climb ended by the game: grips L {LeftHand.Action}/{LeftHand.Grip.Held} R {RightHand.Action}/{RightHand.Grip.Held}, stick y {climbInput.y:0.00}, mantled {mantled}, since jump {c.data.sinceClimbJump:0.00} s, out of stamina {c.data.outOfStaminaFor:0.00} s, ragdoll control {c.data.currentRagdollControll:0.00}, grounded {c.data.isGrounded}, use released {c.input.usePrimaryWasReleased} (forced off while climbing), face 0.5 m up {faceAbove:0} deg from up"
+                    $"[interact.climb] climb ended by the game: grips L {LeftHand.Action}/{LeftHand.Grip.Held} R {RightHand.Action}/{RightHand.Grip.Held}, stick y {climbInput.y:0.00}, mantled {mantled}, since jump {c.data.sinceClimbJump:0.00} s, out of stamina {c.data.outOfStaminaFor:0.00} s, ragdoll control {c.data.currentRagdollControll:0.00}, grounded {c.data.isGrounded}, use released {c.input.usePrimaryWasReleased} (forced off while climbing), face 0.5 m up {faceAbove:0} deg from up, last normal {Vector3.Angle(c.data.climbNormal, Vector3.up):0} deg, next sample {sample}"
                 )
             );
             physicalClimb = false;

@@ -1106,9 +1106,10 @@ internal sealed partial class SelfTestRunner
         // On foot, so only walls near the player, nearest first; a wall the walk cannot reach (MP run 11: stuck 1.9 m
         // short) gives way to the next. Each try is bounded so all of them fit the step's budget.
         var walls = MpWalls(c);
-        RaycastHit wall = default;
-        bool reached = false;
+        var rig = VRRig.Instance;
         int tried = 0;
+        // A wall where the game itself let go during the pull, from ClimbWall's fail note.
+        string letGoNote = null;
         foreach (var (face, stand, profile) in walls)
         {
             if (tried++ >= MpWallTries)
@@ -1116,30 +1117,43 @@ internal sealed partial class SelfTestRunner
             yield return MpWalkBounded(() => stand, 0.4f, MpWallWalkSeconds);
             var miss = stand - c.Center;
             miss.y = 0f;
-            if (miss.magnitude <= 0.6f)
-            {
-                wall = face;
-                WallProfile = profile;
-                reached = true;
-                break;
-            }
+            if (miss.magnitude > 0.6f)
+                continue;
+            WallProfile = profile;
+            rig.RotateYaw(
+                Vector3.SignedAngle(Flat(rig.Head.forward), -Flat(face.normal), Vector3.up)
+            );
+            yield return Wait(0.6f);
+            climbLetGo = false;
+            yield return ClimbWall(face);
+            Script(VRInput.LeftHanded).Grip = 0f;
+            yield return WaitFor(() => !c.data.isClimbing, 2f);
+            yield return Wait(1f);
+            if (stepOk || !climbLetGo)
+                yield break;
+            // The game let go of this face during the pull (#60: SampleWall refuses a facet flatter than 50 degrees
+            // while the stick moves, on a coarse palm mesh): a bad wall, and vanilla's rule. On to the next.
+            letGoNote = failNote;
+            failNote = null;
+            stepOk = true;
+            Plugin.Log.LogInfo(
+                "[mptest] climb passes over a wall the game let go of: " + letGoNote
+            );
         }
-        if (!reached)
+        if (letGoNote != null)
         {
-            stepSkip =
-                walls.Count == 0
-                    ? $"no wall steep enough to climb ({MinWallAngle:0} deg from up or more from the hold to 1 m above) with walkable ground in front within {MpWallRange:0} m; online no test wall can be placed"
-                    : $"none of the {tried} nearest climbable walls ({walls.Count} within {MpWallRange:0} m) was reachable on foot";
+            Fail(letGoNote + F($" (the last of {tried} wall(s) tried)"));
             yield break;
         }
-        var rig = VRRig.Instance;
-        rig.RotateYaw(Vector3.SignedAngle(Flat(rig.Head.forward), -Flat(wall.normal), Vector3.up));
-        yield return Wait(0.6f);
-        yield return ClimbWall(wall);
-        Script(VRInput.LeftHanded).Grip = 0f;
-        yield return WaitFor(() => !c.data.isClimbing, 2f);
-        yield return Wait(1f);
+        stepSkip =
+            walls.Count == 0
+                ? $"no wall steep enough to climb ({MinWallAngle:0} deg from up or more from the hold to 1 m above) with walkable ground in front within {MpWallRange:0} m; online no test wall can be placed"
+                : $"none of the {tried} nearest climbable walls ({walls.Count} within {MpWallRange:0} m) was reachable on foot";
     }
+
+    /// <summary>The last <see cref="ClimbWall"/> failed because the game ended the climb during the pull with stamina
+    /// left and the body under control: the face, not the arm, ended it.</summary>
+    bool climbLetGo;
 
     /// <summary>Walls the climb step tries, the farthest it looks (m), and how long each walk may take: 5 walks of up
     /// to 25 s, plus the settle (about 14 s) and the climb itself (about 20 s), fit the step's 200 s. MP run 18 found
@@ -1926,7 +1940,10 @@ internal sealed partial class SelfTestRunner
                 left,
                 () =>
                 {
-                    if (world != null && (world.Center() - lay).sqrMagnitude < GripFollow * GripFollow)
+                    if (
+                        world != null
+                        && (world.Center() - lay).sqrMagnitude < GripFollow * GripFollow
+                    )
                         at = GripPoint(world);
                     return CapToReach(at);
                 },
@@ -1952,8 +1969,7 @@ internal sealed partial class SelfTestRunner
             )
         );
         headDrop = 0f;
-        grabMoved =
-            !stepOk && world != null && Vector3.Distance(world.Center(), lay) > GripFollow;
+        grabMoved = !stepOk && world != null && Vector3.Distance(world.Center(), lay) > GripFollow;
         if (!stepOk)
             yield break;
         // What was fetched, not what is held: a later failure appends this note (MP run 17: "holding TrailMix" after

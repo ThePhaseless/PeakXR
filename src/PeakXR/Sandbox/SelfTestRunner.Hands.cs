@@ -618,8 +618,8 @@ internal sealed partial class SelfTestRunner
             from.y - flightEnd.y + 1f,
             Physics.gravity.magnitude
         );
-        string firstContact = contact
-            ? F($"first contact {probe.Collider} {flight:0.0} m out")
+        string firstContact =
+            contact ? F($"first contact {probe.Collider} {flight:0.0} m out")
             : touchdown != null
                 ? F(
                     $"no contact on this copy, first {TouchdownHeight:0.0} m over the ground {flight:0.0} m out"
@@ -965,6 +965,11 @@ internal sealed partial class SelfTestRunner
         bool torn = UI.Affordances.CueLog.Capture.Felt(left, CueFeel.Cancel, released, out _);
         var note =
             $"wall {Vector3.Angle(hit.normal, Vector3.up):0} deg from up, body rose {rise:0.00} m ({stages}), climbing after the pull {stillClimbing}, hand over hand {handOverNote}, after letting go {c.data.isClimbing}, torn-off cue {torn}, {sticks}; wall {WallProfile}";
+        climbLetGo =
+            rise < MinPullRise
+            && !stillClimbing
+            && c.data.outOfStaminaFor <= 0f
+            && c.data.currentRagdollControll >= 0.25f;
         if (rise < MinPullRise)
             Fail("arm pull did not lift the body: " + note);
         else if (handOverFail)
