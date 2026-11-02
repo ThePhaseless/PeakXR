@@ -210,6 +210,32 @@ public class BodyLeanHeadBiasTests
         // The step's world eye against the frame's calibrated eye reads the 0.1 m walk as a backward lean.
         Assert.True(Vector3.Distance(gap, hipStep + eyeFromHip - calibrated) > 0.09f);
     }
+
+    [Fact]
+    public void ALookThatTurnedSinceTheStep_TurnsTheStepsEye()
+    {
+        // The next step stands the pose on the new look (CharacterRagdoll.RotateCharacter), so the eye read on the old one
+        // reads as a lean by the turn's chord: vr.300's 45 degree snap wanted f-0.072 r-0.183 for one step and bent 18.5.
+        var eyeAtOldLook = new Vector3(0f, 1f, 0.26f);
+        var eyeAtNewLook = new Vector3(
+            0.26f * MathF.Sin(MathF.PI / 4f),
+            1f,
+            0.26f * MathF.Cos(MathF.PI / 4f)
+        );
+        var hip = new Vector3(4f, 1f, 7f);
+        var bias = BodyLean.HeadBias(eyeAtOldLook, hip, hip, turned: 45f);
+        TestUtil.Near(eyeAtNewLook, bias, 1e-5f);
+    }
+
+    [Fact]
+    public void ALookThatTurnedSinceTheStep_KeepsTheGapBetweenEyes()
+    {
+        // Only the step's eye turns: the frame's calibrated eye already stands on the new look.
+        var hip = new Vector3(4f, 1f, 7f);
+        var calibrated = hip + new Vector3(0.1f, 1f, 0.1f);
+        var bias = BodyLean.HeadBias(new Vector3(-0.26f, 1f, 0f), hip, calibrated, turned: -90f);
+        TestUtil.Near(new Vector3(-0.1f, 0f, -0.36f), bias, 1e-5f);
+    }
 }
 
 public class BodyLeanHeldHeadTests

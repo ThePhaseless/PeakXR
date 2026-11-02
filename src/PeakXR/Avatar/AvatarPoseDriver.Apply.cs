@@ -571,6 +571,7 @@ public partial class AvatarPoseDriver
         forward.y = 0f;
         var eye = head.transform.TransformPoint(eyeInHead);
         UnleanedEye = eye - hip.transform.position;
+        UnleanedYaw = Rig.RigDriver.BodyHeading(c, 0f);
         var target = Pose.HeadPosition + AnimatedOffset();
         LeanGate = ClosedGate(c, w, forward);
         bool allowed = false;
@@ -672,6 +673,9 @@ public partial class AvatarPoseDriver
     /// avatar.local carries it onto the rendered frame's hip (<see cref="BodyLean.HeadBias"/>) and sends the head
     /// relative to it, so the head on the calibrated eyes is upright.</summary>
     internal Vector3? UnleanedEye { get; private set; }
+
+    /// <summary>The look's heading (degrees) on the step that read <see cref="UnleanedEye"/>.</summary>
+    internal float UnleanedYaw { get; private set; }
 
     private float nextLeanTrace;
 

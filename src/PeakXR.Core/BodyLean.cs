@@ -127,10 +127,21 @@ public static class BodyLean
     /// What to add to the tracked head so the lean starts from the calibrated eyes: the unbent animated eyes
     /// (<paramref name="eyeFromHip"/>, relative to the animated hip, taken on a physics step) carried onto the
     /// rendered frame's physical <paramref name="hip"/>, minus that frame's <paramref name="calibratedEye"/>.
-    /// Both ends on the same frame, so a moving body adds no bias.
+    /// Both ends on the same frame, so a moving body adds no bias. The next step stands the pose on the look this frame
+    /// wrote (<c>CharacterRagdoll.RotateCharacter</c>), so the eye turns by <paramref name="turned"/> (degrees), the look's
+    /// change since that step. Left on the old look, a 45 degree snap read as a lean by the turn's chord for one step:
+    /// want 0.197-0.232 m, 16-22 degrees of target under a still head (vr.300, #123).
     /// </summary>
-    public static Vector3 HeadBias(Vector3 eyeFromHip, Vector3 hip, Vector3 calibratedEye) =>
-        hip + eyeFromHip - calibratedEye;
+    public static Vector3 HeadBias(
+        Vector3 eyeFromHip,
+        Vector3 hip,
+        Vector3 calibratedEye,
+        float turned = 0f
+    )
+    {
+        var level = YawMath.Rotate(new Vector2(eyeFromHip.X, eyeFromHip.Z), turned);
+        return hip + new Vector3(level.X, eyeFromHip.Y, level.Y) - calibratedEye;
+    }
 
     /// <summary>Horizontal head offset (m) the lean ignores: the hip's own sway and frame timing read as about
     /// 0.01 m (MP run 9), and bending for it pushed the sway on (a still head, a body rocking at 0.04-0.15 m/s).</summary>
