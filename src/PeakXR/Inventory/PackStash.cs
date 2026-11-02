@@ -378,8 +378,15 @@ internal sealed class PackStash : IGripExtension
         if (angle > PackDrop.PointHold)
             return;
         // The aim picks, never the distance (OutOfReach shows on the aimed pack); a pack with the way open beats one
-        // behind rock, which still takes the pick when it is the only one, so the hand hears why (#144).
+        // behind rock, which still takes the pick when it is the only one, so the hand hears why (#144). Only a pack the
+        // eye can see, by its pivot or its top: a red ring for a pack hidden behind a wall says nothing a player can use.
         pick.Blocked = !onRay && Occluded(from, pick.At, target);
+        if (
+            pick.Blocked
+            && Occluded(eye, pick.At, target)
+            && Occluded(eye, pick.At + Vector3.up * PackTopRise, target)
+        )
+            return;
         t.Offer(pick.Id, angle, !pick.Blocked);
         if (onRay)
             walkRayId = pick.Id;
@@ -391,6 +398,10 @@ internal sealed class PackStash : IGripExtension
             walkBest = pick;
         }
     }
+
+    /// <summary>A pack's top above its pivot (m): under the Backpack box's 0.45 m from centre to top
+    /// (Core <see cref="ItemDrawnBox"/>), so it stays on the pack as it lies or is worn.</summary>
+    internal const float PackTopRise = 0.4f;
 
     /// <summary>Vanilla's occlusion test (Interaction.cs:257): terrain or map between, unless the hit is the pack.</summary>
     private static bool Occluded(Vector3 from, Vector3 to, IInteractible target)
