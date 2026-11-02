@@ -242,7 +242,7 @@ public class HandOverTests
         var h = Mouth();
         Assert.Equal(HandOverState.None, h.Update(true, false, false, false, 0.2f));
         Assert.Equal(HandOverState.Refuse, h.Update(true, false, false, false, 0.2f));
-        Assert.Equal(HandOverState.None, h.Update(true, false, false, false, 0.2f));
+        Assert.Equal(HandOverState.Refused, h.Update(true, false, false, false, 0.2f));
         h.Update(false, false, false, false, 0.2f);
         h.Update(true, false, false, false, 0.2f);
         Assert.Equal(HandOverState.Refuse, h.Update(true, false, false, false, 0.2f));
@@ -383,7 +383,7 @@ public class HandOverTests
         Assert.Equal(HandOverState.None, Near(h, usable: false));
         Assert.Equal(HandOverState.Refuse, Near(h, usable: false, dt: 0.3f));
         for (int i = 0; i < 20; i++)
-            Assert.Equal(HandOverState.None, Near(h, usable: false));
+            Assert.Equal(HandOverState.Refused, Near(h, usable: false));
         // Out of the band and back: a new try.
         h.Update(false, false, false, false, 0.1f);
         Near(h, usable: false, dt: 0.1f);
@@ -423,8 +423,8 @@ public class HandOverTests
         Near(h, usable: false, dt: 0.1f);
         Assert.Equal(HandOverState.Refuse, Near(h, usable: false, dt: 0.3f));
         Assert.Equal(HandOverState.None, Near(h, usable: false, nearGap: 0.5f));
-        Assert.Equal(HandOverState.None, Near(h, usable: false, dt: 0.4f));
-        Assert.Equal(HandOverState.None, Near(h, usable: false, dt: 0.4f));
+        Assert.Equal(HandOverState.Refused, Near(h, usable: false, dt: 0.4f));
+        Assert.Equal(HandOverState.Refused, Near(h, usable: false, dt: 0.4f));
     }
 
     [Fact]
@@ -493,7 +493,77 @@ public class HandOverTests
         h.Update(true, false, false, false, 0.1f);
         Assert.Equal(HandOverState.Refuse, h.Update(true, false, false, false, 0.3f));
         for (int i = 0; i < 20; i++)
-            Assert.Equal(HandOverState.None, Near(h, usable: false));
+            Assert.NotEqual(HandOverState.Refuse, Near(h, usable: false));
+        Assert.Equal(HandOverState.Refused, Near(h, usable: false));
+    }
+
+    [Fact]
+    public void ARefusedItemKeptAgainstThemStaysRefused_NeverSilent()
+    {
+        // #112, modded B: the near band's CantUse fired, then the host's body kept the Compass 0.22 m off with its
+        // controller's place elsewhere, and nothing more came for 8 s.
+        var h = Mouth();
+        Near(h, usable: false, dt: 0.1f);
+        Assert.Equal(HandOverState.Refuse, Near(h, usable: false, dt: 0.3f));
+        for (int i = 0; i < 20; i++)
+            Assert.Equal(
+                HandOverState.Refused,
+                h.Update(true, false, false, false, 0.1f, true, placeGap: 0.63f, nearGap: 0.22f)
+            );
+    }
+
+    [Fact]
+    public void ARefusedItemBroughtToTheMouthIsRefusedThereToo()
+    {
+        var h = Mouth();
+        Near(h, usable: false, dt: 0.1f);
+        Assert.Equal(HandOverState.Refuse, Near(h, usable: false, dt: 0.3f));
+        Assert.Equal(
+            HandOverState.Refused,
+            h.Update(true, false, false, false, 0.1f, true, placeGap: 0.1f, nearGap: 0.1f)
+        );
+        Assert.Equal(
+            HandOverState.Refuse,
+            h.Update(true, false, false, false, 0.3f, true, placeGap: 0.1f, nearGap: 0.1f)
+        );
+        Assert.Equal(
+            HandOverState.Refused,
+            h.Update(true, false, false, false, 0.1f, true, placeGap: 0.1f, nearGap: 0.1f)
+        );
+    }
+
+    [Fact]
+    public void ASqueezeOnARefusedItemAtTheMouthRefusesAgain_EachPress()
+    {
+        var h = Mouth();
+        h.Update(true, false, false, false, 0.1f, true, placeGap: 0.1f);
+        Assert.Equal(
+            HandOverState.Refuse,
+            h.Update(true, false, false, false, 0.3f, true, placeGap: 0.1f)
+        );
+        Assert.Equal(
+            HandOverState.Refused,
+            h.Update(true, false, false, false, 0.1f, true, placeGap: 0.1f)
+        );
+        Assert.Equal(
+            HandOverState.Refuse,
+            h.Update(true, true, false, false, 0.1f, true, placeGap: 0.1f)
+        );
+        h.Update(true, false, false, false, 0.1f, true, placeGap: 0.1f);
+        Assert.Equal(
+            HandOverState.Refuse,
+            h.Update(true, true, false, false, 0.1f, true, placeGap: 0.1f)
+        );
+    }
+
+    [Fact]
+    public void ALastingRefusalNeedsNoLook_ButTheFirstDoes()
+    {
+        var h = Mouth();
+        Near(h, usable: false, dt: 0.4f, looking: false);
+        Assert.Equal(HandOverState.None, Near(h, usable: false, looking: false));
+        Assert.Equal(HandOverState.Refuse, Near(h, usable: false));
+        Assert.Equal(HandOverState.Refused, Near(h, usable: false, looking: false));
     }
 
     [Theory]

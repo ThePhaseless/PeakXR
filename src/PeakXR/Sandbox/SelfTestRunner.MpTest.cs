@@ -3186,17 +3186,20 @@ internal sealed partial class SelfTestRunner
         var nearCue = cueNote;
         EndGlance();
         Affordance.ResetGate();
-        // Close enough that the item reaches the mouth with the arm short of full stretch (MP run 10: from 0.6 m the
-        // hand, capped at arm's reach, held the Frisbee 0.45 m from the head, outside the 0.22 m mouth zone).
-        // Not a must-arrive: the host's own body can stop the walk a little short; the reach check below decides.
         // Carried back on the way, as feed does: held ahead, the item met the host's body first and the weld kept it
         // there, short of the mouth, for the whole hold (#112: a Frisbee 0.24 m off with the hand 1.00 m short).
         yield return CarryFoodBack(LocalHold.ItemInLeftHand);
-        yield return WalkTo(HostCenter, 0.45f, false);
         var host = Host();
         var rig = VRRig.Instance;
         // The zone SocialHands.UpdateFeed tests: the item's nearest point within FeedRadius of the Head bodypart.
         Vector3 Mouth() => HostPart(host, BodypartType.Head);
+        bool left = LocalHold.ItemInLeftHand;
+        // The item's place on the controller, read here where the air is clear. Read at the host, it took the body's keep
+        // for the item's place (#112, modded B: 0.46 m on a Compass, with A's eye 0.28 m from the mouth after a walk to
+        // 0.45 m, so the hand never brought it to the mouth). It stays read once: read every frame it fed the weld's lag
+        // back into the aim (MP run 25: the hand jumped 0.9 m as the weld let go and rejoined, and the item left the mouth).
+        yield return HoldingHandSettled();
+        var grip = HeldGrip.Of(rig, Script(left), item);
         // The host's mouth must be within arm's reach of the head, not on a ledge below (MP run 7: the hand was driven
         // 1.4 m under the floor toward a host down the slope).
         yield return MpStepToMouth(host);
@@ -3215,38 +3218,47 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         Face(Mouth());
-        bool left = LocalHold.ItemInLeftHand;
         // The look on the host's face, as a player feeding a friend looks at them: following a hand that hung low took
         // the look 60 deg down (MP run 17).
         LookAtPoint(Mouth());
-        // The item's place on the hand is taken once the hand holds it again: one taken while the weld lagged put the
-        // aim far off the item.
-        yield return HoldingHandSettled();
-        float mark = CueMark();
         // A hand-over (HandOver): resting at the mouth with the trigger up is the try, as with food (issue #14), so
-        // after the mouth dwell it is refused with no squeeze.
+        // after the mouth dwell it is refused with no squeeze. Until then a cue may still be the near band's, on a new
+        // visit (the walk back can end the last), so only one from inside the zone counts as the mouth's.
+        float mark = CueMark();
+        bool inZoneYet = false;
+        bool mouthCue = false;
         float end = Now + 8f;
         float best = float.MaxValue;
         float atMouth = 0f;
-        // The item's place on the controller, taken once while it rests in the hand: reading it every frame from
-        // the item fed the weld's lag back into the aim (MP run 25: the hand jumped 0.9 m as the weld let go and
-        // rejoined, and the item left the mouth).
-        var grip = HeldGrip.Of(rig, Script(left), item);
+        float standsFor = 0f;
+        float mouthPlace = float.MaxValue;
         // The hand keeps its turn through the hold: re-aimed from the head every frame, the turn moved the item's
         // offset, which moved the aim, which turned the hand again (MP run 17: the hand swung 0.15 m every other frame).
         HoldTurn(left, Script(left).Rotation);
         var standAt = c.Center;
         float shortMax = 0f;
         var driver = AvatarPoseDriver.Of(c);
+        var social = Social.SocialHands.Instance;
         while (Now < end && item != null && HeldItem() == item)
         {
             // The zone's own measure (SocialHands.UpdateFeed): the item's nearest point, as feed counts it.
             float gapNow = Social.SocialHands.FeedGap(item, Mouth());
             best = Mathf.Min(best, gapNow);
-            atMouth =
-                gapNow <= Social.SocialHands.FeedRadius
-                    ? atMouth + Time.unscaledDeltaTime
-                    : atMouth;
+            bool inZone = gapNow <= Social.SocialHands.FeedRadius;
+            if (inZone && !inZoneYet)
+            {
+                inZoneYet = true;
+                // The near band's cue a moment ago must not swallow the mouth's in the rate limit.
+                Affordance.ResetGate();
+                mark = CueMark();
+            }
+            atMouth = inZone ? atMouth + Time.unscaledDeltaTime : atMouth;
+            if (inZone)
+                mouthPlace = Mathf.Min(mouthPlace, Social.SocialHands.FeedPlaceGap(item, Mouth()));
+            standsFor =
+                social.FeedState == HandOverState.Refused
+                    ? standsFor + Time.unscaledDeltaTime
+                    : standsFor;
             if (driver != null && driver.ReachGap(left, out float shortNow))
                 shortMax = Mathf.Max(shortMax, shortNow);
             // The item, not the hand, on the moving mouth every frame, as feed does (MP run 24: chasing the gap kept a
@@ -3263,21 +3275,47 @@ internal sealed partial class SelfTestRunner
                         .U()
                     : goal
             );
-            if (CueLog.Capture.Fired(left, DenyReason.CantUse, mark, true, out _))
+            if (inZoneYet && CueLog.Capture.Fired(left, DenyReason.CantUse, mark, true, out _))
+            {
+                mouthCue = true;
+                break;
+            }
+            // A refusal that stands is the answer too, with the item kept short of the zone: once the hand has had time
+            // to bring it in, there is nothing more to wait for.
+            if (!inZoneYet && standsFor >= 3f)
                 break;
             yield return null;
         }
-        yield return ExpectCue(left, DenyReason.CantUse, mark, true, 0.5f);
         string itemName = item != null ? item.name : "the item";
+        string held = F(
+            $"{itemName} came within {GapNote(best)} of the host's mouth (nearest point, zone {Social.SocialHands.FeedRadius:0.00}), {atMouth:0.0} s at the mouth, its place {GapNote(mouthPlace)} off there, the refusal standing {standsFor:0.0} s; A's eye {gap:0.00} m from it at the start, the body moved {FlatDistance(c.Center, standAt):0.00} m during the hold, the drawn hand up to {shortMax:0.00} m short of its controller, the item {grip.Length:0.00} m from the controller"
+        );
+        // Silence is the failure (#112): the mouth's own refusal, or the near band's still standing.
+        if (!mouthCue && standsFor <= 0f)
+        {
+            Fail("nothing said while the item rested against the host: " + held);
+            yield break;
+        }
+        var restCue = mouthCue ? cueNote : "the near band's refusal still standing as a ring";
+        if (mouthCue)
+        {
+            yield return ExpectCue(left, DenyReason.CantUse, mark, true, 0.5f);
+            if (!stepOk)
+                yield break;
+            restCue = cueNote;
+        }
+        // The squeeze is the other try: refused in full on each press, wherever the body kept the item (HandOver.Step at
+        // the mouth, the item's own refusal beside it).
+        Affordance.ResetGate();
+        float squeeze = CueMark();
+        Script(left).Trigger = 1f;
+        yield return ExpectCue(left, DenyReason.CantUse, squeeze, true, 0.5f);
+        Script(left).Trigger = 0f;
         if (stepOk)
             stepNote =
-                $"just short of the mouth: {nearCue}; {itemName} resting at the host's mouth, trigger up, refused after {atMouth:0.0} s there (closest {best:0.00} m); {cueNote}";
+                $"just short of the mouth: {nearCue}; {held}; at rest: {restCue}; squeezed: {cueNote}";
         else
-            Note(
-                F(
-                    $"{itemName} came within {best:0.00} m of the host's mouth (nearest point, zone {Social.SocialHands.FeedRadius:0.00}), {atMouth:0.0} s at the mouth; A's eye {gap:0.00} m from it at the start, the body moved {FlatDistance(c.Center, standAt):0.00} m during the hold, the drawn hand up to {shortMax:0.00} m short of its controller, the item {grip.Length:0.00} m from the controller"
-                )
-            );
+            Note(held);
     }
 
     /// <summary>reach-deny: an empty hand grips a host who needs no help (CharacterGrabbing.TargetCanBeHelped,

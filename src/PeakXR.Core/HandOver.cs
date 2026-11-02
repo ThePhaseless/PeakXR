@@ -46,6 +46,9 @@ public enum HandOverState : byte
 
     /// <summary>The trigger was pressed in the zone with an item they cannot take: refuse, once per press.</summary>
     Refuse,
+
+    /// <summary>An item they cannot take stays where it was refused: the refusal stands, in sight and silent.</summary>
+    Refused,
 }
 
 /// <summary>
@@ -171,8 +174,10 @@ public sealed class HandOver
 
     /// <summary>Just short of the zone with the trigger up, for <see cref="Dwell"/>: say so instead of nothing (#112).
     /// An item they can take gets the ring on the spot for as long as it rests there; one they cannot is refused once
-    /// per visit, and only with the view on the spot: it is a cue, and an arm resting past a friend asked nothing. The
-    /// ring stays silent, so it needs no look. The trigger stays the item's own here, and its own refusal speaks
+    /// per visit, and only with the view on the spot: it is a cue, and an arm resting past a friend asked nothing. After
+    /// that the refusal stands (<see cref="HandOverState.Refused"/>) while it rests there: a buzz every second is no
+    /// answer to an item pressed on a friend, and nothing at all reads as a hand-over still to come. The
+    /// rings stay silent, so they need no look. The trigger stays the item's own here, and its own refusal speaks
     /// (<see cref="Context"/>).</summary>
     private HandOverState NearStep(bool trigger, bool usable, float dt, bool counts, bool looking)
     {
@@ -186,14 +191,17 @@ public sealed class HandOver
             return HandOverState.None;
         if (usable)
             return HandOverState.Hint;
-        if (nearRefused || !looking)
+        if (nearRefused)
+            return HandOverState.Refused;
+        if (!looking)
             return HandOverState.None;
         nearRefused = true;
         return HandOverState.Refuse;
     }
 
     /// <summary>Held in the zone for <see cref="Dwell"/>: an item they can take is applied for as long as it stays;
-    /// one they cannot is refused once per visit. Anything but <paramref name="counts"/> restarts a dwell not yet done.</summary>
+    /// one they cannot is refused once per visit, even if the near band already did, and the refusal then stands, as does
+    /// the near band's while it waits. Anything but <paramref name="counts"/> restarts a dwell not yet done.</summary>
     private HandOverState DwellStep(bool usable, HandOverState state, float dt, bool counts)
     {
         if (counts)
@@ -201,7 +209,7 @@ public sealed class HandOver
         else if (inFor < Dwell)
             inFor = 0f;
         if (inFor < Dwell)
-            return state;
+            return !usable && nearRefused ? HandOverState.Refused : state;
         if (usable)
         {
             dwelt = true;
@@ -209,7 +217,7 @@ public sealed class HandOver
             return HandOverState.Apply;
         }
         if (dwelt)
-            return state;
+            return HandOverState.Refused;
         dwelt = true;
         return HandOverState.Refuse;
     }

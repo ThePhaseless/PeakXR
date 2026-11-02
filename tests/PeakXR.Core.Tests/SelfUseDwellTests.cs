@@ -496,6 +496,6 @@ public class SelfUseDwellTests
         near.EndZone();
         Assert.Equal(HandOverState.None, Step(false));
         Step(true);
-        Assert.Equal(HandOverState.None, Step(true));
+        Assert.Equal(HandOverState.Refused, Step(true));
     }
 }

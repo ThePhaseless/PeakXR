@@ -1360,7 +1360,8 @@ internal sealed class SocialHands : IGripExtension
     /// teal ring marks the mouth or chest while in range and through the cast. An item they cannot take is refused at
     /// the mouth after the dwell or on the squeeze (CharacterInteractible.HasItemCanUseOnFriend, :90), and so is a bot (:128).
     /// Rested just short of the zone (<see cref="NearFriendRadius"/>), the ring comes too, or the refusal with the view on
-    /// them (#112), and a
+    /// them (#112), and a refused item resting there or at the mouth keeps a silent red ring at the item, so it is never
+    /// left with nothing, while a squeeze at the mouth refuses again in full. A
     /// friend's body holding the item off the spot its controller has reached counts as there.
     /// </summary>
     private bool UpdateFeed(Character c, float dt)
@@ -1468,6 +1469,9 @@ internal sealed class SocialHands : IGripExtension
                 return false;
             case HandOverState.Refuse:
                 Affordance.Deny(left, point, DenyReason.CantUse, default, item);
+                return false;
+            case HandOverState.Refused:
+                Affordance.Hover(left, point, DenyReason.CantUse);
                 return false;
             case HandOverState.Apply:
                 // The friend stays marked while the game's feed cast fills its ring at the hand.
