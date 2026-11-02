@@ -359,8 +359,10 @@ public class HandOverTests
         bool trigger = false,
         bool ownUse = false,
         bool still = true,
-        float placeGap = 0.4f
-    ) => h.Update(false, trigger, usable, ownUse, dt, still, placeGap, nearBand: true);
+        float placeGap = 0.4f,
+        float nearGap = 0.35f,
+        bool looking = true
+    ) => h.Update(false, trigger, usable, ownUse, dt, still, placeGap, nearGap, looking);
 
     [Fact]
     public void JustShortOfTheMouth_FoodGetsTheRingAfterTheDwell()
@@ -412,6 +414,56 @@ public class HandOverTests
         Assert.Equal(HandOverState.None, Near(h, dt: 0.01f, still: false));
         Assert.Equal(HandOverState.None, Near(h, dt: 0.2f));
         Assert.Equal(HandOverState.Hint, Near(h, dt: 0.2f));
+    }
+
+    [Fact]
+    public void JustShortOfTheMouth_AWobblePastTheBandIsTheSameVisit()
+    {
+        var h = Mouth();
+        Near(h, usable: false, dt: 0.1f);
+        Assert.Equal(HandOverState.Refuse, Near(h, usable: false, dt: 0.3f));
+        Assert.Equal(HandOverState.None, Near(h, usable: false, nearGap: 0.5f));
+        Assert.Equal(HandOverState.None, Near(h, usable: false, dt: 0.4f));
+        Assert.Equal(HandOverState.None, Near(h, usable: false, dt: 0.4f));
+    }
+
+    [Fact]
+    public void JustShortOfTheMouth_ClearlyPastTheBandIsANewVisit()
+    {
+        var h = Mouth();
+        Near(h, usable: false, dt: 0.1f);
+        Assert.Equal(HandOverState.Refuse, Near(h, usable: false, dt: 0.3f));
+        Assert.Equal(HandOverState.None, Near(h, usable: false, nearGap: 0.51f));
+        Near(h, usable: false, dt: 0.1f);
+        Assert.Equal(HandOverState.Refuse, Near(h, usable: false, dt: 0.3f));
+    }
+
+    [Fact]
+    public void JustShortOfTheMouth_ARefusalWaitsForTheLook()
+    {
+        var h = Mouth();
+        for (int i = 0; i < 20; i++)
+            Assert.Equal(HandOverState.None, Near(h, usable: false, looking: false));
+        Assert.Equal(HandOverState.Refuse, Near(h, usable: false));
+    }
+
+    [Fact]
+    public void JustShortOfTheMouth_TheRingNeedsNoLook()
+    {
+        var h = Mouth();
+        Near(h, dt: 0.1f, looking: false);
+        Assert.Equal(HandOverState.Hint, Near(h, dt: 0.3f, looking: false));
+    }
+
+    [Fact]
+    public void AtTheMouth_ARefusalNeedsNoLook()
+    {
+        var h = Mouth();
+        h.Update(true, false, false, false, 0.1f, true, 0.1f, looking: false);
+        Assert.Equal(
+            HandOverState.Refuse,
+            h.Update(true, false, false, false, 0.3f, true, 0.1f, looking: false)
+        );
     }
 
     [Fact]

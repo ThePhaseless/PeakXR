@@ -100,6 +100,12 @@ public sealed class HandOver
     /// there, not one whose item a friend's body keeps while it is elsewhere.</summary>
     public const float NearPlaceRadius = 0.45f;
 
+    /// <summary>A visit to the near band ends only this far (m) past it: a wobble over its edge refuses nothing twice.</summary>
+    public const float NearExitMargin = 0.05f;
+
+    /// <summary>The near band's refusal comes with the view at most this far (degrees) off the spot.</summary>
+    public const float NearLookDegrees = 45f;
+
     /// <summary>A friend's body holds the item off the spot its controller has reached: it cannot get closer, and
     /// letting go would only snap it inside them (#116, #119), so it counts as there (#112: a Frisbee 0.24 m off on a
     /// 0.22 m zone, with the hand 1.00 m short).</summary>
@@ -126,7 +132,9 @@ public sealed class HandOver
     /// <param name="placeGap">The item at its controller-held place from the mouth or chest (m,
     /// <see cref="FeedZone.PlaceGap"/>): the <see cref="Dwell"/> only counts within <see cref="PlaceRadius"/>. The
     /// trigger does not read it.</param>
-    /// <param name="nearBand">Out of the zone, the item is still just short of it (<see cref="NearStep"/>).</param>
+    /// <param name="nearGap">The item from the nearest friend's mouth or chest (m): out of the zone, within
+    /// <see cref="NearPlaceRadius"/> it is just short of it (<see cref="NearStep"/>).</param>
+    /// <param name="looking">The view is on the spot (<see cref="NearLookDegrees"/>).</param>
     public HandOverState Update(
         bool inZone,
         bool trigger,
@@ -135,7 +143,8 @@ public sealed class HandOver
         float dt = 0f,
         bool still = true,
         float placeGap = 0f,
-        bool nearBand = false
+        float nearGap = float.PositiveInfinity,
+        bool looking = true
     )
     {
         if (!inZone && applying && usable && (trigger || dwelt) && (outFor += dt) < Grace)
@@ -144,10 +153,11 @@ public sealed class HandOver
         if (!inZone || (!usable && ownUse))
         {
             ResetZone();
-            if (nearBand && !inZone && (usable || !ownUse))
-                return NearStep(trigger, usable, dt, still && placeGap <= NearPlaceRadius);
+            if (nearGap > NearPlaceRadius + NearExitMargin)
+                nearRefused = false;
+            if (nearGap <= NearPlaceRadius && !inZone && (usable || !ownUse))
+                return NearStep(trigger, usable, dt, still && placeGap <= NearPlaceRadius, looking);
             nearFor = 0f;
-            nearRefused = false;
             return HandOverState.None;
         }
         nearFor = 0f;
@@ -161,8 +171,10 @@ public sealed class HandOver
 
     /// <summary>Just short of the zone with the trigger up, for <see cref="Dwell"/>: say so instead of nothing (#112).
     /// An item they can take gets the ring on the spot for as long as it rests there; one they cannot is refused once
-    /// per visit. The trigger stays the item's own here, and its own refusal speaks (<see cref="Context"/>).</summary>
-    private HandOverState NearStep(bool trigger, bool usable, float dt, bool counts)
+    /// per visit, and only with the view on the spot: it is a cue, and an arm resting past a friend asked nothing. The
+    /// ring stays silent, so it needs no look. The trigger stays the item's own here, and its own refusal speaks
+    /// (<see cref="Context"/>).</summary>
+    private HandOverState NearStep(bool trigger, bool usable, float dt, bool counts, bool looking)
     {
         if (trigger || !counts)
         {
@@ -174,7 +186,7 @@ public sealed class HandOver
             return HandOverState.None;
         if (usable)
             return HandOverState.Hint;
-        if (nearRefused)
+        if (nearRefused || !looking)
             return HandOverState.None;
         nearRefused = true;
         return HandOverState.Refuse;

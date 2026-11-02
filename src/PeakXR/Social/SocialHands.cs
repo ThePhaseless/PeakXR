@@ -1358,7 +1358,8 @@ internal sealed class SocialHands : IGripExtension
     /// (CharacterSyncer.cs:116-117) and their ragdoll simulates here between them (CharacterMovement.cs:295, :683-697). A
     /// teal ring marks the mouth or chest while in range and through the cast. An item they cannot take is refused at
     /// the mouth after the dwell or on the squeeze (CharacterInteractible.HasItemCanUseOnFriend, :90), and so is a bot (:128).
-    /// Rested just short of the zone (<see cref="NearFriendRadius"/>), the ring or the refusal comes too (#112), and a
+    /// Rested just short of the zone (<see cref="NearFriendRadius"/>), the ring comes too, or the refusal with the view on
+    /// them (#112), and a
     /// friend's body holding the item off the spot its controller has reached counts as there.
     /// </summary>
     private bool UpdateFeed(Character c, float dt)
@@ -1378,9 +1379,12 @@ internal sealed class SocialHands : IGripExtension
                 : BodypartType.Head;
         float grow = part == BodypartType.Torso ? 0.08f : 0f;
         var box = ItemBounds(item);
-        var near = NearestPart(c, part, box, NearFriendRadius + grow);
-        nearFriendMouth = near != null;
-        nearFriendSpot = near != null ? PartPosition(near, part, point) : null;
+        // Out to the near band's exit: a wobble over its edge is the same visit (HandOver.NearExitMargin).
+        var near = NearestPart(c, part, box, NearFriendRadius + HandOver.NearExitMargin + grow);
+        var nearSpot = near != null ? PartPosition(near, part, point) : point;
+        float nearGap = near != null ? Gap(box, nearSpot) - grow : float.PositiveInfinity;
+        nearFriendMouth = nearGap <= NearFriendRadius;
+        nearFriendSpot = nearFriendMouth ? nearSpot : null;
         // The friend being fed stays the target through a short wobble out of the zone (HandOver.Grace).
         var friend = feedCandidate;
         if (
@@ -1427,6 +1431,10 @@ internal sealed class SocialHands : IGripExtension
         float feederSpeed = LevelSpeed(c);
         float friendSpeed = LevelSpeed(who);
         float placeGap = PlaceGap(c, item, box, spot);
+        var eye = VRRig.Instance != null ? VRRig.Instance.Head : null;
+        bool looking =
+            eye != null
+            && Vector3.Angle(eye.forward, spot - eye.position) <= HandOver.NearLookDegrees;
         var state = handOver.Update(
             inZone,
             VRInput.Hand(left).Trigger > HandOverTrigger,
@@ -1436,7 +1444,8 @@ internal sealed class SocialHands : IGripExtension
             // Never on the walk up, or as a friend walks into it (#93, #119).
             HandOver.Still(feederSpeed, friendSpeed),
             placeGap - grow,
-            nearFriendMouth
+            nearGap,
+            looking
         );
         FeedState = state;
         if (!inZone && state == HandOverState.Apply)

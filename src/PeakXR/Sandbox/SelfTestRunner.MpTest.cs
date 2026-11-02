@@ -3012,6 +3012,8 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         yield return MpStandOff(Host());
+        // The near band's refusal comes only with the view on the spot (HandOver.NearLookDegrees).
+        LookAtPoint(HostPart(Host(), BodypartType.Head));
         Affordance.ResetGate();
         float nearMark = CueMark();
         yield return MpRestInBand(
@@ -3029,6 +3031,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         var nearCue = cueNote;
+        EndGlance();
         Affordance.ResetGate();
         // Close enough that the item reaches the mouth with the arm short of full stretch (MP run 10: from 0.6 m the
         // hand, capped at arm's reach, held the Frisbee 0.45 m from the head, outside the 0.22 m mouth zone).
