@@ -288,14 +288,14 @@ internal static class HeldGestures
                 eye
             )
             .N();
-        float distance = Mathf.Min(
+        float torso = Mathf.Min(
             BodyZones.TorsoDistance(point, head.position.N(), flat.N(), TorsoRadius),
             BodyZones.TorsoDistance(itemPoint, head.position.N(), flat.N(), TorsoRadius)
         );
-        bool handThere = BodyZones.HandAtTorso(point, head.position.N(), flat.N(), TorsoRadius);
 
         // The other forearm, unless both hands are on the item.
-        bool onForearm = false;
+        float arm = float.PositiveInfinity;
+        bool handAtArm = false;
         var other = rig.Hand(!ItemGestures.HoldLeft);
         if (!LocalHold.TwoHand && other != null && VRInput.Hand(!ItemGestures.HoldLeft).Tracked)
         {
@@ -311,23 +311,26 @@ internal static class HeldGestures
                 )
                 .N();
             var otherReal = RealScale.Real(other.position, eye).N();
-            float arm =
+            arm =
                 Mathf.Min(
                     BodyZones.ForearmDistance(point, otherReal, other.Fingers().N()),
                     BodyZones.ForearmDistance(onArm, otherReal, other.Fingers().N())
                 ) - ForearmRadius;
-            if (arm < distance)
-            {
-                distance = Mathf.Max(arm, 0f);
-                onForearm = true;
-                handThere = BodyZones.HandAtForearm(
-                    point,
-                    otherReal,
-                    other.Fingers().N(),
-                    ForearmRadius
-                );
-            }
+            handAtArm = BodyZones.HandAtForearm(
+                point,
+                otherReal,
+                other.Fingers().N(),
+                ForearmRadius
+            );
         }
+        float distance = BodyZones.Rest(
+            torso,
+            arm,
+            BodyZones.HandAtTorso(point, head.position.N(), flat.N(), TorsoRadius),
+            handAtArm,
+            out bool handThere,
+            out bool onForearm
+        );
 
         // Rested against the body, not carried past it to a slot or swung across it in a throw.
         bool left = ItemGestures.HoldLeft;

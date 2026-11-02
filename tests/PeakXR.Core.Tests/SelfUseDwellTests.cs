@@ -287,6 +287,38 @@ public class SelfUseDwellTests
     }
 
     [Fact]
+    public void AHandOnTheChestStaysThereWithTheItemOverTheOtherForearm()
+    {
+        // #147: the diagnostic read torso 0.000, forearm true, hand there false, so the press never started. The free
+        // hand idled 0.25 m out and 0.40 m ahead, and the Bandages' box reached its arm (arm distance negative).
+        Assert.Equal(
+            0f,
+            BodyZones.Rest(0f, -0.1f, true, false, out bool there, out bool onForearm)
+        );
+        Assert.True(there);
+        Assert.False(onForearm);
+    }
+
+    [Fact]
+    public void AnItemOnTheForearmStillNeedsAHandAtOneOfThem()
+    {
+        // The hand on that forearm, off the torso: the wrap there.
+        Assert.Equal(0f, BodyZones.Rest(0.1f, -0.05f, false, true, out bool there, out bool arm));
+        Assert.True(there);
+        Assert.True(arm);
+        // Hands idling apart with a kit reaching across: nothing means it.
+        BodyZones.Rest(0.1f, 0.02f, false, false, out there, out arm);
+        Assert.False(there);
+        // The torso nearer than the arm, or no arm in play: the torso alone answers.
+        Assert.Equal(
+            0.03f,
+            BodyZones.Rest(0.03f, float.PositiveInfinity, true, false, out there, out arm)
+        );
+        Assert.True(there);
+        Assert.False(arm);
+    }
+
+    [Fact]
     public void LosingContactStartsTheDwellOver()
     {
         var use = new SelfUseDwell();

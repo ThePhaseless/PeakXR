@@ -123,6 +123,32 @@ public static class BodyZones
         float radius
     ) => ForearmDistance(hand, otherHand, otherForward) - radius <= HandOffForearm;
 
+    /// <summary>Which part a held item rests on, how far off it is (m), and whether the hand itself means it.</summary>
+    /// <param name="torso">The item's distance from the torso.</param>
+    /// <param name="arm">The item's distance from the other forearm's press radius, negative when overlapping it;
+    /// <see cref="float.PositiveInfinity"/> with no arm in play.</param>
+    /// <param name="handAtTorso"><see cref="HandAtTorso"/>.</param>
+    /// <param name="handAtArm"><see cref="HandAtForearm"/>.</param>
+    /// <param name="handThere">The hand is at either: the arm being nearer never takes the torso's answer away (#147).</param>
+    /// <param name="onForearm">The press is a wrap of that arm, for its cue and its pulse.</param>
+    public static float Rest(
+        float torso,
+        float arm,
+        bool handAtTorso,
+        bool handAtArm,
+        out bool handThere,
+        out bool onForearm
+    )
+    {
+        handThere = handAtTorso;
+        onForearm = false;
+        if (arm >= torso)
+            return torso;
+        handThere = handAtTorso || handAtArm;
+        onForearm = handAtArm;
+        return MathF.Max(arm, 0f);
+    }
+
     /// <param name="point">World point to test.</param>
     /// <param name="head">Tracked eye position.</param>
     /// <param name="flatForward">Head forward with the pitch removed (unit length, Y = 0).</param>
