@@ -1056,6 +1056,16 @@ internal static class PhysicalInteraction
     {
         var other = Other(hand);
         var interaction = Interaction.instance;
+        // A grab the game already took (the other hand's rope) keeps interact down while its grip stays closed, and the
+        // game takes a press only after interact was up (Interaction.cs:109-124): up for a frame, or this grab is lost.
+        if (
+            other.Action == GripPressAction.GrabInteractible
+            && (interaction == null || interaction.currentHeldInteractible == null)
+        )
+        {
+            interactGap = true;
+            return;
+        }
         if (
             other.Action != GripPressAction.Interact
             || (interaction != null && interaction.currentHeldInteractible != null)
@@ -3101,8 +3111,10 @@ internal static class PhysicalInteraction
                     // lid (left came first and kept it). Never over a running hold interaction, which that would end.
                     if (pending && !heldInteraction)
                         GrabTarget = hand.Target;
-                    else
-                        GrabTarget ??= hand.Target;
+                    // A line a hand already took stops being interactible (RopeSegment.cs:49-56, JungleVine.cs:96-108), so
+                    // the other hand's next line is the target.
+                    else if (GrabTarget == null || !GrabTarget.IsInteractible(c))
+                        GrabTarget = hand.Target;
                     break;
                 case GripPressAction.Interact:
                     if (now < hand.InteractAt)

@@ -44,6 +44,8 @@ internal sealed partial class SelfTestRunner
         yield return Restoring("vr.396-walk-forward-room", 25f, WalkForwardStep(room: true));
         yield return HandStep("vr.42-rope-hand-over-hand", 40f, RopeStep());
         yield return WarpBack();
+        yield return HandStep("vr.43d-rope-to-vine", 90f, RopeToVineStep());
+        yield return WarpBack();
         yield return HandStep("vr.44-piton-hang", 30f, PitonStep());
         yield return HandStep("vr.44c-pickaxe-hang", 30f, PitonStep(pickaxe: true));
         yield return Restoring("vr.46-lunge", 40f, LungeStep());

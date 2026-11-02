@@ -325,6 +325,7 @@ public static class SelfTestIds
         "vr.43-vine",
         "vr.43b-vine-look-back",
         "vr.43c-vine-slide",
+        "vr.43d-rope-to-vine",
         "vr.44-piton-hang",
         "vr.44b-handle-rest",
         "vr.44c-pickaxe-hang",

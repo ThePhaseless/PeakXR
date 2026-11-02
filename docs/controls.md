@@ -15,7 +15,7 @@ The default layout for a right-handed player. With `Input.DominantHand = Left` t
 
 Notes:
 
-- Ropes and vines: grip one to grab it, then pull hand over hand to climb along it (`Interaction.RopeHandOverHand`). Open both hands for longer than `ClimbRegripGrace` to let go; jump and the stick still work.
+- Ropes and vines: grip one to grab it, then pull hand over hand to climb along it (`Interaction.RopeHandOverHand`). On one line, close your free hand on another rope, vine or chain within reach and you move onto it, as in the flat game; that hand holds on and the other is free for your next pull. Open both hands for longer than `ClimbRegripGrace` to let go; jump and the stick still work.
 - Pitons and pickaxe handles: grip the handle to hang from it, and open the hand to let go (`Interaction.PitonGripHang`). With the setting off, interact again or jump to let go.
 - Switching items with the stick, putting one away with X or taking out the backpack with a held X does nothing while you climb, hang on a rope, use an item, hold a sticky item or are otherwise locked from switching, as in the game. The pressing hand gets the refusal cue with the reason.
 - Hammering a piton: holding use places it in the game's own time. Striking the piton as it goes in drives it in up to a third sooner, with a knock at each strike (`Interaction.Tools.HammerSpikes`).
