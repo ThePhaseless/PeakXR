@@ -670,6 +670,10 @@ internal sealed class SocialHands : IGripExtension
     /// <summary>The friend this hand's reach-out has armed, or else picked; null none.</summary>
     internal Character ReachOutFriend(bool left) => reachOutChar[left ? 0 : 1];
 
+    /// <summary>This arm is stretched at a friend, ready to reach: the grip is meant for them, not for what it passes.</summary>
+    internal bool ReachOutArmed(bool left) =>
+        SocialConfig.Instance.ReachOut && !KickMode && reachPick[left ? 0 : 1].ArmedFriend >= 0;
+
     /// <summary>Why the game's reach would not catch <see cref="ReachOutFriend"/>, or None.</summary>
     internal DenyReason ReachOutWhy(bool left) => reachOutWhy[left ? 0 : 1];
 

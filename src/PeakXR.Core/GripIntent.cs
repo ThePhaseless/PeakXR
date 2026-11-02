@@ -131,6 +131,9 @@ public struct GripContext
     /// <summary>What the hand's aim ray hits within the game's interact reach.</summary>
     public AimedTarget Aimed;
 
+    /// <summary>This arm is stretched at a friend it would reach for, ring and all (<see cref="ReachOut"/>).</summary>
+    public bool ReachingOut;
+
     /// <summary>Pointing at an item taker: a deliberate aim with the item it takes in hand, which beats a
     /// climbable in reach and a body-slot claim (only those).</summary>
     public readonly bool PointedAtTaker => Pointing && Aimed == AimedTarget.ItemTaker;
@@ -192,10 +195,14 @@ public static class GripIntent
             c.Candidate == GrabCandidate.Interactible
             && c.HeldHandedness != Handedness.TwoHanded
             && !c.AtSecondGripTight;
+        // Nor a hand stretched at a friend, passing it: the friend is what it aims at, and HandsFull says why not (#149).
+        bool reachWins =
+            c.ReachingOut && c.HeldHandedness != Handedness.TwoHanded && !c.AtSecondGripTight;
         if (
             c.HoldingItem
             && !c.ThisHandHolds
             && ItemHoldTable.AcceptsSecondHand(c.HeldHandedness, c.HeldBothHandsInGame)
+            && !reachWins
             && (
                 (c.AtSecondGrip && !aimsElsewhere && !interactibleWins)
                 // A hand closing on the item's body joins it unless it points at a taker: a scripted or relaxed

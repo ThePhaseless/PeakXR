@@ -780,6 +780,7 @@ internal static class PhysicalInteraction
         ctx.Aimed = AimedAt(hand.Left, ctx.Pointing, rig, c, cfg, out var aimedTarget);
         // Right at the held item's second grip, within the grab radius: the one place a pointing hand still joins it.
         ctx.AtSecondGripTight = holding && !thisHolds && AtSecondGrip(pos, cfg.GrabRadius);
+        ctx.ReachingOut = !thisHolds && Social.SocialHands.Instance.ReachOutArmed(hand.Left);
         if (cfg.PhysicalClimb)
         {
             d.Hold = ProbeHold(c, rig, pos, t, cfg, d.Held);

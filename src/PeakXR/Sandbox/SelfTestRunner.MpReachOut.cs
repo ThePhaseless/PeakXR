@@ -306,9 +306,9 @@ internal sealed partial class SelfTestRunner
         yield return FreeHands();
         if (!stepOk)
             yield break;
-        // Any item at hand a second hand cannot join, passing over one the walk cannot reach (MP run 15b: the walk to the
-        // nearest stuck 1.1 m short). One that can is a real two-hand grip here, not a full hand (#149: a BingBong, which
-        // the game holds in both hands, took the stretched arm's grip as SecondHand, GripIntent.OnPress).
+        // Any plain item at hand, passing over one the walk cannot reach (MP run 15b: the walk to the nearest stuck 1.1 m
+        // short). An armed reach beats a one-hand item's second grip now (GripIntent.OnPress, #149), so only a
+        // needs-both-hands item would still join.
         var info = new ItemHoldInfo();
         yield return GrabReachable(
             i =>
@@ -341,6 +341,10 @@ internal sealed partial class SelfTestRunner
         bool free = !LocalHold.ItemInLeftHand;
         var host = Host();
         LookAtPoint(host.Center);
+        // The holding hand low on its own side, clear of the arm, so this asks about a hand with nothing beside it; the
+        // passing case is GripIntentTests.ReachingOutPastAOneHandItem (#149: controllers 0.46 m apart with the Compass
+        // drawn between them).
+        yield return CarryFoodBack(!free);
         bool refused = false;
         for (float end = Now + 1f; Now < end && !refused; )
         {

@@ -360,6 +360,48 @@ public class GripIntentTests
     }
 
     [Fact]
+    public void ReachingOutPastAOneHandItem_DoesNotTakeItAsASecondGrip()
+    {
+        // #149: a hand stretched at a friend, passing a held Compass, closed on the Compass and no HandsFull came.
+        var c = Empty();
+        c.HoldingItem = true;
+        c.HeldHandedness = Handedness.OneHand;
+        c.HeldBothHandsInGame = true;
+        c.AtSecondGrip = true;
+        c.NearHeldItem = true;
+        c.ReachingOut = true;
+        c.ExtensionClaim = true;
+        Assert.Equal(GripPressAction.Extension, GripIntent.OnPress(c));
+    }
+
+    [Fact]
+    public void ReachingOutRightOnTheSecondGrip_StillJoins()
+    {
+        var c = Empty();
+        c.HoldingItem = true;
+        c.HeldHandedness = Handedness.OneHand;
+        c.HeldBothHandsInGame = true;
+        c.AtSecondGrip = true;
+        c.AtSecondGripTight = true;
+        c.ReachingOut = true;
+        c.ExtensionClaim = true;
+        Assert.Equal(GripPressAction.SecondHand, GripIntent.OnPress(c));
+    }
+
+    [Fact]
+    public void ReachingOutPastATwoHandedItem_StillJoins()
+    {
+        // It cannot be used one-handed, and a free hand beside it is there for it.
+        var c = Empty();
+        c.HoldingItem = true;
+        c.HeldHandedness = Handedness.TwoHanded;
+        c.AtSecondGrip = true;
+        c.ReachingOut = true;
+        c.ExtensionClaim = true;
+        Assert.Equal(GripPressAction.SecondHand, GripIntent.OnPress(c));
+    }
+
+    [Fact]
     public void ExtensionClaim_WorksWithPhysicalTogglesOff()
     {
         var c = new GripContext { ExtensionClaim = true };
