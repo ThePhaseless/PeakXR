@@ -210,6 +210,7 @@ public static class SelfTestIds
         "vr.223-vr-tab-layout",
         "vr.224-quit-confirm",
         "vr.22b-bandage-forearm",
+        "vr.495-bandage-past-body",
         "vr.23-parasol",
         "vr.230-stoop-reach",
         "vr.231-frame-budget",

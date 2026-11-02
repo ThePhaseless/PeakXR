@@ -261,15 +261,15 @@ public class HandOverTests
     {
         // Issue #45: a bandage on a friend's chest works as pressing it to your own body does.
         var h = new HandOver { Dwell = HandOver.DwellAt(chest: true) };
-        Assert.Equal(HandOverState.Hint, h.Update(true, false, true, false, 0.2f));
-        Assert.Equal(HandOverState.Apply, h.Update(true, false, true, false, 0.2f));
+        Assert.Equal(HandOverState.Hint, h.Update(true, false, true, false, 0.4f));
+        Assert.Equal(HandOverState.Apply, h.Update(true, false, true, false, 0.4f));
     }
 
     [Fact]
     public void BothZonesDwell_TheChestAsLongAsAPressToYourOwnBody()
     {
         Assert.Equal(HandOver.MouthDwell, HandOver.DwellAt(chest: false));
-        Assert.Equal(0.35f, HandOver.DwellAt(chest: true));
+        Assert.Equal(SelfUseDwell.BodyDwell, HandOver.DwellAt(chest: true));
         Assert.True(HandOver.DwellAt(chest: true) > 0f);
     }
 

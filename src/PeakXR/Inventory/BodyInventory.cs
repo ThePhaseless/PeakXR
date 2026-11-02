@@ -51,6 +51,9 @@ internal sealed class BodyInventory : IGripExtension
     private const byte OverflowSlot = 250;
     private const float WheelDeadzone = 0.06f;
 
+    /// <summary>A release finds a slot this much past its radius.</summary>
+    private const float ReleaseReach = 1.25f;
+
     private BodySlot[] slots = BodySlotLayout.Create(
         BodySlotLayout.Belt,
         BodySlotLayout.MaxHotbar,
@@ -374,13 +377,37 @@ internal sealed class BodyInventory : IGripExtension
         var c = ctx.Character;
         if (!Ready(c) || !InventoryConfig.Instance.HolsterOnRelease || !ctx.ThisHandHolds)
             return false;
-        int i = Find(VRInput.Hand(ctx.Left).Position.N(), 1.25f);
+        int i = Find(VRInput.Hand(ctx.Left).Position.N(), ReleaseReach);
         if (i < 0)
             return false;
         if (slots[i].GameSlot == PackSlot)
             return ReleaseAtShoulder(c, ctx.Left);
         Holster(c, ctx.Left);
         return true;
+    }
+
+    /// <summary>Opening this hand's grip here would stow the held item: a body slot (<see cref="TryHeldRelease"/>) or a
+    /// pack in reach that would take it. Such a place wins over any use the hand would start by resting here (#147); one
+    /// that would refuse the item takes nothing, so a use may still start there.</summary>
+    internal bool TakesHeld(Character c, bool left)
+    {
+        var pack = PackStash.Instance;
+        if (pack.Over && pack.Verdict == DenyReason.None)
+            return true;
+        var item = c != null ? c.data.currentItem : null;
+        if (item == null || !Ready(c) || !InventoryConfig.Instance.HolsterOnRelease)
+            return false;
+        int i = Find(VRInput.Hand(left).Position.N(), ReleaseReach);
+        var selected = c.refs.items.currentSelectedSlot;
+        if (i < 0 || selected.IsNone || selected.Value > PackSlot)
+            return false;
+        if (slots[i].GameSlot != PackSlot)
+            return item.UIData.canPocket;
+        return InventoryConfig.Instance.BackpackOverShoulder
+            && !c.player.backpackSlot.IsEmpty()
+            && c.player.backpackSlot.backpackType != BackpackSlot.BackpackType.Rocketpack
+            && item.UIData.canBackpack
+            && FreePocket(c) >= 0;
     }
 
     // ------------------------------------------------------------------ actions

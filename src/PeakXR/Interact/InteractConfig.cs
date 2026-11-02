@@ -139,7 +139,7 @@ internal sealed class InteractConfig
                 s,
                 "EatAtMouth",
                 true,
-                "Bring food or drink to your mouth to eat or drink it (holds primary use while it stays there). The trigger "
+                "Hold food or drink still at your mouth to eat or drink it (holds primary use while it stays there). The trigger "
                     + "alone does not eat unless Interaction.TriggerEats is on."
             ),
             physicalThrow = file.Bind(

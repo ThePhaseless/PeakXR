@@ -1352,9 +1352,10 @@ internal sealed class SocialHands : IGripExtension
     /// healing item on their torso, for the zone's dwell (<see cref="HandOver.DwellAt"/>), or the holding hand's
     /// trigger squeezed there, holds the game's use-on-friend (Item.StartUseSecondary, Item.cs:977, its cast and ring)
     /// while it stays. Passing close never spends one (external review row 9): the item has to rest there with its
-    /// controller-held place there too, and the feeder and the friend must stand nearly still for the dwell (#93: walking
-    /// up with food at chest height fed them; #119: a friend's body held the food on them with the controller 0.63 m
-    /// off). A friend's copy has a live velocity: their own client's <c>averageVelocity</c> arrives in every sync package
+    /// controller-held place there too, the feeder, the friend and the feeder's hand must be nearly still for the dwell
+    /// (#93: walking up with food at chest height fed them; #119: a friend's body held the food on them with the
+    /// controller 0.63 m off; #147: a hand on its way to the belt healed whoever stood close), and your own slot or pack
+    /// in reach wins, unless the trigger says otherwise. A friend's copy has a live velocity: their own client's <c>averageVelocity</c> arrives in every sync package
     /// (CharacterSyncer.cs:116-117) and their ragdoll simulates here between them (CharacterMovement.cs:295, :683-697). A
     /// teal ring marks the mouth or chest while in range and through the cast. An item they cannot take is refused at
     /// the mouth after the dwell or on the squeeze (CharacterInteractible.HasItemCanUseOnFriend, :90), and so is a bot (:128).
@@ -1427,16 +1428,19 @@ internal sealed class SocialHands : IGripExtension
         float feederSpeed = LevelSpeed(c);
         float friendSpeed = LevelSpeed(who);
         float placeGap = PlaceGap(c, spot);
+        bool trigger = VRInput.Hand(left).Trigger > HandOverTrigger;
+        bool putAway = !trigger && Inventory.BodyInventory.Instance.TakesHeld(c, left);
         var state = handOver.Update(
-            inZone,
-            VRInput.Hand(left).Trigger > HandOverTrigger,
+            inZone && !putAway,
+            trigger,
             usable,
             item.CanUsePrimary(),
             dt,
-            // Never on the walk up, or as a friend walks into it (#93, #119).
-            HandOver.Still(feederSpeed, friendSpeed),
+            // Never on the walk up, as a friend walks into it, or with the hand on its way somewhere (#93, #119, #147).
+            feedHand.Update(VRInput.Hand(left).Position.N())
+                && HandOver.Still(feederSpeed, friendSpeed),
             placeGap,
-            nearFriendMouth
+            nearFriendMouth && !putAway
         );
         FeedState = state;
         if (!inZone && state == HandOverState.Apply)
@@ -1527,6 +1531,7 @@ internal sealed class SocialHands : IGripExtension
     private const float HandOverTrigger = 0.6f;
 
     private readonly HandOver handOver = new();
+    private readonly HandStill feedHand = new();
 
     /// <summary>The hand-over owns the holding hand's trigger this frame (<see cref="HandOver.SuppressPrimary"/>).</summary>
     public bool HandOverOwnsTrigger => handOver.SuppressPrimary;

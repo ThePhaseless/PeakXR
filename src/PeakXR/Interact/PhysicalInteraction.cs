@@ -132,7 +132,8 @@ internal static class PhysicalInteraction
     private static readonly ButtonEdge PrimaryEdge = new();
     private static readonly ButtonEdge SecondaryEdge = new();
     private static readonly ButtonEdge DropEdge = new();
-    private static readonly MouthGesture Mouth = new();
+    private static readonly MouthGesture Mouth = new() { DwellTime = 0f };
+    private static readonly SelfUseDwell MouthUse = new() { Dwell = SelfUseDwell.MouthDwell };
     private static readonly ArmLocomotion Arms = new();
     private static readonly ClimbDebt Debt = new();
 
@@ -383,6 +384,7 @@ internal static class PhysicalInteraction
         EndAction(LeftHand, GripPressAction.SecondHand);
         EndAction(RightHand, GripPressAction.SecondHand);
         Mouth.Reset();
+        MouthUse.Reset();
         dropPending = false;
         if (item != null)
         {
@@ -3174,7 +3176,7 @@ internal static class PhysicalInteraction
             && mouthHand != null
         )
         {
-            bool was = Mouth.Active;
+            bool was = MouthUse.Active;
             // The item carried by the tracked grip, not the physics item: the eye sits inside the holder's own head
             // collider (a 0.38 m sphere on the Character layer, which held items collide with), so the physics item
             // never gets near the mouth. The food itself, not the fist: the game's food is big (an apple 0.42 m
@@ -3186,20 +3188,27 @@ internal static class PhysicalInteraction
                 MouthGesture.MouthPoint(head.N(), rig.Head.rotation.N(), Mouth.MouthOffset).U(),
                 head
             );
-            atMouth = Mouth.Update(
-                head.N(),
-                rig.Head.rotation.N(),
-                RealScale
-                    .Real(
-                        Physical.ItemGestures.MouthContact(
-                            c.data.currentItem,
-                            mouthHand,
-                            primaryHand.Left,
-                            mouth
-                        ),
-                        head
-                    )
-                    .N(),
+            // Food carried past the mouth does not eat: the hand has to stop there, and a slot or pack that would take
+            // it wins (an apple is big enough to reach the mouth from the shoulder slot), #147.
+            atMouth = MouthUse.Update(
+                VRInput.Hand(primaryHand.Left).Position.N(),
+                Mouth.Update(
+                    head.N(),
+                    rig.Head.rotation.N(),
+                    RealScale
+                        .Real(
+                            Physical.ItemGestures.MouthContact(
+                                c.data.currentItem,
+                                mouthHand,
+                                primaryHand.Left,
+                                mouth
+                            ),
+                            head
+                        )
+                        .N(),
+                    dt
+                ),
+                Inventory.BodyInventory.Instance.TakesHeld(c, primaryHand.Left),
                 dt
             );
             if (atMouth && !was)
@@ -3208,6 +3217,7 @@ internal static class PhysicalInteraction
         else
         {
             Mouth.Reset();
+            MouthUse.Reset();
         }
         PrimaryEdge.Update(primaryDown || atMouth || Physical.GestureRequests.PrimaryHeld, dt);
         // An armed pack pick takes the free trigger's whole pull (#71); called every frame so its latch sees the release.

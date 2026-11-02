@@ -63,8 +63,8 @@ public sealed class HandOver
     public const float MouthDwell = 0.3f;
 
     /// <summary>A healing item rests this long on a friend's chest before it is used: as long as pressing it to your
-    /// own body (interact.items' body press), issue #45.</summary>
-    public const float ChestDwell = 0.35f;
+    /// own body (<see cref="SelfUseDwell.BodyDwell"/>), issues #45 and #147.</summary>
+    public const float ChestDwell = SelfUseDwell.BodyDwell;
 
     public static float DwellAt(bool chest) => chest ? ChestDwell : MouthDwell;
 
