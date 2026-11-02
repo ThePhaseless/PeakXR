@@ -206,6 +206,7 @@ def expected: ["join", "walk-to-host", "emote", "ping", "ping-seen", "scene-butt
     elif $x.name == "climb" then
       (if any(seen($y)[]; (.local | not) and .name == "StartClimbRpc") then "PASS climb: B got StartClimbRpc from A"
        else "FAIL climb: B got no StartClimbRpc from A" end)
+      ,(if ($x.note // "") | test("passed over") then "INFO climb: \($x.note)" else empty end)
     elif $x.name == "feed" or $x.name == "feed-held-ahead" then
       (if any(seen($y)[]; .local and .name == "GetFedItemRPC")
           and any(seen($y)[]; (.local | not) and .name == "SendFeedDataRPC")

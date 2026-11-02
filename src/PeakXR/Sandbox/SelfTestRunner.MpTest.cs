@@ -157,7 +157,8 @@ internal sealed partial class SelfTestRunner
         yield return MpStep("eat", 150f, true, Eat());
         // 120 s: the walk back from eat's food to the thrown item can be 100 m (MP run 35 timed out at 60 s on it).
         yield return MpStep("holster", 120f, true, Holster());
-        yield return MpStep("climb", 200f, true, MpClimb());
+        // Five walls at 25 s of walk and 21 s of climb each, with room to finish.
+        yield return MpStep("climb", 240f, true, MpClimb());
         yield return MpStep("two-hand", 90f, true, MpTwoHand());
         yield return MpStep("feed", 180f, true, Feed());
         yield return MpStep("feed-fetch-front", 90f, true, FeedFetchFront());
@@ -1185,6 +1186,7 @@ internal sealed partial class SelfTestRunner
         int tried = 0;
         // A wall where the game itself let go during the pull, from ClimbWall's fail note.
         string letGoNote = null;
+        int passedOver = 0;
         foreach (var (face, stand, profile) in walls)
         {
             if (tried++ >= MpWallTries)
@@ -1204,8 +1206,13 @@ internal sealed partial class SelfTestRunner
             Script(VRInput.LeftHanded).Grip = 0f;
             yield return WaitFor(() => !c.data.isClimbing, 2f);
             yield return Wait(1f);
+            if (stepOk && passedOver > 0)
+                stepNote += F(
+                    $"; passed over {passedOver} wall(s) the game let go of: {letGoNote}"
+                );
             if (stepOk || !climbLetGo)
                 yield break;
+            passedOver++;
             // The game let go of this face during the pull (#60: SampleWall refuses a facet flatter than 50 degrees
             // while the stick moves, on a coarse palm mesh): a bad wall, and vanilla's rule. On to the next.
             letGoNote = failNote;

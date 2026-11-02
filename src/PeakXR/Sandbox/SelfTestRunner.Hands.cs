@@ -990,6 +990,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         float y0 = c.Center.y;
+        int letGoBefore = PeakXR.Interact.PhysicalInteraction.GameLetGoCount;
         yield return Shot("vr-15-climb");
         // Which stage lost a short rise (#60, run 9): the game's climb point against the body, stamina (out of it the
         // up debt is dropped), the stick the game read, and the travel still owed.
@@ -1023,10 +1024,7 @@ internal sealed partial class SelfTestRunner
         var note =
             $"wall {Vector3.Angle(hit.normal, Vector3.up):0} deg from up, body rose {rise:0.00} m ({stages}), climbing after the pull {stillClimbing}, hand over hand {handOverNote}, after letting go {c.data.isClimbing}, torn-off cue {torn}, {sticks}; wall {WallProfile}";
         climbLetGo =
-            rise < MinPullRise
-            && !stillClimbing
-            && c.data.outOfStaminaFor <= 0f
-            && c.data.currentRagdollControll >= 0.25f;
+            rise < MinPullRise && PeakXR.Interact.PhysicalInteraction.GameLetGoCount != letGoBefore;
         if (rise < MinPullRise)
             Fail("arm pull did not lift the body: " + note);
         else if (handOverFail)

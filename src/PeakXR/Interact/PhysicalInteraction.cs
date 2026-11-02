@@ -2558,6 +2558,34 @@ internal static class PhysicalInteraction
         Arms.Reset();
     }
 
+    /// <summary>Climbs the game ended with no mantle, stamina left and the body under control: the rock itself let go
+    /// (self-test: <c>climb</c> moves on from such a wall, #60).</summary>
+    internal static int GameLetGoCount { get; private set; }
+
+    /// <summary>SampleWall's casts, in its order (CharacterClimbing.cs:413-436): the ray to just off the sample, the ray
+    /// through it, then spheres of 0.1 to 0.4 m. For the log only.</summary>
+    private static RaycastHit NextClimbSample(Vector3 climbPos, Vector3 normal)
+    {
+        var at = climbPos + Vector3.ProjectOnPlane(Vector3.up, normal).normalized * 0.05f;
+        var from = climbPos + normal * 0.4f;
+        var through = at - normal;
+        var hit = HelperFunctions.LineCheck(
+            from,
+            at + normal * 0.5f,
+            HelperFunctions.LayerType.TerrainMap
+        );
+        if (!hit.transform)
+            hit = HelperFunctions.LineCheck(from, through, HelperFunctions.LayerType.TerrainMap);
+        for (int i = 1; i <= 4 && !hit.transform; i++)
+            hit = HelperFunctions.LineCheck(
+                from,
+                through,
+                HelperFunctions.LayerType.TerrainMap,
+                0.1f * i
+            );
+        return hit;
+    }
+
     private static void UpdateClimb(Character c, VRRig rig, InteractConfig cfg, float dt, float now)
     {
         ConfirmLunge(c, rig, cfg, now);
@@ -2587,19 +2615,16 @@ internal static class PhysicalInteraction
             )
                 ? Vector3.Angle(above.normal, Vector3.up)
                 : -1f;
-            // The game's own sample a little past its last accepted climb point (SampleWall, CharacterClimbing.cs:413-422):
-            // what it probably refused (#60). climbNormal only updates on an accepted sample.
-            string sample = Physics.Linecast(
-                c.data.climbPos + c.data.climbNormal * 0.4f,
-                c.data.climbPos + Vector3.up * 0.05f - c.data.climbNormal,
-                out var next,
-                HelperFunctions.terrainMapMask,
-                QueryTriggerInteraction.Ignore
-            )
+            // What the game's own sample finds a little up the wall from its last accepted climb point. Its requested
+            // spot came from the stick, so this names the likely facet, not the refused hit (#60).
+            var next = NextClimbSample(c.data.climbPos, c.data.climbNormal);
+            string sample = next.transform
                 ? System.FormattableString.Invariant(
                     $"{Vector3.Angle(next.normal, Vector3.up):0} deg from up on {next.collider.name}"
                 )
                 : "nothing";
+            if (!mantled && c.data.outOfStaminaFor <= 0f && c.data.currentRagdollControll >= 0.25f)
+                GameLetGoCount++;
             Plugin.Log.LogInfo(
                 System.FormattableString.Invariant(
                     $"[interact.climb] climb ended by the game: grips L {LeftHand.Action}/{LeftHand.Grip.Held} R {RightHand.Action}/{RightHand.Grip.Held}, stick y {climbInput.y:0.00}, mantled {mantled}, since jump {c.data.sinceClimbJump:0.00} s, out of stamina {c.data.outOfStaminaFor:0.00} s, ragdoll control {c.data.currentRagdollControll:0.00}, grounded {c.data.isGrounded}, use released {c.input.usePrimaryWasReleased} (forced off while climbing), face 0.5 m up {faceAbove:0} deg from up, last normal {Vector3.Angle(c.data.climbNormal, Vector3.up):0} deg, next sample {sample}"
