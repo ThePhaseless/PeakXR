@@ -582,6 +582,12 @@ internal sealed partial class Observer : MonoBehaviour
             )
             .Bool("local", c != null && c.IsLocal)
             .Str("on", at != null ? at.name : null);
+        // pal-jump: B's own clock as A's jump arrives; the boost needs it under 0.3 s (CharacterMovement.cs:1021, #108).
+        var me = Character.localCharacter;
+        if (method == "JumpRpc" && c != null && !c.IsLocal && me != null)
+            j.Num("localSinceStood", me.data.sinceStandOnPlayer)
+                .Bool("localStoodOnIt", me.data.lastStoodOnPlayer == c)
+                .Raw("localPos", V(me.Center));
         var a = new StringBuilder("[");
         for (int i = 0; args != null && i < args.Length; i++)
         {

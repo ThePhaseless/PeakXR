@@ -4421,6 +4421,15 @@ internal sealed partial class SelfTestRunner
                 yield break;
             }
             bool felt = CueLog.Capture.Felt(true, CueFeel.Progress, mark, out _);
+            // Read before the press: the head rises with the jump, and read after it the note understated the height. The
+            // boost needs B on a crouched A within 0.3 s of the jump arriving (CharacterMovement.cs:1021); this is A's copy
+            // of that clock, and the observer logs B's own on the JumpRpc line (#108).
+            float over = host.Center.y - c.Head.y;
+            float off = FlatDistance(host.Center, c.Center);
+            string stood =
+                host.data.lastStoodOnPlayer == c
+                    ? F($"last on A {host.data.sinceStandOnPlayer:0.00} s before")
+                    : "not on A";
             // Jump is the dominant hand's primary (Bindings: VRAction.Jump); Script takes "left" (MP run 7 pressed the
             // off hand's, so A never jumped and B was never boosted).
             bool jumper = VRInput.LeftHanded;
@@ -4436,7 +4445,7 @@ internal sealed partial class SelfTestRunner
                 () => host.data.sincePalJump < 1f,
                 1.5f,
                 F(
-                    $"the host was not boosted: B {host.Center.y - c.Head.y:0.00} m over A's head and {FlatDistance(host.Center, c.Center):0.00} m off it at the jump; pressure felt on A: {felt}"
+                    $"the host was not boosted: B {over:0.00} m over A's head and {off:0.00} m off it at the press, {stood}; pressure felt on A: {felt}"
                 )
             );
             if (!stepOk)
