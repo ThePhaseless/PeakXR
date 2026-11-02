@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using PeakXR.Core;
+using PeakXR.Framework;
 using PeakXR.Interact.Climb;
 using PeakXR.Render;
 using PeakXR.Rig;
@@ -474,6 +475,199 @@ internal sealed partial class SelfTestRunner
             Fail("the probe reached no rebind, so the prompt's result says nothing: " + note);
         else
             Note(note);
+    }
+
+    /// <summary>
+    /// vr.490: the game's rebinding prompt, opened in the pause menu on a throwaway action. A controller press leaves it
+    /// up and gets the refusal on that hand with the text saying why and how out; the headset coming off and back on,
+    /// through the session state or the wear sensor alone, leaves it up, a player reaching for the keyboard; a Menu tap and the dashboard each end it through the page's own cancel, the
+    /// action enabled again and the pause menu still open on the Controls page.
+    /// </summary>
+    IEnumerator RebindPromptExitCheck()
+    {
+        var gui = GUIManager.instance;
+        var c = Character.localCharacter;
+        if (gui == null || c == null)
+        {
+            Fail("no GUIManager or character");
+            yield break;
+        }
+        yield return HandsAside();
+        c.input.pauseWasPressed = true;
+        gui.UpdatePaused();
+        yield return Until(
+            () => GUIManager.InPauseMenu && FindAnyObjectByType<PauseMenuHandler>() != null,
+            5f,
+            "pause menu did not open"
+        );
+        if (!stepOk)
+            yield break;
+        var handler = FindAnyObjectByType<PauseMenuHandler>();
+        // The game's loop needs a binding group (A/PauseMenuRebindKeyPage.cs:54-65); the key is one nobody presses.
+        using var action = new InputAction("selftest-rebind");
+        action.AddBinding("<Keyboard>/f12", groups: "Keyboard&Mouse");
+        var savedTarget = RebindPromptTarget(
+            (action, "PROMPT_REBIND", Zorro.ControllerSupport.InputScheme.KeyboardMouse)
+        );
+        int savedState = XRSessionState.OpenXRState;
+        bool savedLost = XRSessionState.OpenVRFocusLost;
+        bool savedIdle = XRSessionState.OpenVRIdle;
+        action.Enable();
+        var notes = new List<string>();
+        try
+        {
+            if (handler.TransistionToPage<PauseMenuRebindKeyPage>() == null)
+            {
+                Fail("the pause menu has no rebinding prompt");
+                yield break;
+            }
+            yield return Wait(0.2f);
+
+            float mark = CueMark();
+            Script(false).Primary = true;
+            yield return ExpectCue(false, DenyReason.Locked, mark, within: 1f, seen: false);
+            Script(false).Primary = false;
+            if (!stepOk)
+                yield break;
+            notes.Add(cueNote);
+            var label = UI.Affordances.AffordanceRuntime.LabelText;
+            if (label == null || !label.Contains("Keyboard or gamepad"))
+            {
+                Fail($"the refusal does not say why: '{label}'");
+                yield break;
+            }
+            mark = CueMark();
+            Script(true).Trigger = 1f;
+            yield return ExpectCue(true, DenyReason.Locked, mark, within: 1f, seen: false);
+            Script(true).Trigger = 0f;
+            if (!stepOk)
+                yield break;
+            if (handler.currentPage is not PauseMenuRebindKeyPage || action.enabled)
+            {
+                Fail("a controller press changed the prompt");
+                yield break;
+            }
+
+            Play(3);
+            yield return Wait(RebindPromptInput.DashboardSeconds + 0.5f);
+            Play(4);
+            yield return Wait(RebindPromptInput.DashboardSeconds + 0.5f);
+            Play(5);
+            yield return Wait(0.3f);
+            if (handler.currentPage is not PauseMenuRebindKeyPage || action.enabled)
+            {
+                Fail("the headset coming off or back on (a long VISIBLE) ended the prompt");
+                yield break;
+            }
+
+            yield return RebindPromptWearSensor(handler, action);
+            if (!stepOk)
+                yield break;
+
+            Script(true).Menu = true;
+            yield return Wait(0.15f);
+            Script(true).Menu = false;
+            yield return Until(
+                () => handler.currentPage is PauseMenuControlsPage,
+                2f,
+                "a Menu tap did not end the prompt"
+            );
+            if (!stepOk)
+                yield break;
+            if (!action.enabled || !GUIManager.InPauseMenu)
+            {
+                Fail(
+                    $"Menu tap: action enabled {action.enabled}, in pause menu {GUIManager.InPauseMenu}"
+                );
+                yield break;
+            }
+            notes.Add("Menu tap: back on Controls, action enabled");
+
+            handler.TransistionToPage<PauseMenuRebindKeyPage>();
+            yield return Wait(0.2f);
+            Play(4);
+            yield return Until(
+                () => handler.currentPage is PauseMenuControlsPage,
+                RebindPromptInput.DashboardSeconds + 2f,
+                "the dashboard did not end the prompt"
+            );
+            Play(5);
+            if (!stepOk)
+                yield break;
+            if (!action.enabled || !GUIManager.InPauseMenu)
+            {
+                Fail(
+                    $"dashboard: action enabled {action.enabled}, in pause menu {GUIManager.InPauseMenu}"
+                );
+                yield break;
+            }
+            notes.Add("dashboard: back on Controls, action enabled");
+            Note(string.Join("; ", notes));
+        }
+        finally
+        {
+            XRSessionState.OpenXRState = savedState;
+            XRSessionState.OpenVRFocusLost = savedLost;
+            XRSessionState.OpenVRIdle = savedIdle;
+            // A failed step leaves no live rebind for the action's dispose or the next step.
+            if (handler != null && handler.currentPage is PauseMenuRebindKeyPage page)
+                page.OnPageExit();
+            ClosePause();
+            RebindPromptTarget(savedTarget);
+        }
+    }
+
+    /// <summary>vr.490: a headset taken off that only the wear sensor reports (OpenXR's session stays FOCUSED, so focus
+    /// is lost but <see cref="XRBootstrapDriver.HeadsetHidden"/> stays false) leaves the prompt up past the dashboard
+    /// wait. As in vr.262, the sensor goes back to "not reported" before the real one.</summary>
+    IEnumerator RebindPromptWearSensor(PauseMenuHandler handler, InputAction action)
+    {
+        bool? reading = true;
+        XRBootstrapDriver.SelfTestPresence = () => reading;
+        try
+        {
+            yield return Wait(0.3f);
+            reading = false;
+            yield return Wait(RebindPromptInput.DashboardSeconds + 0.5f);
+            if (!XRBootstrapDriver.TakenOff || VRSession.HasFocus)
+                Fail(
+                    $"worn then not worn did not read as off: {XRBootstrapDriver.FocusSource}, focus {VRSession.HasFocus}"
+                );
+            reading = true;
+            yield return Wait(0.3f);
+            if (handler.currentPage is not PauseMenuRebindKeyPage || action.enabled)
+                Fail("the wear sensor reading off ended the prompt");
+        }
+        finally
+        {
+            reading = null;
+        }
+        yield return null;
+        yield return null;
+        XRBootstrapDriver.SelfTestPresence = null;
+    }
+
+    /// <summary>Sets what the game's rebinding prompt rebinds, as a rebind button does (A/PauseMenuRebindButton.cs:72-74);
+    /// returns what it was.</summary>
+    static (
+        InputAction action,
+        string index,
+        Zorro.ControllerSupport.InputScheme scheme
+    ) RebindPromptTarget(
+        (InputAction action, string index, Zorro.ControllerSupport.InputScheme scheme) target
+    )
+    {
+        var action = GameMember.StaticField<PauseMenuRebindKeyPage, InputAction>("inputAction");
+        var index = GameMember.StaticField<PauseMenuRebindKeyPage, string>("inputLocIndex");
+        var scheme = GameMember.StaticField<
+            PauseMenuRebindKeyPage,
+            Zorro.ControllerSupport.InputScheme
+        >("forcedInputScheme");
+        var was = (action(), index(), scheme());
+        action() = target.action;
+        index() = target.index;
+        scheme() = target.scheme;
+        return was;
     }
 
     /// <summary>A raycaster on a canvas ui.world converted, for vr.360.</summary>

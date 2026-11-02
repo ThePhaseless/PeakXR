@@ -8,8 +8,9 @@ namespace PeakXR.XRInput;
 /// <c>xr.input</c>: samples <c>UnityEngine.XR.InputDevices</c> into <see cref="VRInput"/> once per frame, before
 /// any game script reads input. Provider-agnostic (OpenXR or the OpenVR plugin): every usage is looked up by name
 /// on the connected device, so controllers that lack a value (Vive wand, WMR, Index, Touch) just leave it at its
-/// default. Its one Harmony patch keeps the controllers out of the game's rebinding prompt
-/// (<see cref="RebindSkipsControllersPatch"/>).
+/// default. Its Harmony patches keep the controllers out of the game's rebinding prompt
+/// (<see cref="RebindSkipsControllersPatch"/>) and give them a refusal and a way out of it
+/// (<see cref="RebindPromptPatch"/>).
 /// </summary>
 public sealed class XRInputFeature : Feature
 {
@@ -44,6 +45,18 @@ public sealed class XRInputFeature : Feature
         XRInputSampler.Install();
         GameInputIsolation.Install();
         Patch(typeof(RebindSkipsControllersPatch));
+        // Only the prompt's refusal and way out hang on these names: a game rename must not roll back the whole feature.
+        try
+        {
+            RebindPromptPatch.Resolve();
+            Patch(typeof(RebindPromptPatch));
+        }
+        catch (System.Exception e)
+        {
+            Plugin.Log.LogWarning(
+                $"[xr.input] rebinding prompt patch skipped: {e.GetBaseException().Message}"
+            );
+        }
     }
 
     private static void ApplyHands() => VRInput.LeftHanded = DominantHand.Value == "Left";
