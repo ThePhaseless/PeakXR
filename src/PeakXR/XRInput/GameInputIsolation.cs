@@ -88,6 +88,9 @@ internal static class GameInputIsolation
 /// binding (A/PauseMenuRebindKeyPage.cs:66, saved at :114). The operation is an onEvent listener of its own that
 /// ignores <c>handled</c>, so it still gets the state <see cref="GameInputIsolation"/> drops, and it takes a control's
 /// start actuation from the control's value, frozen at rest: a finger resting on a control reads as a fresh press (#133).
+/// The headset goes too, as <c>TrackedDevice</c> covers both: its synthetic, not noisy <c>isTracked</c> is a button whose
+/// return from 0 reads as a press, so a player lifting the headset to reach the keyboard would bind it. On an action of no
+/// control type, its <c>trackingState</c> ends the rebind within a few frames of opening.
 /// Unity.InputSystem <c>InputActionRebindingExtensions.PerformInteractiveRebinding</c>.
 /// </summary>
 [HarmonyPatch(
@@ -99,7 +102,7 @@ internal static class RebindSkipsControllersPatch
     private static void Postfix(InputActionRebindingExtensions.RebindingOperation __result)
     {
         if (VRSession.Active)
-            __result.WithControlsExcluding("<XRController>");
+            __result.WithControlsExcluding("<TrackedDevice>");
     }
 }
 

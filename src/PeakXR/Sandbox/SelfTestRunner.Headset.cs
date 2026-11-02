@@ -434,7 +434,8 @@ internal sealed partial class SelfTestRunner
     /// vr.489: a controller's state does not reach the game's actions. A trigger value queued on the real Input System
     /// device, as the runtime would send it, must leave the control as it was: the game's UI module would otherwise
     /// take every pull as a second click (#133, #134). The game's rebinding prompt still reads that event, so it must not
-    /// take the control either, and a rebind made past the patched entry point must, or the probe proved nothing. A
+    /// take the control either, and a rebind made past the patched entry point must, or the probe proved nothing. Both
+    /// then listen for a moment: no tracked device's own stream, the headset's above all, may land on the prompt. A
     /// self-test's hands never pass through there, so no other step can see this.
     /// </summary>
     IEnumerator XRStateIsolatedCheck()
@@ -459,22 +460,40 @@ internal sealed partial class SelfTestRunner
         InputSystem.Update();
         float read = trigger.ReadValue();
         bool bareTook = bare.candidates.Contains(trigger);
-        bool promptTook = prompt.candidates.Contains(trigger);
+        yield return Wait(0.3f);
+        string bareSaw = CandidatePaths(bare.candidates, out _);
+        string promptSaw = CandidatePaths(prompt.candidates, out bool promptTook);
         bare.Cancel();
         prompt.Cancel();
         var note =
             $"{trigger.path}: {before:0.00}, queued {probe:0.00}, read {read:0.00}; "
-            + $"rebind took it: bare {bareTook}, prompt {promptTook}";
+            + $"rebind took it: bare {bareTook}, prompt {promptTook}; "
+            + $"in 0.3 s bare took {bareSaw}; prompt took {promptSaw}";
         InputSystem.QueueDeltaStateEvent(trigger, before);
         InputSystem.Update();
         if (Mathf.Abs(read - before) > 0.01f)
             Fail("the game's actions still read the controller: " + note);
         else if (promptTook)
-            Fail("the game's rebinding prompt takes the controller: " + note);
+            Fail("the game's rebinding prompt takes a tracked device: " + note);
         else if (!bareTook)
             Fail("the probe reached no rebind, so the prompt's result says nothing: " + note);
         else
             Note(note);
+    }
+
+    /// <summary>The first few of a rebind's candidates and how many; <paramref name="tracked"/> when any is on a
+    /// tracked device.</summary>
+    static string CandidatePaths(InputControlList<InputControl> controls, out bool tracked)
+    {
+        tracked = false;
+        var paths = new List<string>();
+        foreach (var control in controls)
+        {
+            tracked |= control.device is TrackedDevice;
+            if (paths.Count < 5)
+                paths.Add(control.path);
+        }
+        return $"{controls.Count} ({string.Join(", ", paths)})";
     }
 
     /// <summary>
@@ -503,8 +522,18 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         var handler = FindAnyObjectByType<PauseMenuHandler>();
+        // Each level has its own menu, and its pages are known only after its Start (Zorro.UI/UIPageHandler.cs:15-22).
+        yield return Until(
+            () => handler.GetPage<PauseMenuRebindKeyPage>() != null,
+            2f,
+            "the pause menu has no rebinding prompt"
+        );
+        if (!stepOk)
+            yield break;
         // The game's loop needs a binding group (A/PauseMenuRebindKeyPage.cs:54-65); the key is one nobody presses.
-        using var action = new InputAction("selftest-rebind");
+        // A button: a rebind of an action with no control type takes any control's state (RebindingOperation.WithAction),
+        // so any device's own stream could end the prompt before a press reaches it.
+        using var action = new InputAction("selftest-rebind", InputActionType.Button);
         action.AddBinding("<Keyboard>/f12", groups: "Keyboard&Mouse");
         var savedTarget = RebindPromptTarget(
             (action, "PROMPT_REBIND", Zorro.ControllerSupport.InputScheme.KeyboardMouse)
@@ -516,12 +545,13 @@ internal sealed partial class SelfTestRunner
         var notes = new List<string>();
         try
         {
-            if (handler.TransistionToPage<PauseMenuRebindKeyPage>() == null)
+            handler.TransistionToPage<PauseMenuRebindKeyPage>();
+            yield return Wait(0.2f);
+            if (PromptEnded(handler, action) is { } first)
             {
-                Fail("the pause menu has no rebinding prompt");
+                Fail(first);
                 yield break;
             }
-            yield return Wait(0.2f);
 
             float mark = CueMark();
             Script(false).Primary = true;
@@ -585,6 +615,11 @@ internal sealed partial class SelfTestRunner
 
             handler.TransistionToPage<PauseMenuRebindKeyPage>();
             yield return Wait(0.2f);
+            if (PromptEnded(handler, action) is { } second)
+            {
+                Fail(second);
+                yield break;
+            }
             Play(4);
             yield return Until(
                 () => handler.currentPage is PauseMenuControlsPage,
@@ -614,8 +649,16 @@ internal sealed partial class SelfTestRunner
                 page.OnPageExit();
             ClosePause();
             RebindPromptTarget(savedTarget);
+            EndHands();
         }
     }
+
+    /// <summary>Null while the prompt is up, else what ended it before anything pressed: a completed rebind leaves its
+    /// control as the action's override (A/PauseMenuRebindKeyPage.cs:103-114).</summary>
+    static string PromptEnded(PauseMenuHandler handler, InputAction action) =>
+        handler.currentPage is PauseMenuRebindKeyPage && !action.enabled
+            ? null
+            : $"the prompt ended by itself: on {handler.currentPage.name}, action enabled {action.enabled}, took '{action.bindings[0].overridePath}'";
 
     /// <summary>vr.490: a headset taken off that only the wear sensor reports (OpenXR's session stays FOCUSED, so focus
     /// is lost but <see cref="XRBootstrapDriver.HeadsetHidden"/> stays false) leaves the prompt up past the dashboard
