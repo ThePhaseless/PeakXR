@@ -203,6 +203,7 @@ public partial class AvatarPoseDriver
             ItemProbeMax
         );
         heldBackBy = null;
+        heldBackBody = null;
         // The body first: a prop behind a friend must not hide them, or an item pressed on them past the limit could
         // let go and snap inside them (#119, #124); ReachBlocked sees no characters.
         heldByBody = OtherBodyInTheWay(centre, radius, toTarget / dist, dist);
@@ -241,6 +242,13 @@ public partial class AvatarPoseDriver
 
     /// <summary>The last <see cref="ItemHeldBack"/> met another player's body.</summary>
     private bool heldByBody;
+
+    private Character heldBackBody;
+
+    /// <summary>The other player whose body keeps the local held item in the hand now (the arm's limit reads the same
+    /// <see cref="HeldBlockedFresh"/>), else null. The hand-over reads it (#112).</summary>
+    internal Character HeldBackBody =>
+        Time.fixedTime - heldBlockedAt <= HeldBlockedFresh ? heldBackBody : null;
 
     /// <summary>The reasons this keep has printed past the limit (<see cref="LogKeptWeld"/>); -1 before its first line.</summary>
     private int keptPastWhy = -1;
@@ -321,6 +329,7 @@ public partial class AvatarPoseDriver
             )
             {
                 heldBackBy = BodyHits[i].collider;
+                heldBackBody = body;
                 return true;
             }
         }

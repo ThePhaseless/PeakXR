@@ -54,6 +54,7 @@ public static class SelfTestIds
         "emote",
         "feed",
         "feed-fetch-front",
+        "feed-held-ahead",
         "feed-refuse",
         "grab",
         "holster",

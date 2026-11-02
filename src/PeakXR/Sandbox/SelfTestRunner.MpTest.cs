@@ -161,6 +161,7 @@ internal sealed partial class SelfTestRunner
         yield return MpStep("two-hand", 90f, true, MpTwoHand());
         yield return MpStep("feed", 180f, true, Feed());
         yield return MpStep("feed-fetch-front", 90f, true, FeedFetchFront());
+        yield return MpStep("feed-held-ahead", 120f, true, FeedHeldAhead());
         yield return MpSocialSteps();
         MpFinish("script done");
     }
@@ -1502,8 +1503,8 @@ internal sealed partial class SelfTestRunner
         // starts past the zone's exit radius, not its entry: an item that once came within FeedRadius stays in the zone
         // out to FeedExitRadius, and a squeeze there feeds (MP run 17, #111: the band's 0.26 m floor sat inside the 0.30 m
         // exit, and the host was fed). It ends inside NearFriendRadius, where the refusal says "closer".
-        const float bandLow = Social.SocialHands.FeedExitRadius + 0.02f;
-        const float bandHigh = Social.SocialHands.NearFriendRadius - 0.03f;
+        const float bandLow = MpBandLow;
+        const float bandHigh = MpBandHigh;
         var holdHand = PeakXR.Interact.Physical.ItemGestures.HoldingHand(rig);
         float ownGap = 0f;
         string pressNote = null;
@@ -1517,6 +1518,7 @@ internal sealed partial class SelfTestRunner
         float bandEye = 0f;
         int bandSteps = 0;
         float shortFor = 0f;
+        bool ringInBand = false;
         // A destroyed item is == null, and so is HeldItem() once it is gone: test the item first (MP run 17, #111).
         while (Now < bandEnd && item != null && HeldItem() == item && host != null)
         {
@@ -1575,6 +1577,9 @@ internal sealed partial class SelfTestRunner
                 && ownGap >= PeakXR.Interact.Physical.HeldGestures.AwayFromMouth + 0.05f
                     ? placedFor + Time.unscaledDeltaTime
                     : 0f;
+            // Past the dwell with the trigger up, the ring already marks the mouth (#112).
+            ringInBand |=
+                placedFor >= 0.4f && Social.SocialHands.Instance.FeedState == HandOverState.Hint;
             if (bandMark < 0f && placedFor >= 0.5f)
             {
                 bandMark = CueMark();
@@ -1624,6 +1629,11 @@ internal sealed partial class SelfTestRunner
                     $"the food never rested {bandLow:0.00}-{bandHigh:0.00} m from the host's mouth, clear of A's own ({ownGap:0.00} m), for the beside-the-mouth squeeze: {bandGaps}"
                 )
             );
+            yield break;
+        }
+        if (!ringInBand)
+        {
+            Fail("no ring on the host's mouth with the food rested just short of it: " + bandGaps);
             yield break;
         }
         yield return ExpectCue(left, DenyReason.OutOfReach, bandMark, false, 1.5f);
@@ -1784,6 +1794,168 @@ internal sealed partial class SelfTestRunner
         else
             stepNote = "no feed: " + note;
     }
+
+    /// <summary>
+    /// feed-held-ahead: food carried ahead at chest height, no carry-back, walked in until it meets the host, then raised
+    /// to their mouth. #14's "feeding is hard": the body weld keeps it on them with the hand short of its controller, and
+    /// it still has to feed (<see cref="HandOver.HeldOffAtSpot"/>). Nothing may start while A walks (#93).
+    /// </summary>
+    IEnumerator FeedHeldAhead()
+    {
+        yield return FreeHands();
+        if (!stepOk)
+            yield break;
+        yield return FetchFood(i => IsFood(i) && i.canUseOnFriend);
+        if (!stepOk || stepSkip != null)
+            yield break;
+        var item = HeldItem();
+        cpItemId = item.itemID;
+        bool left = LocalHold.ItemInLeftHand;
+        var c = Character.localCharacter;
+        var rig = VRRig.Instance;
+        float consumedBefore = c.data.lastConsumedItem;
+        HeadFrame(out var head, out var forward, out var right);
+        yield return MoveTrack(
+            left,
+            head + (left ? -right : right) * 0.15f + Vector3.down * 0.35f + forward * 0.4f,
+            0.3f
+        );
+        var grip = HeldGrip.Of(rig, Script(left), item);
+        float startSpeed = -1f;
+        var walk = WalkTo(HostCenter, 0.45f, false);
+        while (walk.MoveNext())
+        {
+            if (startSpeed < 0f && item != null && item.isUsingSecondary)
+                startSpeed = new Vector2(
+                    c.data.avarageVelocity.x,
+                    c.data.avarageVelocity.z
+                ).magnitude;
+            yield return walk.Current;
+        }
+        // Twice the gate: the average decays over the stop, so only a walk's own speed is a fault.
+        if (startSpeed > 2f * HandOver.StillSpeed)
+        {
+            Fail(F($"use-on-friend started on the walk in, A moving {startSpeed:0.00} m/s"));
+            yield break;
+        }
+        var host = Host();
+        yield return MpStepToMouth(host);
+        var driver = AvatarPoseDriver.Of(c);
+        float best = float.MaxValue;
+        float placeBest = float.MaxValue;
+        float keptFor = 0f;
+        float end = Now + GameTiming.Budget(GameTiming.FeedSeconds(item), 8f);
+        while (
+            item != null
+            && HeldItem() == item
+            && Now < end
+            && host != null
+            && c.data.lastConsumedItem == consumedBefore
+        )
+        {
+            var mouth = HostPart(host, BodypartType.Head);
+            best = Mathf.Min(best, Social.SocialHands.FeedGap(item, mouth));
+            if (driver != null && driver.HeldItemGap >= 0f)
+                placeBest = Mathf.Min(placeBest, Vector3.Distance(driver.HeldItemPlace, mouth));
+            if (driver != null && driver.HeldBackBody == host)
+                keptFor += Time.unscaledDeltaTime;
+            var goal = rig.Origin.InverseTransformPoint(mouth - grip.World(rig, Script(left)));
+            goal =
+                VRInput.HeadPosition
+                + Vector3.ClampMagnitude(goal - VRInput.HeadPosition, MpFeedHold);
+            SetHand(
+                left,
+                HandScript
+                    .Approach(Script(left).Position.N(), goal.N(), 1.5f, Time.unscaledDeltaTime)
+                    .U()
+            );
+            yield return null;
+        }
+        if (c.data.lastConsumedItem == consumedBefore && item != null && item.isUsingSecondary)
+            yield return WaitFor(
+                () =>
+                    item == null
+                    || !item.isUsingSecondary
+                    || c.data.lastConsumedItem != consumedBefore,
+                GameTiming.FeedSeconds(item) + 0.5f
+            );
+        if (c.data.lastConsumedItem != consumedBefore)
+            yield return WaitFor(() => HeldItem() != item, 2f);
+        var note = F(
+            $"item closest {best:0.00} m to the host's mouth, its place on the controller {placeBest:0.00} m, kept by the host's body {keptFor:0.0} s, {mouthStepNote}"
+        );
+        if (c.data.lastConsumedItem == consumedBefore)
+            Fail("raised to the host's mouth after the walk in, the food did not feed: " + note);
+        else
+            stepNote = "fed after a walk in with the food held ahead: " + note;
+    }
+
+    /// <summary>Brings the held item to rest just short of the host's mouth with the hand alone, speed from the measured
+    /// gap, a short step in when the full hold falls short, until <paramref name="done"/>; the last gap in
+    /// <see cref="bandGap"/>.</summary>
+    IEnumerator MpRestInBand(bool left, Item item, Character host, Func<bool> done)
+    {
+        var c = Character.localCharacter;
+        var rig = VRRig.Instance;
+        float shortFor = 0f;
+        int steps = 0;
+        for (
+            float end = Now + MpBandBudget;
+            Now < end && item != null && HeldItem() == item && !done();
+
+        )
+        {
+            var mouth = HostPart(host, BodypartType.Head);
+            bandGap = Social.SocialHands.FeedGap(item, mouth);
+            var fullHold =
+                VRInput.HeadPosition
+                + Vector3.ClampMagnitude(
+                    rig.Origin.InverseTransformPoint(mouth) - VRInput.HeadPosition,
+                    MpFeedHold
+                );
+            float speed = HandScript.BandSpeed(bandGap, MpBandLow, MpBandHigh);
+            SetHand(
+                left,
+                HandScript
+                    .Approach(
+                        Script(left).Position.N(),
+                        (speed >= 0f ? fullHold : VRInput.HeadPosition).N(),
+                        Mathf.Abs(speed),
+                        Time.unscaledDeltaTime
+                    )
+                    .U()
+            );
+            shortFor =
+                bandGap > MpBandHigh && Vector3.Distance(Script(left).Position, fullHold) < 0.02f
+                    ? shortFor + Time.unscaledDeltaTime
+                    : 0f;
+            if (shortFor >= 1f && steps < 3)
+            {
+                steps++;
+                shortFor = 0f;
+                yield return CarryFoodBack(left);
+                var toward = mouth - c.Center;
+                toward.y = 0f;
+                var to =
+                    c.Center
+                    + toward.normalized * (bandGap - 0.5f * (MpBandLow + MpBandHigh) + 0.1f);
+                yield return MpWalkBounded(() => to, 0.1f, 3f);
+                Face(HostPart(host, BodypartType.Head));
+                end = Now + MpBandBudget;
+                continue;
+            }
+            yield return null;
+        }
+    }
+
+    /// <summary>The nearest point of the item from the mouth at the last frame of <see cref="MpRestInBand"/> (m).</summary>
+    float bandGap;
+
+    /// <summary>The band just short of the mouth (m, the zone's own measure, SocialHands.FeedGap): past the zone's exit
+    /// radius, not its entry, and inside the radius where a press says "closer" (MP run 17, #111).</summary>
+    const float MpBandLow = Social.SocialHands.FeedExitRadius + 0.02f;
+
+    const float MpBandHigh = Social.SocialHands.NearFriendRadius - 0.03f;
 
     /// <summary>The food low at the holding side and a little back, out of a host's mouth zone on the walk in.</summary>
     IEnumerator CarryFoodBack(bool left)
@@ -2818,6 +2990,31 @@ internal sealed partial class SelfTestRunner
         if (!stepOk || stepSkip != null)
             yield break;
         var item = HeldItem();
+        // Just short of the mouth first, trigger up: refused after the dwell, never nothing (#112).
+        bool nearLeft = LocalHold.ItemInLeftHand;
+        yield return CarryFoodBack(nearLeft);
+        yield return WalkTo(HostCenter, MpSqueezeEye + 0.3f, true);
+        if (!stepOk)
+            yield break;
+        yield return MpStandOff(Host());
+        Affordance.ResetGate();
+        float nearMark = CueMark();
+        yield return MpRestInBand(
+            nearLeft,
+            item,
+            Host(),
+            () => CueLog.Capture.Fired(nearLeft, DenyReason.CantUse, nearMark, true, out _)
+        );
+        yield return ExpectCue(nearLeft, DenyReason.CantUse, nearMark, true, 0.5f);
+        if (!stepOk)
+        {
+            failNote += F(
+                $"; the item rested {bandGap:0.00} m from the host's mouth with the trigger up"
+            );
+            yield break;
+        }
+        var nearCue = cueNote;
+        Affordance.ResetGate();
         // Close enough that the item reaches the mouth with the arm short of full stretch (MP run 10: from 0.6 m the
         // hand, capped at arm's reach, held the Frisbee 0.45 m from the head, outside the 0.22 m mouth zone).
         // Not a must-arrive: the host's own body can stop the walk a little short; the reach check below decides.
@@ -2903,7 +3100,7 @@ internal sealed partial class SelfTestRunner
         string itemName = item != null ? item.name : "the item";
         if (stepOk)
             stepNote =
-                $"{itemName} resting at the host's mouth, trigger up, refused after {atMouth:0.0} s there (closest {best:0.00} m); {cueNote}";
+                $"just short of the mouth: {nearCue}; {itemName} resting at the host's mouth, trigger up, refused after {atMouth:0.0} s there (closest {best:0.00} m); {cueNote}";
         else
             Note(
                 F(

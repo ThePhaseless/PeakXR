@@ -26,7 +26,7 @@ public enum HandOverState : byte
     /// <summary>Out of the zone, or a trigger already held on arrival: nothing.</summary>
     None,
 
-    /// <summary>In the zone with the trigger up: show where it would go.</summary>
+    /// <summary>In the zone with the trigger up, or rested just short of it: show where it would go.</summary>
     Hint,
 
     /// <summary>The trigger was pressed in the zone: use the item on the friend (hold the game's use-on-friend).</summary>
@@ -83,12 +83,26 @@ public sealed class HandOver
     /// controller elsewhere (#119: 0.63 m off, fed in 1.15 s).</summary>
     public const float PlaceRadius = 0.35f;
 
+    /// <summary>The same limit just outside the zone (out to a friend's near radius and the item's own size): a hand
+    /// offering the item there, not one whose item a friend's body keeps while it is elsewhere.</summary>
+    public const float NearPlaceRadius = 0.6f;
+
+    /// <summary>A friend's body holds the item off the spot its controller has reached: it cannot get closer, and
+    /// letting go would only snap it inside them (#116, #119), so it counts as there (#112: a Frisbee 0.24 m off on a
+    /// 0.22 m zone, with the hand 1.00 m short).</summary>
+    public static bool HeldOffAtSpot(bool keptByThem, float placeGap) =>
+        keptByThem && placeGap <= PlaceRadius;
+
     private bool applying;
     private float outFor;
     private float inFor;
 
     /// <summary>The dwell applied or refused on this visit to the zone.</summary>
     private bool dwelt;
+
+    /// <summary>Seconds at rest just outside the zone, and whether this visit to it or the zone has been refused.</summary>
+    private float nearFor;
+    private bool nearRefused;
 
     /// <param name="usable">The friend can take the item (canUseOnFriend).</param>
     /// <param name="ownUse">The item has a trigger use of its own (a torch, a spool): when it is not
@@ -98,6 +112,7 @@ public sealed class HandOver
     /// <see cref="Dwell"/> only counts then, and starts over when one moves before it is done.</param>
     /// <param name="placeGap">The item's controller-held place from the mouth or chest (m): the <see cref="Dwell"/>
     /// only counts within <see cref="PlaceRadius"/>. The trigger does not read it.</param>
+    /// <param name="nearBand">Out of the zone, the item is still just short of it (<see cref="NearStep"/>).</param>
     public HandOverState Update(
         bool inZone,
         bool trigger,
@@ -105,7 +120,8 @@ public sealed class HandOver
         bool ownUse = false,
         float dt = 0f,
         bool still = true,
-        float placeGap = 0f
+        float placeGap = 0f,
+        bool nearBand = false
     )
     {
         if (!inZone && applying && usable && (trigger || dwelt) && (outFor += dt) < Grace)
@@ -113,14 +129,41 @@ public sealed class HandOver
         outFor = 0f;
         if (!inZone || (!usable && ownUse))
         {
-            Reset();
+            ResetZone();
+            if (nearBand && !inZone && (usable || !ownUse))
+                return NearStep(trigger, usable, dt, still && placeGap <= NearPlaceRadius);
+            nearFor = 0f;
+            nearRefused = false;
             return HandOverState.None;
         }
+        nearFor = 0f;
         var state = Step(trigger, usable);
         if (Dwell > 0f && state is HandOverState.None or HandOverState.Hint)
             state = DwellStep(usable, state, dt, still && placeGap <= PlaceRadius);
         applying = state == HandOverState.Apply;
+        nearRefused |= state == HandOverState.Refuse;
         return state;
+    }
+
+    /// <summary>Just short of the zone with the trigger up, for <see cref="Dwell"/>: say so instead of nothing (#112).
+    /// An item they can take gets the ring on the spot for as long as it rests there; one they cannot is refused once
+    /// per visit. The trigger stays the item's own here, and its own refusal speaks (<see cref="Context"/>).</summary>
+    private HandOverState NearStep(bool trigger, bool usable, float dt, bool counts)
+    {
+        if (trigger || !counts)
+        {
+            nearFor = 0f;
+            return HandOverState.None;
+        }
+        nearFor += dt;
+        if (nearFor < Dwell)
+            return HandOverState.None;
+        if (usable)
+            return HandOverState.Hint;
+        if (nearRefused)
+            return HandOverState.None;
+        nearRefused = true;
+        return HandOverState.Refuse;
     }
 
     /// <summary>Held in the zone for <see cref="Dwell"/>: an item they can take is applied for as long as it stays;
@@ -201,6 +244,13 @@ public sealed class HandOver
     }
 
     public void Reset()
+    {
+        ResetZone();
+        nearFor = 0f;
+        nearRefused = false;
+    }
+
+    private void ResetZone()
     {
         armed = false;
         refused = false;

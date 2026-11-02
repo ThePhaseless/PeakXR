@@ -351,4 +351,94 @@ public class HandOverTests
                 h.Update(true, false, true, false, 0.1f, still: false, placeGap: 0.1f)
             );
     }
+
+    static HandOverState Near(
+        HandOver h,
+        bool usable = true,
+        float dt = 0.1f,
+        bool trigger = false,
+        bool ownUse = false,
+        bool still = true,
+        float placeGap = 0.4f
+    ) => h.Update(false, trigger, usable, ownUse, dt, still, placeGap, nearBand: true);
+
+    [Fact]
+    public void JustShortOfTheMouth_FoodGetsTheRingAfterTheDwell()
+    {
+        // #112: with the trigger up, 0.22-0.45 m off the mouth said nothing at all.
+        var h = Mouth();
+        Assert.Equal(HandOverState.None, Near(h));
+        Assert.Equal(HandOverState.None, Near(h));
+        Assert.Equal(HandOverState.Hint, Near(h, dt: 0.2f));
+        Assert.Equal(HandOverState.Hint, Near(h));
+        Assert.False(h.SuppressPrimary);
+    }
+
+    [Fact]
+    public void JustShortOfTheMouth_AnItemTheyCannotTakeIsRefusedOncePerVisit()
+    {
+        var h = Mouth();
+        Assert.Equal(HandOverState.None, Near(h, usable: false));
+        Assert.Equal(HandOverState.Refuse, Near(h, usable: false, dt: 0.3f));
+        for (int i = 0; i < 20; i++)
+            Assert.Equal(HandOverState.None, Near(h, usable: false));
+        // Out of the band and back: a new try.
+        h.Update(false, false, false, false, 0.1f);
+        Near(h, usable: false, dt: 0.1f);
+        Assert.Equal(HandOverState.Refuse, Near(h, usable: false, dt: 0.3f));
+    }
+
+    [Fact]
+    public void JustShortOfTheMouth_NothingWhileMovingOrWithTheHandElsewhere()
+    {
+        var h = Mouth();
+        for (int i = 0; i < 20; i++)
+        {
+            Assert.Equal(HandOverState.None, Near(h, usable: false, still: false));
+            Assert.Equal(HandOverState.None, Near(h, usable: false, placeGap: 0.63f));
+        }
+    }
+
+    [Fact]
+    public void JustShortOfTheMouth_TheTriggerStaysTheItemsOwn()
+    {
+        // HeldGestures.MouthHint and UseDenial speak for a press here (HandOver.Context).
+        var h = Mouth();
+        for (int i = 0; i < 20; i++)
+        {
+            Assert.Equal(HandOverState.None, Near(h, trigger: true));
+            Assert.False(h.SuppressPrimary);
+        }
+    }
+
+    [Fact]
+    public void JustShortOfTheMouth_AnItemWithItsOwnUseIsNoHandOver()
+    {
+        var h = Mouth();
+        for (int i = 0; i < 20; i++)
+            Assert.Equal(HandOverState.None, Near(h, usable: false, ownUse: true));
+    }
+
+    [Fact]
+    public void ARefusalAtTheMouthIsNotRepeatedBesideIt()
+    {
+        var h = Mouth();
+        h.Update(true, false, false, false, 0.1f);
+        Assert.Equal(HandOverState.Refuse, h.Update(true, false, false, false, 0.3f));
+        for (int i = 0; i < 20; i++)
+            Assert.Equal(HandOverState.None, Near(h, usable: false));
+    }
+
+    [Theory]
+    [InlineData(true, 0.2f, true)]
+    [InlineData(true, 0.35f, true)]
+    [InlineData(true, 0.5f, false)]
+    [InlineData(false, 0.2f, false)]
+    public void AFriendsBodyHoldingTheItemOffCountsWithTheControllerAtTheSpot(
+        bool kept,
+        float placeGap,
+        bool counts
+    ) =>
+        // #112: a Frisbee on the host's head, 0.24 m off against the 0.22 m zone, with the controller on the mouth.
+        Assert.Equal(counts, HandOver.HeldOffAtSpot(kept, placeGap));
 }

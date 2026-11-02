@@ -1358,6 +1358,8 @@ internal sealed class SocialHands : IGripExtension
     /// (CharacterSyncer.cs:116-117) and their ragdoll simulates here between them (CharacterMovement.cs:295, :683-697). A
     /// teal ring marks the mouth or chest while in range and through the cast. An item they cannot take is refused at
     /// the mouth after the dwell or on the squeeze (CharacterInteractible.HasItemCanUseOnFriend, :90), and so is a bot (:128).
+    /// Rested just short of the zone (<see cref="NearFriendRadius"/>), the ring or the refusal comes too (#112), and a
+    /// friend's body holding the item off the spot its controller has reached counts as there.
     /// </summary>
     private bool UpdateFeed(Character c, float dt)
     {
@@ -1385,18 +1387,34 @@ internal sealed class SocialHands : IGripExtension
             friend != null
             && (
                 !friend.gameObject.activeInHierarchy
-                || !NearPart(friend, part, box, FeedExitRadius + grow)
+                || (
+                    !NearPart(friend, part, box, FeedExitRadius + grow)
+                    && !HeldOffAtSpot(c, friend, part, point)
+                )
             )
         )
             feedCandidate = null;
         if (feedCandidate == null)
             feedCandidate = NearestPart(c, part, box, FeedRadius + grow);
+        if (feedCandidate == null)
+        {
+            // The body keep does not let go here: it would snap the item inside them (#116, #119). It counts instead.
+            var driver = Avatar.AvatarPoseDriver.Of(c);
+            var body = driver != null ? driver.HeldBackBody : null;
+            if (body != null && HeldOffAtSpot(c, body, part, point))
+                feedCandidate = body;
+        }
         bool inZone = feedCandidate != null;
         var who = inZone ? feedCandidate : friend;
+        // Rested just short of the zone it still says something (#112).
         if (who == null || !who.gameObject.activeInHierarchy)
+            who = near;
+        if (who == null)
         {
             handOver.Reset();
             atFriendMouth = false;
+            feedLogged = false;
+            FeedState = HandOverState.None;
             return false;
         }
         bool left = LocalHold.ItemInLeftHand;
@@ -1417,8 +1435,10 @@ internal sealed class SocialHands : IGripExtension
             dt,
             // Never on the walk up, or as a friend walks into it (#93, #119).
             HandOver.Still(feederSpeed, friendSpeed),
-            placeGap
+            placeGap,
+            nearFriendMouth
         );
+        FeedState = state;
         if (!inZone && state == HandOverState.Apply)
             feedCandidate = who;
         if (usable && (inZone || state == HandOverState.Apply))
@@ -1443,6 +1463,26 @@ internal sealed class SocialHands : IGripExtension
     }
 
     private bool feedLogged;
+
+    /// <summary>What the hand-over did this frame (self-test: the ring just short of the mouth, #112).</summary>
+    internal HandOverState FeedState { get; private set; }
+
+    /// <summary><paramref name="friend"/>'s body keeps the item in the hand with its controller at their mouth or chest
+    /// (<see cref="HandOver.HeldOffAtSpot"/>).</summary>
+    private static bool HeldOffAtSpot(
+        Character c,
+        Character friend,
+        BodypartType part,
+        Vector3 point
+    )
+    {
+        var driver = Avatar.AvatarPoseDriver.Of(c);
+        return driver != null
+            && HandOver.HeldOffAtSpot(
+                ReferenceEquals(driver.HeldBackBody, friend),
+                PlaceGap(c, PartPosition(friend, part, point))
+            );
+    }
 
     private static float LevelSpeed(Character ch)
     {
@@ -1535,6 +1575,8 @@ internal sealed class SocialHands : IGripExtension
         nearFriendSpot = null;
         feedCandidate = null;
         handOver.Reset();
+        feedLogged = false;
+        FeedState = HandOverState.None;
     }
 
     private static bool NearPart(Character ch, BodypartType part, Bounds box, float radius)
