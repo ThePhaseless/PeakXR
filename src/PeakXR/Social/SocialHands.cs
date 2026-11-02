@@ -1429,10 +1429,29 @@ internal sealed class SocialHands : IGripExtension
             case HandOverState.Apply:
                 // The friend stays marked while the game's feed cast fills its ring at the hand.
                 Affordance.Mark(left, spot, DenyReason.NeedsFriend, DenyHint.At(spot));
+                LogApplied(c, item, spot, left);
                 return FeedTarget != null;
             default:
+                feedLogged = false;
                 return false;
         }
+    }
+
+    private bool feedLogged;
+
+    /// <summary>Once per hand-over, as it applies: where the item is and how far it lags its controller, which tells
+    /// food held to the mouth from food a friend's body held there (#119).</summary>
+    private void LogApplied(Character c, Item item, Vector3 spot, bool left)
+    {
+        if (feedLogged)
+            return;
+        feedLogged = true;
+        var driver = Avatar.AvatarPoseDriver.Of(c);
+        Plugin.Log.LogInfo(
+            System.FormattableString.Invariant(
+                $"[interact.social] hand-over applies: {item.name} {FeedGap(item, spot):0.00} m from the spot, {(driver != null ? driver.HeldItemGap : -1f):0.00} m from its place on the controller, trigger {VRInput.Hand(left).Trigger:0.00}"
+            )
+        );
     }
 
     /// <summary>Trigger value that counts as the hand-over squeeze.</summary>

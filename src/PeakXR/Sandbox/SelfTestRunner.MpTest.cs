@@ -1333,7 +1333,7 @@ internal sealed partial class SelfTestRunner
         {
             Fail(
                 walkFed
-                    ? "the host was fed on the walk in, before the squeeze beside the mouth"
+                    ? "the host was fed on the way in, before the squeeze beside the mouth"
                     : "the food left the hand on the walk in"
             );
             yield break;
@@ -1679,7 +1679,7 @@ internal sealed partial class SelfTestRunner
         if (spawn != null && first == null)
         {
             stepSkip = null;
-            yield return Ask(MpRequest.SpawnItem, 5f, Flat(VRRig.Instance.Head.forward), spawn);
+            yield return Ask(MpRequest.SpawnItem, 5f, SpawnSide(c), spawn);
             if (stepSkip == null)
             {
                 bool Spawned(Item x) => ok(x) && x.name.StartsWith(spawn, StringComparison.Ordinal);
@@ -1737,6 +1737,15 @@ internal sealed partial class SelfTestRunner
             stepSkip = F(
                 $"no reachable item among {tried.Count} tried within {MpFetchRange:0} m of the host{(tried.Count > 0 ? $"; the last lay {lastFar:0.0} m off and the walk stopped {lastShort:0.0} m short" : "")}{(Now >= giveUp ? $"; gave up after {MpFetchSeconds:0} s" : "")}{spawnNote}"
             );
+    }
+
+    /// <summary>The side of A the host spawns an item on: away from the host, so A turns away to fetch it. Along A's
+    /// look it lands at the feet of a host A is facing, and the lift and the carry both end up on the host (#119: the
+    /// mouth dwell fed them 2 s after the pickup, A standing still; #112: a Compass out of sight behind them).</summary>
+    static Vector3 SpawnSide(Character c)
+    {
+        var host = Host();
+        return host != null ? Flat(c.Center - host.Center) : Flat(VRRig.Instance.Head.forward);
     }
 
     /// <summary>How far (m) from the host a step goes for an item, so it never strands A away from the host (#103).</summary>
