@@ -86,6 +86,7 @@ public static class SelfTestIds
         "vr.01-rig",
         "vr.02-title-stage",
         "vr.02c-title-drawn",
+        "vr.137-beam-on-panel",
         "vr.03-canvases",
         "vr.04-settings-panel",
         "vr.05-loading-space",

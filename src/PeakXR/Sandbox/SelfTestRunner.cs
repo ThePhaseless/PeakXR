@@ -169,6 +169,7 @@ internal sealed partial class SelfTestRunner : MonoBehaviour
         // Past their own wait for the title's buttons (TitleButtonsSeconds).
         yield return VRStep("vr.02-title-stage", 40f, TitleStageCheck());
         yield return VRStep("vr.02c-title-drawn", 45f, TitleDrawnCheck());
+        yield return VRStep("vr.137-beam-on-panel", 15f, BeamOnPanelCheck());
         if (!hold)
             yield return TutorialSteps();
         yield return Run("01-airport", 180f, Airport());

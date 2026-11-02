@@ -24,7 +24,6 @@ internal sealed class LaserPointer
 {
     internal const int PointerId = -7100;
     private const float DragAngle = 1.2f;
-    private const float MissLength = 1.5f;
     private const float TickSeconds = 0.015f;
 
     // Hits looked at per ray for the beam; the first drawn or usable one usually is the first or second.
@@ -64,6 +63,11 @@ internal sealed class LaserPointer
     public static GameObject Over { get; private set; }
 
     public static bool OverLeft { get; private set; }
+
+    /// <summary>Where this frame's beam ends and whether a dot sits there, for self-test vr.137.</summary>
+    public static Vector3 BeamEnd { get; private set; }
+
+    public static bool DotShown { get; private set; }
 
     /// <summary>The laser is on a panel or its trigger is held (a slider drag can leave the panel): lazily following
     /// menus stay put meanwhile (<see cref="Core.LazyFollow"/>).</summary>
@@ -231,7 +235,18 @@ internal sealed class LaserPointer
 
         var origin = aim.position;
         bool landed = pick.Visual >= 0;
-        var end = landed ? shown : origin + aim.forward * MissLength;
+        // No dot past a gap in a panel, the dot means something that counts; the beam still reaches the panel (#137).
+        var end = landed
+            ? shown
+            : origin
+                + aim.forward
+                    * LaserLook.MissBeam(
+                        over != null
+                            ? Vector3.Distance(origin, hit.worldPosition)
+                            : WorldCanvases.PanelCrossing(origin, aim.forward)
+                    );
+        BeamEnd = end;
+        DotShown = landed;
         line.SetPosition(0, origin);
         line.SetPosition(1, end);
         var eye = rig.Head != null ? rig.Head.position : origin;

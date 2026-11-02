@@ -18,6 +18,13 @@ public static class LaserLook
     public const float MinCursor = 0.005f;
     public const float HoverScale = 1.4f;
 
+    /// <summary>Beam length in metres when the ray meets nothing.</summary>
+    public const float MissLength = 1.5f;
+
+    /// <summary>Beam length when no hit counts: a panel past <see cref="MissLength"/> that the ray crosses (negative: none)
+    /// still gets the beam, so its gaps keep an aim cue; a nearer blocker or canvas rect does not cut it short.</summary>
+    public static float MissBeam(float crossing) => MathF.Max(MissLength, crossing);
+
     public static bool CrossesFace(Vector3 from, Vector3 to, Vector3 eye, float radius = FaceRadius)
     {
         var d = to - from;
