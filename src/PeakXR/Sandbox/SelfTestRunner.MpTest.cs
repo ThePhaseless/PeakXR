@@ -377,6 +377,37 @@ internal sealed partial class SelfTestRunner
     static float Slope(Vector3 from) =>
         Terrain(from, Vector3.down, 3f, out var hit) ? Vector3.Angle(hit.normal, Vector3.up) : 90f;
 
+    /// <summary>Both empty hands on their tracked poses (up to 1.5 s), named in the checkpoint's <c>settle</c>.</summary>
+    IEnumerator FreeHandsSettled()
+    {
+        var c = Character.localCharacter;
+        var driver = c != null ? AvatarPoseDriver.Of(c) : null;
+        if (driver == null)
+            yield break;
+        float Gap(bool left) =>
+            driver.HandTarget(left, out var target)
+                ? Vector3.Distance(
+                    c.refs
+                        .ragdoll
+                        .partDict[left ? BodypartType.Hand_L : BodypartType.Hand_R]
+                        .Rig
+                        .position,
+                    target
+                )
+                : float.PositiveInfinity;
+        float start = Now;
+        yield return WaitFor(
+            () => Gap(true) <= HandSettledGap && Gap(false) <= HandSettledGap,
+            1.5f
+        );
+        Extra(
+            "settle",
+            F(
+                $"free hands after {Now - start:0.00} s: left {Gap(true):0.00} m, right {Gap(false):0.00} m off their tracked hands"
+            )
+        );
+    }
+
     /// <summary>A holding hand's bone off its tracked hand by at most this (m) counts as settled.</summary>
     const float HandSettledGap = 0.1f;
 
@@ -1295,6 +1326,13 @@ internal sealed partial class SelfTestRunner
         if (!stepOk || stepSkip != null)
             yield break;
         yield return TwoHandHeld();
+        if (!stepOk)
+            yield break;
+        // The step's last grip opening drops the item: the checkpoint waits for the free hands, as it does for a
+        // holding hand, or it reads arms still on the way (#145: own bones 0.38 m off the tracked hands).
+        yield return WaitFor(() => HeldItem() == null, 1f);
+        yield return MpRest();
+        yield return FreeHandsSettled();
     }
 
     /// <summary>
