@@ -426,12 +426,31 @@ internal sealed partial class SelfTestRunner
             stepNote = all;
     }
 
+    /// <summary>A raycaster on a canvas ui.world converted, for vr.360.</summary>
+    static UnityEngine.UI.GraphicRaycaster ConvertedRaycaster()
+    {
+        foreach (
+            var raycaster in FindObjectsByType<UnityEngine.UI.GraphicRaycaster>(
+                FindObjectsSortMode.None
+            )
+        )
+            if (
+                raycaster.TryGetComponent<Canvas>(out var canvas)
+                && UI.World.WorldCanvases.IsConverted(canvas.rootCanvas)
+            )
+                return raycaster;
+        return null;
+    }
+
     /// <summary>
     /// vr.360: while the headset shows none of the game's frames (OpenXR SYNCHRONIZED; OpenVR headset idle, written
     /// into <see cref="XRSessionState"/> as the backend would), the desktop gets a flat view: the rig's head camera
     /// renders as a plain camera (<see cref="Rig.DesktopMirror.Flat"/>, eye mask None, URP XR rendering off) and the
     /// game paces itself at the idle rate on either runtime. Shown again, the same camera is back in stereo with XR
-    /// rendering on and pacing off. Screenshot <c>vr-360-flat-view</c> is the window while off.
+    /// rendering on and pacing off. Screenshot <c>vr-360-flat-view</c> is the window while off. While off the converted
+    /// canvases' event camera is that head camera, so a mouse click lands under the cursor; back on, it is the laser's
+    /// (#132). The laser is judged with the menu the focus loss opens up, hidden while off and showing back on: without
+    /// a menu it hides either way, so that is only noted.
     /// </summary>
     IEnumerator FlatViewCheck()
     {
@@ -456,7 +475,16 @@ internal sealed partial class SelfTestRunner
         {
             Play(3);
             yield return Wait(0.3f);
+            var raycaster = ConvertedRaycaster();
+            if (raycaster == null)
+                fails.Add("no converted canvas to read the event camera from");
             var flat = Rig.DesktopMirror.Flat;
+            if (raycaster != null && raycaster.eventCamera != cam)
+                fails.Add($"event camera '{raycaster.eventCamera}' while off, not the head camera");
+            if (!GUIManager.InPauseMenu)
+                notes.Add("no menu up while off: laser not judged");
+            else if (UI.World.LaserPointer.Showing)
+                fails.Add("the laser shows while the head camera draws the window");
             var data = cam.GetUniversalAdditionalCameraData();
             if (!XRBootstrapDriver.HeadsetHidden)
                 fails.Add($"not hidden after the state change ({XRBootstrapDriver.FocusSource})");
@@ -474,6 +502,12 @@ internal sealed partial class SelfTestRunner
             yield return Wait(0.3f);
             if (Rig.DesktopMirror.Flat != null)
                 fails.Add("flat view kept after the headset shows frames again");
+            if (raycaster != null && raycaster.eventCamera != UI.World.LaserPointer.EventCamera)
+                fails.Add($"event camera '{raycaster.eventCamera}' back on, not the laser's");
+            if (!GUIManager.InPauseMenu)
+                notes.Add("no menu up back on: laser not judged");
+            else if (!UI.World.LaserPointer.Showing)
+                fails.Add("the laser stays hidden after the headset shows frames again");
             if (cam.stereoTargetEye != StereoTargetEyeMask.Both || !data.allowXRRendering)
                 fails.Add(
                     $"head camera not back in stereo (eyes {cam.stereoTargetEye}, XR rendering {data.allowXRRendering})"

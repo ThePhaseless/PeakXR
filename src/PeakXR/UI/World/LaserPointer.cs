@@ -22,7 +22,7 @@ namespace PeakXR.UI.World;
 /// </summary>
 internal sealed class LaserPointer
 {
-    private const int PointerId = -7100;
+    internal const int PointerId = -7100;
     private const float DragAngle = 1.2f;
     private const float MissLength = 1.5f;
     private const float TickSeconds = 0.015f;

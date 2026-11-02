@@ -130,7 +130,13 @@ internal sealed class UIWorldRuntime : MonoBehaviour
         split.PoseWrist(rig, cfg);
         split.PoseTop(rig.Head, cfg, dt);
         split.PoseReticle(rig.Head, hud, cfg);
-        pointer.Process(interactive || LaserPointer.ForceShow, cfg, rig, dt);
+        // No laser while the head camera draws the window: nobody aims with the headset off, the mouse has the panels.
+        pointer.Process(
+            (interactive || LaserPointer.ForceShow) && Rig.DesktopMirror.Flat == null,
+            cfg,
+            rig,
+            dt
+        );
         MirrorTransitions();
     }
 
