@@ -668,6 +668,10 @@ internal sealed partial class SelfTestRunner
     Vector3 pressFrom;
     Vector3 pressDir;
 
+    /// <summary>What aimed the held spike in that frame: its hold, and the arms' weight behind it (#129).</summary>
+    bool pressHoldPose;
+    float pressArmWeight;
+
     /// <summary>Samples the held aim every frame after Update, where SpikeCue places a ring, until a denial past
     /// <paramref name="denials"/> lands (that frame's sample is the refused press's aim) or 3 s pass.</summary>
     IEnumerator TrackPressAim(VRRig rig, bool left, int denials)
@@ -675,6 +679,10 @@ internal sealed partial class SelfTestRunner
         for (float end = Now + 3f; Now < end; )
         {
             HeldRay(rig, left, out pressFrom, out pressDir);
+            var c = Character.localCharacter;
+            var driver = AvatarPoseDriver.Of(c);
+            pressHoldPose = Interact.HandAim.HoldPoseOn(c);
+            pressArmWeight = driver != null ? driver.ArmWeight : 0f;
             if (Affordance.Count != denials)
                 yield break;
             yield return null;

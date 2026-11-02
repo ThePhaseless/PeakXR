@@ -2179,6 +2179,30 @@ internal sealed partial class SelfTestRunner
             AimHeldAt(rig, left, face);
             yield return null;
         }
+        // A settled stance (#129): the one NoWall came with the body sliding 2 m/s and the hand 0.78 m off its controller,
+        // the ring straight down. A slide that drops the arms hands the aim to the physical piton (HandAim.HoldTarget),
+        // and the step measured the wall before the press only.
+        var driver = AvatarPoseDriver.Of(c);
+        // Held, not one frame's read: the frame the slide let the body touch ground reads settled too.
+        float settledSince = float.PositiveInfinity;
+        for (float until = Now + 3f; Now < until && Now - settledSince < SettledFor; )
+        {
+            AimHeldAt(rig, left, face);
+            yield return null;
+            if (!Settled(c, driver))
+                settledSince = float.PositiveInfinity;
+            else if (float.IsPositiveInfinity(settledSince))
+                settledSince = Now;
+        }
+        if (Now - settledSince < SettledFor)
+        {
+            Fail(
+                F(
+                    $"setup: no settled stance held {SettledFor:0.00} s to press from in 3 s: grounded {c.data.isGrounded}, falling {c.data.fallSeconds:0.00} s, speed {c.data.avarageVelocity.magnitude:0.00} m/s, hold pose {Interact.HandAim.HoldPoseOn(c)}, arm weight {(driver != null ? driver.ArmWeight : 0f):0.00}"
+                )
+            );
+            yield break;
+        }
         // The precondition: in range, so only the slot rule can refuse it.
         float range = spike.climbingSpikeStartDistanceGrounded;
         if (
@@ -2207,7 +2231,7 @@ internal sealed partial class SelfTestRunner
         int spikesAfter = c.data.climbingSpikeCount;
         string note =
             F(
-                $"first spike slot {first.itemSlotID}, drawn {selected.Value}, wall {hit.distance:0.00} m (reach {range:0.00} m) along {spikeDir}, at the press from {pressFrom} along {pressDir}, spikes {spikesBefore} then {spikesAfter}, cast {cast}; "
+                $"first spike slot {first.itemSlotID}, drawn {selected.Value}, wall {hit.distance:0.00} m (reach {range:0.00} m) along {spikeDir}, at the press from {pressFrom} along {pressDir}, hold pose {pressHoldPose}, arm weight {pressArmWeight:0.00}, spikes {spikesBefore} then {spikesAfter}, cast {cast}; "
             ) + stepNote;
         if (!stepOk)
             stepNote = note;
@@ -2217,6 +2241,18 @@ internal sealed partial class SelfTestRunner
             Note(note);
         yield return LetGoAll(c);
     }
+
+    /// <summary>How long vr.44f's stance must stay <see cref="Settled"/> before the press.</summary>
+    const float SettledFor = 0.25f;
+
+    /// <summary>The body stands still and the hold, not the physical item, aims the held spike.</summary>
+    static bool Settled(Character c, AvatarPoseDriver driver) =>
+        c.data.isGrounded
+        && c.data.fallSeconds <= 0f
+        && c.data.avarageVelocity.magnitude < 0.3f
+        && driver != null
+        && driver.ArmWeight >= 1f
+        && Interact.HandAim.HoldPoseOn(c);
 
     /// <summary>
     /// vr.267: a held piton set from close to a wall. The hold lays the blade along the aim
