@@ -1,3 +1,5 @@
+using System;
+
 namespace PeakXR.Core;
 
 /// <summary>
@@ -52,6 +54,80 @@ public enum HandOverState : byte
 }
 
 /// <summary>
+/// One visit of a held item to a friend's mouth or chest, for the log line as it ends: how long each condition of the
+/// dwell was closed and what was said, so a visit that stayed silent says why (#112).
+/// </summary>
+public sealed class HandOverVisit
+{
+    private float seconds,
+        zone,
+        handMoving,
+        feederMoving,
+        friendMoving,
+        placeOff,
+        notLooking,
+        ownSlot,
+        trigger,
+        ring,
+        standing;
+    private float nearest = float.PositiveInfinity;
+    private float nearestPlace = float.PositiveInfinity;
+    private int refusals;
+    private bool applied;
+
+    public bool Open { get; private set; }
+
+    /// <summary>One frame of the visit, with the arguments <see cref="HandOver.Update"/> got and its answer.</summary>
+    public void Note(
+        HandOverState state,
+        bool inZone,
+        bool triggerDown,
+        bool handStill,
+        bool onOwnSlot,
+        float feederSpeed,
+        float friendSpeed,
+        float placeGap,
+        float gap,
+        bool looking,
+        float dt
+    )
+    {
+        Open = true;
+        seconds += dt;
+        zone += inZone ? dt : 0f;
+        handMoving += handStill ? 0f : dt;
+        feederMoving += HandOver.Still(feederSpeed) ? 0f : dt;
+        friendMoving += HandOver.Still(friendSpeed) ? 0f : dt;
+        placeOff +=
+            placeGap <= (inZone ? HandOver.PlaceRadius : HandOver.NearPlaceRadius) ? 0f : dt;
+        notLooking += looking ? 0f : dt;
+        ownSlot += onOwnSlot ? dt : 0f;
+        trigger += triggerDown ? dt : 0f;
+        ring += state == HandOverState.Hint ? dt : 0f;
+        standing += state == HandOverState.Refused ? dt : 0f;
+        refusals += state == HandOverState.Refuse ? 1 : 0;
+        applied |= state == HandOverState.Apply;
+        nearest = Math.Min(nearest, gap);
+        nearestPlace = Math.Min(nearestPlace, placeGap);
+    }
+
+    /// <summary>The visit's line, and a clean slate for the next.</summary>
+    public string End()
+    {
+        string line = FormattableString.Invariant(
+            $"{seconds:0.00} s, {zone:0.00} s in the zone, nearest {nearest:0.00} m, its place {nearestPlace:0.00} m; closed for: hand moving {handMoving:0.00} s, feeder {feederMoving:0.00} s, friend {friendMoving:0.00} s, place off {placeOff:0.00} s, not looking {notLooking:0.00} s, own slot {ownSlot:0.00} s, trigger {trigger:0.00} s; said: ring {ring:0.00} s, refused {refusals} time(s), refusal standing {standing:0.00} s, applied {applied}"
+        );
+        seconds = zone = handMoving = feederMoving = friendMoving = 0f;
+        placeOff = notLooking = ownSlot = trigger = ring = standing = 0f;
+        nearest = nearestPlace = float.PositiveInfinity;
+        refusals = 0;
+        applied = false;
+        Open = false;
+        return line;
+    }
+}
+
+/// <summary>
 /// Feeding or healing a friend as a hand-over, never by passing close: the item rests at their mouth (food) or on
 /// their chest (a bandage) for <see cref="Dwell"/>, or the trigger is squeezed there. A trigger already held when the item arrives (eating on the way,
 /// another use) does not count until it is let go and pressed again in the zone. While armed in the zone the
@@ -86,6 +162,12 @@ public sealed class HandOver
     /// <summary>The feeder's level speed (m/s) under which the dwell counts: walking up to a friend with food at chest
     /// height must not feed them (#93, MP run 13); a squeeze still feeds at once.</summary>
     public const float StillSpeed = 0.5f;
+
+    /// <summary>The hand is on your own slot or a pack that takes the item: a use on the friend gives way, or stowing
+    /// next to them would spend it (#147), unless the trigger says otherwise. A refusal spends nothing, so an item they
+    /// cannot take is still refused there (#112: a Compass at a friend's mouth, the hand on the belt, and no cue at all).</summary>
+    public static bool YieldsToOwnSlot(bool usable, bool trigger, bool slotTakes) =>
+        usable && !trigger && slotTakes;
 
     public static bool Still(float levelSpeed) => levelSpeed < StillSpeed;
 

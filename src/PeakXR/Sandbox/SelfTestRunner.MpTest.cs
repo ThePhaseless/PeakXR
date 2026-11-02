@@ -7,6 +7,8 @@ using System.Text;
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Diagnostics;
+using PeakXR.Locomotion;
+using PeakXR.Rig;
 using PeakXR.Social;
 using PeakXR.UI.Affordances;
 using PeakXR.VR;
@@ -194,9 +196,19 @@ internal sealed partial class SelfTestRunner
         if ((!r.Passed || r.Skipped) && HeldItem() != null)
             yield return Guard(TapDrop(), Now + 1f, _ => { });
         if (vr)
+        {
+            // The checkpoint compares hands at rest, and a stance walk swings both of them in the body frame (#145: regroup
+            // written during a push and read 0.32 m off; they matched within a second).
+            yield return StanceQuiet();
+            Extra(
+                "stance",
+                F(
+                    $"stance {(RigDriver.FollowWalking || LocomotionInput.StanceOwed ? "still walking" : "quiet")} after {stanceWaited:0.00} s"
+                )
+            );
             yield return HandClearOfBodies();
-        if (vr)
-            yield return HoldingHandSettled();
+            yield return HeldItem() != null ? HoldingHandSettled() : FreeHandsSettled();
+        }
         WriteCheckpoint(
             id,
             r.Skipped ? "skip"
@@ -416,6 +428,18 @@ internal sealed partial class SelfTestRunner
             )
         );
     }
+
+    /// <summary>Until the stance walk has stepped the body under the view, up to 3 s: it moves the body and swings both
+    /// arms (Settle can take over a second), and the wait is <c>stanceWaited</c>.</summary>
+    IEnumerator StanceQuiet()
+    {
+        float start = Now;
+        yield return WaitFor(() => !RigDriver.FollowWalking && !LocomotionInput.StanceOwed, 3f);
+        stanceWaited = Now - start;
+    }
+
+    /// <summary>Seconds the last <see cref="StanceQuiet"/> took.</summary>
+    float stanceWaited;
 
     /// <summary>A holding hand's bone off its tracked hand by at most this (m) counts as settled.</summary>
     const float HandSettledGap = 0.1f;
@@ -1687,10 +1711,13 @@ internal sealed partial class SelfTestRunner
                 && ownGap >= PeakXR.Interact.Physical.HeldGestures.AwayFromMouth + 0.05f
                     ? placedFor + Time.unscaledDeltaTime
                     : 0f;
-            // Past the dwell with the trigger up, the ring already marks the mouth (#112).
+            // Past the dwell with the trigger up, the ring marks the mouth (#112). The dwell starts when the hand stops,
+            // the band's clock when the food enters it, and a stance push restarts the dwell, so the press waits for the
+            // ring, up to MpRingWait, and a ring that never came fails by name below (#119: a 0.1 s window, closed by a
+            // push 0.2 s before the press).
             ringInBand |=
-                placedFor >= 0.4f && Social.SocialHands.Instance.FeedState == HandOverState.Hint;
-            if (bandMark < 0f && placedFor >= 0.5f)
+                placedFor > 0f && Social.SocialHands.Instance.FeedState == HandOverState.Hint;
+            if (bandMark < 0f && placedFor >= 0.5f && (ringInBand || placedFor >= MpRingWait))
             {
                 bandMark = CueMark();
                 Script(left).Trigger = 1f;
@@ -1743,7 +1770,11 @@ internal sealed partial class SelfTestRunner
         }
         if (!ringInBand)
         {
-            Fail("no ring on the host's mouth with the food rested just short of it: " + bandGaps);
+            Fail(
+                F(
+                    $"no ring on the host's mouth with the food rested just short of it for {MpRingWait:0.0} s: {bandGaps}"
+                )
+            );
             yield break;
         }
         yield return ExpectCue(left, DenyReason.OutOfReach, bandMark, false, 1.5f);
@@ -2256,6 +2287,11 @@ internal sealed partial class SelfTestRunner
             else
                 spawnNote = "; " + stepSkip;
             stepSkip = null;
+            // The nearest match goes first then, whatever it is (#112: a Frisbee on a run that asked for a Compass).
+            if (first == null || !OnReachableGround(first))
+                Plugin.Log.LogInfo(
+                    $"[mptest] {spawn} is not the first reach{(first != null ? ": " + GroundNote(first) : spawnNote)}"
+                );
         }
         var tried = new HashSet<Item>();
         string missed = null;
@@ -2605,6 +2641,10 @@ internal sealed partial class SelfTestRunner
     /// <see cref="MpFeedHold"/> stops 0.4 m short, so only the hand brings the food to the band (#119).</summary>
     const float MpSqueezeEye = 1f;
 
+    /// <summary>How long (s) the food rests in the band waiting for the ring: the mouth dwell, a stance push and its
+    /// settle.</summary>
+    const float MpRingWait = 2f;
+
     /// <summary>How long (s) the hand gets to bring the food to the band from the carry, from each stance.</summary>
     const float MpBandBudget = 8f;
 
@@ -2645,7 +2685,13 @@ internal sealed partial class SelfTestRunner
         {
             var rot = rig.Origin.rotation * hand.Rotation;
             var ctrl = rig.Origin.TransformPoint(hand.Position);
-            var off = Quaternion.Inverse(rot) * (item.Center() - ctrl);
+            // The item at its place on the controller, not where it is now: its lag or a friend's body would aim the
+            // hand that far off (#112: 0.48 m on a Compass 0.1 s after the carry back, the hand driven onto A's own belt).
+            var center = item.Center();
+            var driver = AvatarPoseDriver.Of(Character.localCharacter);
+            if (driver != null && driver.HeldItemGap >= 0f)
+                center += driver.HeldItemPlace - item.rig.position;
+            var off = Quaternion.Inverse(rot) * (center - ctrl);
             // Up to 0.6 m: a lollipop held by its stick has its centre well past 0.3 m (MP run 27).
             return new HeldGrip(Vector3.ClampMagnitude(off, 0.6f));
         }
@@ -3234,10 +3280,8 @@ internal sealed partial class SelfTestRunner
         // The zone SocialHands.UpdateFeed tests: the item's nearest point within FeedRadius of the Head bodypart.
         Vector3 Mouth() => HostPart(host, BodypartType.Head);
         bool left = LocalHold.ItemInLeftHand;
-        // The item's place on the controller, read here where the air is clear. Read at the host, it took the body's keep
-        // for the item's place (#112, modded B: 0.46 m on a Compass, with A's eye 0.28 m from the mouth after a walk to
-        // 0.45 m, so the hand never brought it to the mouth). It stays read once: read every frame it fed the weld's lag
-        // back into the aim (MP run 25: the hand jumped 0.9 m as the weld let go and rejoined, and the item left the mouth).
+        // The item's place on the controller, read once: read every frame it fed the weld's lag back into the aim (MP run
+        // 25: the hand jumped 0.9 m as the weld let go and rejoined, and the item left the mouth).
         yield return HoldingHandSettled();
         var grip = HeldGrip.Of(rig, Script(left), item);
         // The host's mouth must be within arm's reach of the head, not on a ledge below (MP run 7: the hand was driven
@@ -3471,6 +3515,18 @@ internal sealed partial class SelfTestRunner
         if (minOff <= SocialIntent.ReachConeDegrees)
         {
             Fail("the look drifted into the reach cone before the cue: " + lookNote);
+            yield break;
+        }
+        // Every client runs the reach against its own copy of A (CharacterGrabbing.cs:253), and a stance push at the grip
+        // carried B's copy of A into B's cone while A read 72 deg: B was free 0.28 s after the grip, before the cue's 0.4 s
+        // dwell, and a freed friend owes no cue (Validate). Nothing was tested. A B still webbed with no cue stays a failure.
+        if (
+            !CueLog.Capture.Fired(false, DenyReason.WrongAngle, gripMark, out _)
+            && !CharacterGrabbing.TargetCanBeHelped(host, c)
+            && c.data.sinceGrabFriend >= 0.3f
+        )
+        {
+            stepSkip = "B's own client caught the reach before the cue's dwell: " + lookNote;
             yield break;
         }
         yield return ExpectCue(false, DenyReason.WrongAngle, gripMark, false, 2f);
@@ -3997,6 +4053,9 @@ internal sealed partial class SelfTestRunner
             yield break;
         var item = HeldItem();
         cpItemId = item.itemID;
+        // Carried back first: held at rest ahead, the food ended the walk at the host's mouth and the mouth dwell fed them
+        // (GetFedItemRPC, 1.1 s in the zone, #100), and the hand reached for the pack with nothing in it.
+        yield return CarryFoodBack(LocalHold.ItemInLeftHand);
         yield return BehindHost(host);
         if (!mpBehind)
         {
@@ -4040,7 +4099,9 @@ internal sealed partial class SelfTestRunner
         );
         if (!stepOk)
         {
-            stepNote = F($"over {stash.Over}, verdict {stash.Verdict}");
+            stepNote = F(
+                $"over {stash.Over}, verdict {stash.Verdict}, in hand {(HeldItem() != null ? HeldItem().name : "nothing")}"
+            );
             yield break;
         }
         int pocket = stash.Pocket;
@@ -4126,6 +4187,8 @@ internal sealed partial class SelfTestRunner
             yield break;
         var item = HeldItem();
         cpItemId = item.itemID;
+        // As in vr.330: food held ahead ends the walk at the host's mouth.
+        yield return CarryFoodBack(LocalHold.ItemInLeftHand);
         yield return BehindHost(host);
         if (!mpBehind)
         {
@@ -4139,9 +4202,16 @@ internal sealed partial class SelfTestRunner
         // The fetch leaves the holding hand low and ahead, close enough to the pack's low transform to count as in it
         // (PackStash.Reach), and a held item in a pack turns the free hand's point off (TickPoint; #144).
         yield return CarryFoodBack(!free);
-        PointAt(free, visuals.transform.position);
+        yield return StanceQuiet();
+        // Aimed anew every frame: the pack can lie nearly under the eye, where a stance push of 0.3 m is past the hold angle
+        // of an aim set once (#100, modded B: the hand 15 deg off straight down, nothing armed).
+        bool Armed(DenyReason verdict)
+        {
+            PointAt(free, visuals.transform.position);
+            return Points(free, visuals, verdict);
+        }
         yield return Until(
-            () => Points(free, visuals, DenyReason.None),
+            () => Armed(DenyReason.None),
             1.5f,
             "the host's pack pointed at from behind did not arm"
         );
@@ -4203,13 +4273,14 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         string stashed = F($"{itemName} went into pocket {pocket} of the host's pack");
-        // From the front: WrongAngle, and the pull opens nothing.
+        // From the front: WrongAngle, and the pull opens nothing. Not food: the walk to the front can stop against the
+        // host, the mouth dwell then feeds them (no gaze rule, #119) and an empty hand arms no pack (#100).
         yield return GrabReachable(
-            i => i.UIData.canBackpack && i is not Backpack,
+            i => i.UIData.canBackpack && i is not Backpack && !i.canUseOnFriend,
             null,
             NearItems,
             5,
-            spawn: MpFood
+            spawn: MpPlainItem
         );
         if (!stepOk || stepSkip != null)
         {
@@ -4217,20 +4288,27 @@ internal sealed partial class SelfTestRunner
             stepNote = stashed + "; no second item for the front check";
             yield break;
         }
+        free = !LocalHold.ItemInLeftHand;
+        // Carried back first: held ahead, the item met the host on the walk, and the body keep and the stance push that
+        // followed took the aim off (#100, modded B: 0.66 m from the host, the item pressed on them).
+        yield return CarryFoodBack(!free);
         var front = host.Center + host.data.lookDirection_Flat.normalized * 1f;
         yield return MpWalkBounded(() => front, 0.3f, MpPackWalkSeconds);
+        yield return MpStandOff(host);
         Face(visuals.transform.position);
         free = !LocalHold.ItemInLeftHand;
         yield return CarryFoodBack(!free);
-        PointAt(free, visuals.transform.position);
+        yield return StanceQuiet();
         yield return Until(
-            () => Points(free, visuals, DenyReason.WrongAngle),
+            () => Armed(DenyReason.WrongAngle),
             1.5f,
             "from the host's front the pack did not show WrongAngle"
         );
         if (!stepOk)
         {
-            stepNote = stashed + "; " + PointState();
+            stepNote = F(
+                $"{stashed}; {PointState()}; in hand {(HeldItem() != null ? HeldItem().name : "nothing")}; A {FlatDistance(c.Center, host.Center):0.00} m from the host, the stance waited {stanceWaited:0.00} s"
+            );
             yield break;
         }
         LookAtHand(free);
@@ -4343,6 +4421,15 @@ internal sealed partial class SelfTestRunner
                 yield break;
             }
             bool felt = CueLog.Capture.Felt(true, CueFeel.Progress, mark, out _);
+            // Read before the press: the head rises with the jump, and read after it the note understated the height. The
+            // boost needs B on a crouched A within 0.3 s of the jump arriving (CharacterMovement.cs:1021); this is A's copy
+            // of that clock, and the observer logs B's own on the JumpRpc line (#108).
+            float over = host.Center.y - c.Head.y;
+            float off = FlatDistance(host.Center, c.Center);
+            string stood =
+                host.data.lastStoodOnPlayer == c
+                    ? F($"last on A {host.data.sinceStandOnPlayer:0.00} s before")
+                    : "not on A";
             // Jump is the dominant hand's primary (Bindings: VRAction.Jump); Script takes "left" (MP run 7 pressed the
             // off hand's, so A never jumped and B was never boosted).
             bool jumper = VRInput.LeftHanded;
@@ -4358,7 +4445,7 @@ internal sealed partial class SelfTestRunner
                 () => host.data.sincePalJump < 1f,
                 1.5f,
                 F(
-                    $"the host was not boosted: B {host.Center.y - c.Head.y:0.00} m over A's head and {FlatDistance(host.Center, c.Center):0.00} m off it at the jump; pressure felt on A: {felt}"
+                    $"the host was not boosted: B {over:0.00} m over A's head and {off:0.00} m off it at the press, {stood}; pressure felt on A: {felt}"
                 )
             );
             if (!stepOk)
