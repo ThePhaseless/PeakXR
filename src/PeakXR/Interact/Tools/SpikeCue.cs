@@ -133,6 +133,12 @@ internal static class SpikeCue
             range + LookPast,
             HelperFunctions.GetMask(HelperFunctions.LayerType.TerrainMap)
         );
+        if (attempt)
+            Plugin.Log.LogInfo(
+                System.FormattableString.Invariant(
+                    $"[interact.tools] spike press refused: ray from {origin} along {dir}, wall {(hit ? wall.distance : -1f):0.00} m of {range:0.00} m, hold pose {HandAim.HoldPoseOn(c)}, piton forward {held.transform.forward}, slot {spikeSlot?.itemSlotID}, selected {(c.refs.items.currentSelectedSlot.IsSome ? c.refs.items.currentSelectedSlot.Value : -1)}"
+                )
+            );
         // The hover cue never says "can't" inside the range (hysteresis only past it); a press the game just
         // refused (it would have started the cast above) is checked against the exact range.
         within = hit && DenyRange.Within(wall.distance, range, within, 0.1f);
