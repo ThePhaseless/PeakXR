@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using PeakXR.Core;
 using PeakXR.Render;
+using PeakXR.UI.Common;
 using PeakXR.UI.World;
 using PeakXR.VR;
 using PeakXR.XR;
@@ -23,6 +24,9 @@ internal sealed partial class SelfTestRunner
 {
     /// <summary>Frames a readback may take before the check says the eye could not be read.</summary>
     private const float EyeReadSeconds = 3f;
+
+    /// <summary>The drawn fade above which the fade sphere shows (FadeSphere.Apply), so a frame is not the scene's own.</summary>
+    private const float FadedAbove = 0.001f;
 
     /// <summary>vr.02c: the panel on show at the title, the connection popup offline or the title menu with its buttons
     /// otherwise, is in both eyes' pixels.</summary>
@@ -263,19 +267,28 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>One frame of every eye target, read when the render context ends: endCameraRendering fires after the
-    /// first eye pass, with the second eye's target still holding an older frame.</summary>
+    /// first eye pass, with the second eye's target still holding an older frame. A frame under a fade is skipped: its
+    /// blink would read as a change in whatever two reads compare (a red on #5 was one), and
+    /// <see cref="EyeImages.Problem"/> names a fade that outlasts <paramref name="seconds"/>.</summary>
     static IEnumerator ReadEyes(
         Camera cam,
         UnityEngine.XR.XRDisplaySubsystem display,
-        EyeImages into
+        EyeImages into,
+        float seconds = EyeReadSeconds
     )
     {
         bool started = false;
+        float faded = 0f;
         Action<ScriptableRenderContext, List<Camera>> hook = null;
         hook = (_, cameras) =>
         {
             if (!cameras.Contains(cam))
                 return;
+            if (FadeView.Alpha > FadedAbove)
+            {
+                faded = FadeView.Alpha;
+                return;
+            }
             RenderPipelineManager.endContextRendering -= hook;
             started = true;
             for (int i = 0; i < into.Pixels.Length; i++)
@@ -315,7 +328,7 @@ internal sealed partial class SelfTestRunner
         RenderPipelineManager.endContextRendering += hook;
         try
         {
-            float deadline = Time.unscaledTime + EyeReadSeconds;
+            float deadline = Time.unscaledTime + seconds;
             while ((!started || into.Pending > 0) && Time.unscaledTime < deadline)
                 yield return null;
         }
@@ -324,8 +337,10 @@ internal sealed partial class SelfTestRunner
             RenderPipelineManager.endContextRendering -= hook;
         }
         if (!started || into.Pending > 0)
-            into.Problem ??= started
-                ? "eye readback never came back"
+            into.Problem ??=
+                started ? "eye readback never came back"
+                : faded > 0f
+                    ? F($"every frame for {seconds:0.0} s was inside a fade (drawn {faded:0.00})")
                 : "the head camera did not render";
     }
 

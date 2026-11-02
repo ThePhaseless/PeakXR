@@ -5,6 +5,8 @@ using Peak;
 using PeakXR.Core;
 using PeakXR.Diagnostics;
 using PeakXR.Render;
+using PeakXR.Rig;
+using PeakXR.UI.Common;
 using PeakXR.UI.Status;
 using PeakXR.UI.World;
 using PeakXR.VR;
@@ -24,6 +26,10 @@ internal sealed partial class SelfTestRunner
 {
     private const int EyeLumaStep = 4;
     private const int MonoDiffReads = 10;
+
+    /// <summary>What <see cref="EyesSettled"/> allows: a first eye sample that waits for a fade waits 3 s
+    /// (<see cref="EyeCalibration.FadeWaitSeconds"/>) and its blink takes about 1 s, with the first still stand before it.</summary>
+    private const float EyeSettleSeconds = 8f;
 
     /// <summary>Half the height of the rows P4 reads, in tangents: well inside the hole's radius of 0.5.</summary>
     private const float HoleBandTan = 0.15f;
@@ -173,6 +179,32 @@ internal sealed partial class SelfTestRunner
         return true;
     }
 
+    /// <summary>
+    /// Waits for no fade to be asked for or drawn and for the eye model's first still stand to have landed, a
+    /// fail by name past <see cref="EyeSettleSeconds"/>. That landing blinks and moves the view by up to 0.25 m (#5:
+    /// <c>applied inside a fade</c> 0.11 s after vr.470, in vr.480's first reads, the floor at 21 of 255). A later blink
+    /// (adaptive quality) is <see cref="ReadEyes"/>'s to skip.
+    /// </summary>
+    IEnumerator EyesSettled()
+    {
+        float end = Now + EyeSettleSeconds;
+        while (VRFade.Target > 0f || FadeView.Alpha > FadedAbove || !RigDriver.EyeCalibrated)
+        {
+            if (Now > end)
+            {
+                Fail(
+                    F(
+                        $"the view did not settle in {EyeSettleSeconds:0} s: fade target {VRFade.Target:0.00}, drawn {FadeView.Alpha:0.00}, eye model's first still stand {(RigDriver.EyeCalibrated ? "landed" : "not landed")}"
+                    )
+                );
+                yield break;
+            }
+            yield return null;
+        }
+        // The landing snaps the view on the frame after it.
+        yield return Frames(2);
+    }
+
     /// <summary>Each eye's image boxed down for comparing.</summary>
     static float[] EyeLuma(EyeImages image, int eye) =>
         EyeImageMatch.Luma(image.Pixels[eye], image.Width, image.Height, EyeLumaStep);
@@ -198,6 +230,10 @@ internal sealed partial class SelfTestRunner
             Fail("GUIManager.poisonSVFX has no renderer");
             yield break;
         }
+
+        yield return EyesSettled();
+        if (!stepOk)
+            yield break;
 
         var material = fx.renderer.material;
         bool wasActive = fx.gameObject.activeSelf;
@@ -227,6 +263,24 @@ internal sealed partial class SelfTestRunner
         string avatar = HideAvatarFromReads();
         FreezeWorld();
         yield return Frames(3);
+
+        // Half black: full black would land what waits for black (adaptive quality's resize).
+        VRFade.Set(this, 0.5f);
+        OnRestore(() => VRFade.Clear(this));
+        yield return Until(() => FadeView.Alpha > FadedAbove, 1f, "the step's own fade never drew");
+        if (!stepOk)
+            yield break;
+        var refused = new EyeImages(2);
+        yield return ReadEyes(cam, display, refused, 0.3f);
+        VRFade.Clear(this);
+        if (refused.Problem == null || !refused.Problem.Contains("inside a fade"))
+        {
+            Fail($"a read did not refuse a frame under a fade: {refused.Problem ?? "it took one"}");
+            yield break;
+        }
+        yield return EyesSettled();
+        if (!stepOk)
+            yield break;
 
         var first = new EyeImages(2);
         var second = new EyeImages(2);
@@ -529,6 +583,9 @@ internal sealed partial class SelfTestRunner
     {
         if (!EyesReady(out var cam, out var display))
             yield break;
+        yield return EyesSettled();
+        if (!stepOk)
+            yield break;
         string missing = EyeViewOverride.Resolve();
         if (missing != null)
         {
@@ -706,6 +763,9 @@ internal sealed partial class SelfTestRunner
     {
         if (!EyesReady(out var cam, out var display))
             yield break;
+        yield return EyesSettled();
+        if (!stepOk)
+            yield break;
         var prefabs = LoadedPrefabs();
         var head = cam.transform;
         var player = head.position;
@@ -875,6 +935,9 @@ internal sealed partial class SelfTestRunner
     IEnumerator EyeStateStep()
     {
         if (!EyesReady(out var cam, out _))
+            yield break;
+        yield return EyesSettled();
+        if (!stepOk)
             yield break;
         int frames = 0;
         int good = 0;
