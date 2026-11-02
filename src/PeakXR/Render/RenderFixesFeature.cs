@@ -26,7 +26,8 @@ public enum VRAntialiasing
 /// (<see cref="EyeCulling"/>, checked by <see cref="RenderPatches.EyeShadowCascades"/>), and the post dither
 /// noise (<see cref="RenderPatches.DitherSameInBothEyes"/>).
 /// The <c>CameraQuad</c> status overlays, sized from the mono frustum, are placed head-locked by ui.world and moved ahead
-/// of each eye by <see cref="EyeMatrixFeature"/> (<c>Render.EyeLockedOverlays</c>).
+/// of each eye by <see cref="EyeMatrixFeature"/> (<c>Render.EyeLockedOverlays</c>). Big sheets of hazard smoke fade near
+/// the eyes, with a haze in their place (<see cref="SmokeNearFade"/>, <c>Render.NearSmokeFade</c>).
 /// </summary>
 public sealed class RenderFixesFeature : Feature
 {
@@ -47,6 +48,7 @@ public sealed class RenderFixesFeature : Feature
     internal static ConfigEntry<bool> LensFlare;
     internal static ConfigEntry<bool> SharedEyeCulling;
     internal static ConfigEntry<bool> EyeLockedOverlays;
+    internal static ConfigEntry<bool> NearSmokeFade;
     internal static ConfigEntry<float> PerfLogSeconds;
 
     public override string Id => "render.fixes";
@@ -225,6 +227,16 @@ public sealed class RenderFixesFeature : Feature
                     + "offset. Turn off only to compare."
             )
         );
+        NearSmokeFade = Plugin.Settings.Bind(
+            section,
+            "NearSmokeFade",
+            true,
+            new ConfigDescription(
+                "Fade big sheets of hazard smoke (poison, spores, gas) within about a metre of your eyes and show a "
+                    + "haze instead. A flat sheet that close looks different in each eye. Campfire and flare smoke stay "
+                    + "as they are. Only your own view changes."
+            )
+        );
         PerfLogSeconds = Plugin.Settings.Bind(
             section,
             "PerfLogSeconds",
@@ -251,9 +263,11 @@ public sealed class RenderFixesFeature : Feature
         Patch(typeof(RenderPatches.XRShadowCull));
         Patch(typeof(RenderPatches.EyeShadowCascades));
         Patch(typeof(RenderPatches.ScoutmasterGrain));
+        Patch(typeof(RenderPatches.HazardSmokeStarts));
 
         var go = new GameObject("PeakXR.RenderFixes") { hideFlags = HideFlags.HideAndDontSave };
         Object.DontDestroyOnLoad(go);
         go.AddComponent<RenderDriver>();
+        go.AddComponent<SmokeNearFade>();
     }
 }
