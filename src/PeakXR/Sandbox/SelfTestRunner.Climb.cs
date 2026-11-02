@@ -1073,12 +1073,24 @@ internal sealed partial class SelfTestRunner
     /// <summary>The point on <see cref="testVine"/>'s drawn middle a hand grips, set by <see cref="VineLedge"/>.</summary>
     Transform vineSpot;
 
+    /// <summary>Points along the vine <see cref="VineLedge"/> may stand under, the middle first.</summary>
+    static readonly float[] VineStands = { 0.5f, 0.4f, 0.6f, 0.3f, 0.7f };
+
+    /// <summary>How many of <see cref="VineStands"/> <see cref="VineLedge"/> warps to: each costs about 1-4 s.</summary>
+    const int VineStandTries = 3;
+
+    /// <summary>How far (m) off its stand the body may settle: past it, rock pushed the body out (#142).</summary>
+    const float VineStandSlack = 0.25f;
+
     /// <summary>
-    /// <see cref="ToVine"/>'s vine with the player standing on a Map-layer test ledge 2 m under its drawn middle, so
-    /// the vine hangs 0.4 m over the eye, in an overhead reach. <see cref="vineSpot"/> marks that point; both go when
-    /// the step's <see cref="Restoring"/> runs. Run 39 warped into the air under it: the body fell, and the hand,
-    /// placed a frame behind the fall, closed 0.9 m off the vine. Run 43 warped the body's centre onto the ledge top
-    /// (not <see cref="CentreOver"/>) and it sank under it: the grip sat 1.14 m above the eye (tracking y 2.74).
+    /// <see cref="ToVine"/>'s vine with the player standing on a Map-layer test ledge 2 m under its drawn line, so the
+    /// vine hangs 0.4 m over the eye, in an overhead reach. <see cref="vineSpot"/> marks that point; both go when the
+    /// step's <see cref="Restoring"/> runs. Run 39 warped into the air under it: the body fell, and the hand, placed a
+    /// frame behind the fall, closed 0.9 m off the vine. Run 43 warped the body's centre onto the ledge top (not
+    /// <see cref="CentreOver"/>) and it sank under it: the grip sat 1.14 m above the eye (tracking y 2.74). The gate
+    /// before 0.3.1: rock stood where the ledge went under the vine's middle and pushed the body about 1 m along it, so
+    /// the hand landed past the reach guard by a varying amount (#142). The stand needs room and the body has to land
+    /// on it, or the next point along the vine is tried; with none the step fails as setup.
     /// </summary>
     IEnumerator VineLedge()
     {
@@ -1089,8 +1101,6 @@ internal sealed partial class SelfTestRunner
             yield break;
         var marker = new GameObject("PeakXR_TestVineSpot").transform;
         OnRestore(() => UnityEngine.Object.Destroy(marker.gameObject));
-        marker.position = testVine.GetPosition(0.5f, 1, 1) + Vector3.down * testVine.colliderOffset;
-        var feet = marker.position + Vector3.down * 2f;
         var ledge = GameObject.CreatePrimitive(PrimitiveType.Cube);
         ledge.name = "PeakXR_TestVineLedge";
         ledge.layer = LayerMask.NameToLayer("Map");
@@ -1099,19 +1109,46 @@ internal sealed partial class SelfTestRunner
             if (ledge != null)
                 UnityEngine.Object.Destroy(ledge);
         });
-        ledge.transform.SetPositionAndRotation(feet + Vector3.down * 0.1f, Quaternion.identity);
         ledge.transform.localScale = new Vector3(2f, 0.2f, 2f);
-        Physics.SyncTransforms();
-        c.photonView.RPC(
-            "WarpPlayerRPC",
-            RpcTarget.All,
-            CentreOver(c, feet + Vector3.up * 0.1f),
-            false
-        );
-        yield return WaitFor(() => !c.warping, 2f);
-        yield return WaitFor(() => c.data.isGrounded, 2f);
-        yield return Wait(0.5f);
-        vineSpot = marker;
+        string tried = "";
+        int warps = 0;
+        foreach (float along in VineStands)
+        {
+            if (warps >= VineStandTries)
+                break;
+            marker.position =
+                testVine.GetPosition(along, 1, 1) + Vector3.down * testVine.colliderOffset;
+            var feet = marker.position + Vector3.down * 2f;
+            // Not the ledge of the last try: it may stand in this one's way.
+            ledge.SetActive(false);
+            Physics.SyncTransforms();
+            if (!StandingRoom(feet))
+            {
+                tried += F($"{along:0.0} along it: no room at {feet}; ");
+                continue;
+            }
+            ledge.transform.SetPositionAndRotation(feet + Vector3.down * 0.1f, Quaternion.identity);
+            ledge.SetActive(true);
+            Physics.SyncTransforms();
+            warps++;
+            c.photonView.RPC(
+                "WarpPlayerRPC",
+                RpcTarget.All,
+                CentreOver(c, feet + Vector3.up * 0.1f),
+                false
+            );
+            yield return WaitFor(() => !c.warping, 2f);
+            yield return WaitFor(() => c.data.isGrounded, 2f);
+            yield return Wait(0.5f);
+            float off = FlatDistance(c.Center, feet);
+            if (off <= VineStandSlack)
+            {
+                vineSpot = marker;
+                yield break;
+            }
+            tried += F($"{along:0.0} along it: the body settled {off:0.00} m off {feet}; ");
+        }
+        Fail("setup: no stand under the vine held: " + tried);
     }
 
     /// <summary>
