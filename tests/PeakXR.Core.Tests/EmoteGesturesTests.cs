@@ -175,20 +175,8 @@ public class EmoteGesturesTests
         float forward = 0.4f,
         float below = 0.2f,
         float speed = 0.05f,
-        float stretch = 0.6f,
-        float limit = 0.75f
-    ) =>
-        EmoteGestures.ThumbIntent(
-            pose,
-            sensed,
-            holding,
-            busy,
-            forward,
-            below,
-            speed,
-            stretch,
-            limit
-        );
+        float stretch = 0.6f
+    ) => EmoteGestures.ThumbIntent(pose, sensed, holding, busy, forward, below, speed, stretch);
 
     // Frames of one intent fed to the dwell; how many emotes fire.
     static int Fires(DwellGesture g, bool intent, float seconds)
@@ -227,31 +215,47 @@ public class EmoteGesturesTests
     {
         // #146: a neutral forward reach has the thumb side up, so a still fist at full stretch met every other rule.
         Assert.False(Thumb(stretch: 0.95f));
-        Assert.False(Thumb(stretch: 0.76f));
-        Assert.True(Thumb(stretch: 0.75f));
-        Assert.False(EmoteGestures.ThumbOutFront(0.4f, 0.2f, 0.8f, 0.75f));
-        Assert.True(EmoteGestures.ThumbOutFront(0.4f, 0.2f, 0.7f, 0.75f));
+        Assert.False(Thumb(stretch: 0.91f));
+        Assert.True(Thumb(stretch: 0.9f));
     }
 
-    [Fact]
-    public void ThumbIntent_FollowsTheReachOutSetting()
+    [Theory]
+    [InlineData(0.3f, true)]
+    [InlineData(0.4f, true)]
+    [InlineData(0.45f, true)]
+    [InlineData(0.6f, false)]
+    public void ThumbIntent_NaturalHoldsCountOnTheNominalArm(float ahead, bool counts)
     {
-        Assert.False(Thumb(stretch: 0.7f, limit: 0.6f));
-        Assert.True(Thumb(stretch: 0.9f, limit: 0.95f));
-    }
-
-    [Fact]
-    public void ThumbIntent_ThePoseSelfTestsUseIsInsideTheLimit()
-    {
-        // vr.127's fist, from the eye: 0.33 m ahead, 0.1 m to its own side, 0.2 m down; on the nominal arm, as a player
-        // who has not stretched yet. The shoulder is under the neck.
+        // A fist from the eye, a little to its own side and 0.2 m down, for a player who has not stretched yet.
         var head = new System.Numerics.Vector3(0f, 1.6f, 0f);
         var neck = BodySlotLayout.Neck(head, System.Numerics.Quaternion.Identity);
         var shoulder = ReachOut.Shoulder(neck, 0f, false);
-        var hand = head + new System.Numerics.Vector3(0.1f, -0.2f, 0.33f);
+        var hand = head + new System.Numerics.Vector3(0.1f, -0.2f, ahead);
         float stretch = ReachOut.Stretch(shoulder, hand, ReachOut.NominalArm);
-        Assert.True(stretch <= 0.75f, $"stretch {stretch:0.00}");
-        Assert.True(EmoteGestures.ThumbOutFront(0.33f, 0.2f, stretch, 0.75f));
+        Assert.Equal(counts, EmoteGestures.ThumbOutFront(ahead, 0.2f, stretch));
+    }
+
+    [Theory]
+    [InlineData(0.6f, EmoteGestures.ThumbDwell)]
+    [InlineData(0.75f, EmoteGestures.ThumbDwell)]
+    [InlineData(0.76f, EmoteGestures.ThumbFarDwell)]
+    [InlineData(0.9f, EmoteGestures.ThumbFarDwell)]
+    public void ThumbDwell_IsLongerPastABentArm(float stretch, float dwell) =>
+        Assert.Equal(dwell, EmoteGestures.ThumbDwellAt(stretch));
+
+    [Fact]
+    public void ThumbDwell_AStalledMidStretchFistWaitsLonger()
+    {
+        var g = new DwellGesture { Dwell = EmoteGestures.ThumbDwellAt(0.85f) };
+        Assert.Equal(0, Fires(g, Thumb(stretch: 0.85f), 0.8f));
+        Assert.Equal(1, Fires(g, Thumb(stretch: 0.85f), 0.4f));
+    }
+
+    [Fact]
+    public void ThumbDwell_FiresBeforeTheFistsInteractComesDue()
+    {
+        // #82: a posed fist holds the head-aimed interact back at most GestureMaxWait from the grip.
+        Assert.True(EmoteGestures.ThumbFarDwell < GripIntent.GestureMaxWait);
     }
 
     [Fact]

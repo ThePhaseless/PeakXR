@@ -83,12 +83,7 @@ internal sealed class GestureEmotes : MonoBehaviour
         var flat = rig.Head.forward;
         flat.y = 0f;
         flat = flat.sqrMagnitude > 1e-4f ? flat.normalized : Vector3.forward;
-        return EmoteGestures.ThumbOutFront(
-                Vector3.Dot(p - head, flat),
-                head.y - p.y,
-                Stretch(left),
-                SocialConfig.Instance.ReachOutStretch
-            )
+        return EmoteGestures.ThumbOutFront(Vector3.Dot(p - head, flat), head.y - p.y, Stretch(left))
             && EmoteGestures.ThumbLifted(
                 LocalAvatar.ControllerCurls(left),
                 Vector3.Dot(hand.ThumbSide(), Vector3.up)
@@ -220,6 +215,8 @@ internal sealed class GestureEmotes : MonoBehaviour
             dt
         );
         var forward = rig.Head.forward;
+        leftThumb.Dwell = EmoteGestures.ThumbDwellAt(Stretch(true));
+        rightThumb.Dwell = EmoteGestures.ThumbDwellAt(Stretch(false));
         bool thumbLeft = leftThumb.Update(
             Thumb(true, rig.LeftHand, head, forward, holding, leftBusy),
             dt
@@ -287,13 +284,13 @@ internal sealed class GestureEmotes : MonoBehaviour
             Vector3.Dot(p - head, flat),
             head.y - p.y,
             state.Velocity.magnitude,
-            Stretch(left),
-            SocialConfig.Instance.ReachOutStretch
+            Stretch(left)
         );
     }
 
-    /// <summary>How far this hand is out, on the reach-out's own measure (Core <see cref="ReachOut"/>, the measured arm
-    /// in tracking space): past Social.ReachOutStretch a fist is a reach, not a thumbs-up (#146).</summary>
+    /// <summary>How far this hand is out, on the reach-out's own measure (Core <see cref="ReachOut"/>, tracking space),
+    /// against the measured arm or the nominal one if that is longer: a learner that shrank the arm must not shut the
+    /// thumbs-up out (<see cref="EmoteGestures.ThumbMaxStretch"/>, #146).</summary>
     private static float Stretch(bool left)
     {
         var headRotation = VRInput.HeadRotation.N();
@@ -304,7 +301,7 @@ internal sealed class GestureEmotes : MonoBehaviour
                 left
             ),
             VRInput.Hand(left).Position.N(),
-            SocialHands.Instance.ReachOutArm
+            Mathf.Max(SocialHands.Instance.ReachOutArm, ReachOut.NominalArm)
         );
     }
 

@@ -259,7 +259,7 @@ internal sealed partial class SelfTestRunner
         var host = Host();
         LookAtPoint(host.Center);
         // The scripted thumb is off the buttons on purpose: a neutral reach reads as a lifted thumb, and past
-        // Social.ReachOutStretch it must not be the thumbs-up every peer sees (#146; mp-check prints any it sees).
+        // EmoteGestures.ThumbMaxStretch it must not be the thumbs-up every peer sees (#146; mp-check fails on any).
         try
         {
             yield return ReachOutHold(false, () => host.Center, 0.5f, 0.5f, 0f, true);
