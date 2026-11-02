@@ -258,6 +258,9 @@ internal sealed partial class SelfTestRunner
             yield break;
         var host = Host();
         LookAtPoint(host.Center);
+        // The thumb on the stick, as a player's grip: a closed fist out in front with it lifted is the thumbs-up
+        // (EmoteGestures.ThumbIntent), which every peer sees (#146). This step tests the reach-out.
+        Script(false).StickTouch = true;
         try
         {
             yield return ReachOutHold(false, () => host.Center, 0.5f, 0.5f, 0f, true);
@@ -290,6 +293,7 @@ internal sealed partial class SelfTestRunner
         }
         finally
         {
+            Script(false).StickTouch = false;
             EndGlance();
         }
     }
