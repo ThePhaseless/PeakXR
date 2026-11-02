@@ -1719,11 +1719,11 @@ internal sealed partial class SelfTestRunner
     /// vr.82b's low grip: a point of the case's near side that <see cref="LidGesture.ReadsLow"/> by at least
     /// <see cref="LidLowMargin"/>, which the grip's own query touches. Run 14 (#54): the surface point came out inside
     /// the 0.05 m give and the grip took the lid half. Runs 22-23: on LuggageClown the first such point lay off the case,
-    /// so the grip found nothing. Lower probes are tried down to 0.6 m; false when none qualifies.
+    /// so the grip found nothing. Lower probes are tried down to <see cref="LidLowProbe"/>; false when none qualifies.
     /// </summary>
     static bool LowGripPoint(Luggage lug, Vector3 eye, out Vector3 point)
     {
-        for (float up = -(LidGesture.LidGive + LidLowMargin); up >= -0.6f; up -= 0.05f)
+        for (float up = -(LidGesture.LidGive + LidLowMargin); up >= -LidLowProbe; up -= 0.05f)
             if (
                 NearSide(lug, eye, up, out point)
                 && LidGesture.ReadsLow(lug, point, LidLowMargin)
@@ -1736,6 +1736,11 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>How far (m) under the lid's give vr.82b's low grip aims, clear of the lid/base split.</summary>
     const float LidLowMargin = 0.05f;
+
+    /// <summary>How far (m) under its render centre vr.82b looks for that grip. A LuggageClown tilted over on a rock had
+    /// its seam 0.55 m under the centre on the near side, and solid colliders reaching 1.1 m under it (#54, #127). Past
+    /// the solids the grip's own query finds nothing, so the search can still fail.</summary>
+    const float LidLowProbe = 1.2f;
 
     /// <summary>The point of <paramref name="lug"/>'s enabled solid colliders nearest a probe on the side toward
     /// <paramref name="from"/>, <paramref name="up"/> metres from its render centre, pulled 2 cm out. False when no
