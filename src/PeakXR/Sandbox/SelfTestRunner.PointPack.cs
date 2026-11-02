@@ -84,6 +84,84 @@ internal sealed partial class SelfTestRunner
         yield return Wait(0.8f);
     }
 
+    /// <summary>Headings (degrees off the view) <see cref="SpawnFarPack"/> tries: all well off the near pack, ahead.</summary>
+    static readonly float[] PointFarYaws = { 35f, -35f, 60f, -60f, 90f, -90f, 120f, -120f };
+
+    /// <summary>
+    /// A pack <see cref="PointFar"/> out, on a Map-layer shelf level with the feet, under no rock and in plain view of the
+    /// eye, past <see cref="PackDrop.PointReach"/> and inside <see cref="PackDrop.PointSearch"/> once it has settled;
+    /// <see cref="spawnedPack"/>. On the ground it rolled or lay low: an aim on it 52 degrees down had the near pack in
+    /// its hold angle and the far one past the search (#144). The shelf goes when the step's <see cref="Restoring"/> runs.
+    /// </summary>
+    IEnumerator SpawnFarPack()
+    {
+        spawnedPack = null;
+        var c = Character.localCharacter;
+        var head = VRRig.Instance.Head;
+        float feet = TrackedFloorY();
+        string tried = "";
+        foreach (float yaw in PointFarYaws)
+        {
+            var ahead =
+                head.position + Quaternion.Euler(0f, yaw, 0f) * Flat(head.forward) * PointFar;
+            var on = new Vector3(ahead.x, feet, ahead.z);
+            var top = on + Vector3.up * PackStash.PackTopRise;
+            if (
+                Physics.CheckBox(
+                    on + Vector3.up * 0.5f,
+                    new Vector3(0.3f, 0.45f, 0.3f),
+                    Quaternion.identity,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+                || Physics.Linecast(
+                    c.Head,
+                    top,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+                || Physics.Linecast(
+                    head.position,
+                    top,
+                    HelperFunctions.terrainMapMask,
+                    QueryTriggerInteraction.Ignore
+                )
+            )
+            {
+                tried += F($"{yaw:0} deg: rock; ");
+                continue;
+            }
+            var shelf = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            shelf.name = "PeakXR_TestPackShelf";
+            shelf.layer = LayerMask.NameToLayer("Map");
+            shelf.transform.SetPositionAndRotation(on + Vector3.down * 0.05f, Quaternion.identity);
+            shelf.transform.localScale = new Vector3(0.9f, 0.1f, 0.9f);
+            OnRestore(() =>
+            {
+                if (shelf != null)
+                    Destroy(shelf);
+            });
+            Physics.SyncTransforms();
+            if (!SandboxActions.SpawnItemAt(BackpackPrefab(), on + Vector3.up * PropDrop))
+            {
+                Fail(SandboxActions.LastMessage);
+                yield break;
+            }
+            spawned.Add(SandboxActions.LastSpawned);
+            var pack = SandboxActions.LastSpawned.GetComponent<Backpack>();
+            yield return Wait(0.8f);
+            float away = pack != null ? Vector3.Distance(c.Head, pack.Center()) : -1f;
+            if (away > PackDrop.PointReach + 0.1f && away < PackDrop.PointSearch - 0.1f)
+            {
+                spawnedPack = pack;
+                yield break;
+            }
+            tried += F($"{yaw:0} deg: settled {away:0.00} m from the eye; ");
+            Destroy(shelf);
+        }
+        Fail("setup: no open place for the far pack: " + tried);
+    }
+
     /// <summary>Open ground ahead, a pack <see cref="PointNear"/> out, an Apple in hand with its grip closed.</summary>
     IEnumerator PointSetup()
     {
@@ -301,7 +379,7 @@ internal sealed partial class SelfTestRunner
             yield break;
         var c = Character.localCharacter;
         bool free = pointFree;
-        yield return SpawnPointPack(PointFar, 35f);
+        yield return SpawnFarPack();
         if (!stepOk)
             yield break;
         var far = spawnedPack;
@@ -494,29 +572,49 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         // (a) a pack past reach.
-        yield return SpawnPointPack(PointFar, 35f);
+        yield return SpawnFarPack();
         if (!stepOk)
             yield break;
         yield return PointRefused(spawnedPack, DenyReason.OutOfReach);
         if (!stepOk)
             yield break;
         // (d) a low wall across the aim and the near pack's pivot, its top edge clear of the eye's line to the pack's top:
-        // the way is shut, and the hand hears it (#144). Hidden behind a tall one, the pack says nothing.
-        var eye = VRRig.Instance.Head.position;
+        // the way is shut, and the hand hears it (#144). Hidden behind a tall one, the pack says nothing. Measured on the
+        // lines PackStash.Offer reads, from the pose the aim really takes: the paper height used the rig's eye, not the
+        // body's head, and the step read "point hand -1, pack none", as a wall hiding the pack's top too would give.
+        PointAt(pointFree, pointPack.Center());
+        for (int f = 0; f < 3; f++)
+            yield return null;
         var packAt = pointPack.Center();
+        var from = VRRig.Instance.Aim(pointFree).position;
+        var eye = c.Head;
+        var across = Vector3.Lerp(packAt, from, 0.5f);
+        float topLine = Mathf.Lerp(
+            eye.y,
+            packAt.y + PackStash.PackTopRise,
+            FlatDistance(eye, across) / Mathf.Max(FlatDistance(eye, packAt), 0.01f)
+        );
+        if (topLine - across.y < 0.05f)
+        {
+            Fail(
+                F(
+                    $"setup: no room for a low wall: the aim's line is {across.y:0.00} and the eye's line to the pack's top {topLine:0.00} high there"
+                )
+            );
+            yield break;
+        }
         var slab = GameObject.CreatePrimitive(PrimitiveType.Cube);
         try
         {
             slab.name = "PeakXR_TestRock";
             slab.layer = LayerMask.NameToLayer("Map");
-            // Half way to the eye, clear of the pack, the two lines lie half the rise apart: the 0.8 m slab's top edge
-            // midway between them.
+            // Its top edge midway between the two lines.
             slab.transform.SetPositionAndRotation(
-                Vector3.Lerp(packAt, eye, 0.5f)
-                    + Vector3.up * (0.25f * PackStash.PackTopRise - 0.4f),
-                Quaternion.LookRotation(Flat(packAt - eye))
+                new Vector3(across.x, 0.5f * (across.y + topLine) - 0.4f, across.z),
+                Quaternion.LookRotation(Flat(packAt - from))
             );
-            slab.transform.localScale = new Vector3(0.8f, 0.8f, 0.05f);
+            slab.transform.localScale = new Vector3(0.5f, 0.8f, 0.05f);
+            Physics.SyncTransforms();
             yield return Wait(0.1f);
             yield return PointRefused(pointPack, DenyReason.NoPath);
             if (!stepOk)
@@ -525,6 +623,7 @@ internal sealed partial class SelfTestRunner
                 Vector3.Lerp(eye, packAt, 0.65f),
                 Quaternion.LookRotation(packAt - eye)
             );
+            slab.transform.localScale = new Vector3(0.8f, 0.8f, 0.05f);
             PointAt(pointFree, packAt);
             yield return Wait(0.6f);
             if (ReferenceEquals(PackStash.Instance.PointPack, pointPack))

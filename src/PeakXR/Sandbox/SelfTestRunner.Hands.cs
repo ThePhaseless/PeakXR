@@ -69,9 +69,9 @@ internal sealed partial class SelfTestRunner
         yield return HandStep("vr.283-feed-friend", 20f, FeedFriendStep());
         yield return HandStep("vr.284-ground-pack-stash", 30f, GroundPackStashStep());
         yield return HandStep("vr.285-friend-pack-stash", 20f, FriendPackStashStep());
-        yield return HandStep("vr.430-point-pack-open", 40f, PointPackOpenStep());
+        yield return Restoring("vr.430-point-pack-open", 40f, PointPackOpenStep());
         yield return HandStep("vr.431-point-pack-cancel", 25f, PointPackCancelStep());
-        yield return HandStep("vr.432-point-pack-refusals", 60f, PointPackRefusalsStep());
+        yield return Restoring("vr.432-point-pack-refusals", 60f, PointPackRefusalsStep());
         yield return HandStep(
             "vr.433-point-pack-secondary-kept",
             30f,
@@ -513,24 +513,42 @@ internal sealed partial class SelfTestRunner
             if (it is Backpack b && b.backpackType == BackpackSlot.BackpackType.Backpack)
                 pack = it;
         }
-        if (pack == null || !SandboxActions.GiveItem(pack))
-        {
-            stepSkip = "no backpack to give: " + SandboxActions.LastMessage;
-            yield break;
-        }
         var c = Character.localCharacter;
-        yield return WaitFor(() => c.data.currentItem is Backpack, 2f);
-        // Given, it may go on the back: the pack slot is what the game equips it from (Backpack.cs:114).
-        if (c.data.currentItem is not Backpack)
+        if (pack == null)
         {
-            c.refs.items.EquipSlot(Optionable<byte>.Some(3));
-            yield return WaitFor(() => c.data.currentItem is Backpack, 2f);
-        }
-        if (c.data.currentItem is not Backpack)
-        {
-            stepSkip = "the given pack did not reach the hand";
+            Fail("no Backpack in the item database");
             yield break;
         }
+        // Not GiveItem: GameUtils' give calls Item.Interact (GameUtils.cs:270), and a Backpack's opens its wheel
+        // (Backpack.cs:32), leaving it on the ground. Wear is the plain pickup into Player.backpackSlot (Backpack.cs:52).
+        if (c.player.backpackSlot.IsEmpty())
+        {
+            if (!SandboxActions.SpawnItemAt(pack, GroundAhead(PropSetOut)))
+            {
+                Fail(SandboxActions.LastMessage);
+                yield break;
+            }
+            spawned.Add(SandboxActions.LastSpawned);
+            yield return Wait(0.5f);
+            SandboxActions.LastSpawned.GetComponent<Backpack>().Wear(c);
+            yield return Until(
+                () => !c.player.backpackSlot.IsEmpty(),
+                3f,
+                "the backpack was not worn"
+            );
+            if (!stepOk)
+                yield break;
+        }
+        // The pack slot is what the game equips it from (Backpack.cs:114, CharacterItems.EquipSlot refuses it only on a
+        // lit rocket pack, :484). A pack in the hand throws; on the back it does not.
+        c.refs.items.EquipSlot(Optionable<byte>.Some(3));
+        yield return Until(
+            () => c.data.currentItem is Backpack,
+            2f,
+            "the worn pack did not come to the hand"
+        );
+        if (!stepOk)
+            yield break;
         ushort id = HeldItem().itemID;
         yield return null;
         yield return ThrowHeld();
