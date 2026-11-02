@@ -555,7 +555,7 @@ internal sealed class RigDriver : MonoBehaviour
                 : Vector3.zero;
         Plugin.Log.LogInfo(
             System.FormattableString.Invariant(
-                $"{Tag} lean-view t{Time.unscaledTime:0.00} root ({root.x:0.000},{root.z:0.000}) root-hip f{Vector3.Dot(root - hip, f):0.000} r{Vector3.Dot(root - hip, r):0.000} torso-hip f{Vector3.Dot(torso - hip, f):0.000} r{Vector3.Dot(torso - hip, r):0.000} blend {rootBlend:0.00} viewOffset f{Vector3.Dot(ViewOffset, f):0.000} r{Vector3.Dot(ViewOffset, r):0.000} eyes f{eyes.X:0.000} u{eyes.Y:0.000} converged {massEyes.Converged} origin ({origin.x:0.000},{origin.z:0.000}) origin-y {origin.y:0.000} hip-y {hip.y:0.000} debt f{Vector3.Dot(StanceDebt, f):0.000} r{Vector3.Dot(StanceDebt, r):0.000} walking {FollowWalking} body-view f{Vector3.Dot(BodyFromView, f):0.000} r{Vector3.Dot(BodyFromView, r):0.000} view-hold {viewHoldWhy ?? "on"} {viewHold.Offset:0.000} renderers-model f{Vector3.Dot(seen, f):0.000} r{Vector3.Dot(seen, r):0.000} turn-skip f{Vector3.Dot(TurnSkipNow, f):0.000} r{Vector3.Dot(TurnSkipNow, r):0.000} view-height {(viewHeight.Holding ? "held" : "free")} {viewHeight.Offset:0.000} ground-y {groundY:0.000} lean-limit {leanLimit:0.000}"
+                $"{Tag} lean-view t{Time.unscaledTime:0.00} root ({root.x:0.000},{root.z:0.000}) root-hip f{Vector3.Dot(root - hip, f):0.000} r{Vector3.Dot(root - hip, r):0.000} torso-hip f{Vector3.Dot(torso - hip, f):0.000} r{Vector3.Dot(torso - hip, r):0.000} blend {rootBlend:0.00} viewOffset f{Vector3.Dot(ViewOffset, f):0.000} r{Vector3.Dot(ViewOffset, r):0.000} eyes f{eyes.X:0.000} u{eyes.Y:0.000} converged {massEyes.Converged} origin ({origin.x:0.000},{origin.z:0.000}) origin-y {origin.y:0.000} hip-y {hip.y:0.000} debt f{Vector3.Dot(StanceDebt, f):0.000} r{Vector3.Dot(StanceDebt, r):0.000} walking {FollowWalking} body-view f{Vector3.Dot(BodyFromView, f):0.000} r{Vector3.Dot(BodyFromView, r):0.000} view-hold {viewHoldWhy ?? "on"} {viewHold.Offset:0.000} renderers-model f{Vector3.Dot(seen, f):0.000} r{Vector3.Dot(seen, r):0.000} turn-skip f{Vector3.Dot(TurnSkipNow, f):0.000} r{Vector3.Dot(TurnSkipNow, r):0.000} view-height {(viewHeight.Holding ? "held" : "free")} {viewHeight.Offset:0.000} ground-y {groundY:0.000} lean-limit {leanLimit:0.000} settling {Locomotion.LocomotionInput.TurnSettling}"
             )
         );
     }
@@ -1378,8 +1378,17 @@ internal sealed class RigDriver : MonoBehaviour
         // Measured on the debt, so the walk's progress takes it down (the old turnShift here outlived the walk and bent
         // the lean away from the view, vr.300).
         TurnSkipNow = turnSkip
-            .Update((view - skip - eye).N(), bodyYaw, FollowWalking, Time.unscaledDeltaTime, back)
+            .Update(
+                (view - skip - eye).N(),
+                bodyYaw,
+                FollowWalking,
+                Time.unscaledDeltaTime,
+                back,
+                Locomotion.LocomotionInput.TurnSettling,
+                (eye - lastStanceEye).N()
+            )
             .U();
+        lastStanceEye = eye;
         ViewOffset = skip + TurnSkipNow;
         // Past the lean limit the walk steps under the head: a head walking away in the room bends the spine no
         // further meanwhile (#97, vr.396: 0.41 m owed, 24 degrees).
@@ -1401,6 +1410,9 @@ internal sealed class RigDriver : MonoBehaviour
         );
         ViewOffset += BodyStance.LeanBeyond(share, leanLimit).U();
     }
+
+    /// <summary>The body's eyes on the last <see cref="UpdateStance"/>, for the creep's travel (<see cref="TurnSkip"/>).</summary>
+    private Vector3 lastStanceEye;
 
     /// <summary>The lean limit eased for walking (<see cref="BodyStance.LeanLimit"/>).</summary>
     private float leanLimit = float.NaN;

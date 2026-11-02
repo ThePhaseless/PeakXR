@@ -35,6 +35,14 @@ internal static class LocomotionInput
     /// (self-test: a step judges the stance once none is owed).</summary>
     internal static bool StanceOwed { get; private set; }
 
+    /// <summary>The body still creeps after a large look change (<see cref="OwnMotion.SettlingTurn"/>): the lean leaves
+    /// that travel out (<see cref="TurnSkip"/>).</summary>
+    internal static bool TurnSettling { get; private set; }
+
+    /// <summary>An outside force, a slide, or steep or moving ground moves the body this update: <see cref="BodyHold"/> stays
+    /// off it, whatever its strength (#139).</summary>
+    internal static bool OutsideNow { get; private set; }
+
     /// <summary><c>Time.realtimeSinceStartup</c> the last stance walk started (self-test: vr.45 checks a held lean
     /// is stepped under only after the walk's delay).</summary>
     internal static float StanceWalkStartedAt { get; private set; } = float.NegativeInfinity;
@@ -342,6 +350,8 @@ internal static class LocomotionInput
         VoiceInput.PushToTalkHeld = false;
         Ramp.Reset();
         hadBody = false;
+        TurnSettling = false;
+        OutsideNow = false;
         BodyGestures.Reset();
     }
 
@@ -402,6 +412,8 @@ internal static class LocomotionInput
             Own.Reset();
             RigDriver.FollowWalking = false;
             StanceOwed = false;
+            TurnSettling = false;
+            OutsideNow = false;
             return NVector2.Zero;
         }
 
@@ -439,6 +451,7 @@ internal static class LocomotionInput
             Time.time - OutsideForceAt < OutsideSeconds
             || data.sinceFallSlide < HoldGate.SlideCooldown
             || data.isGrounded && OnMovingOrSteepGround(c);
+        OutsideNow = outside;
         if (lastOwn && canFollow && !outside)
             Follow.Absorb(new NVector2(delta.x, delta.z), dt);
         var debt3 = rig.Origin.InverseTransformVector(RigDriver.StanceDebt);
@@ -500,8 +513,10 @@ internal static class LocomotionInput
                 level.Length(),
                 new NVector2(data.lookValues.x, data.lookValues.y),
                 outside,
-                dt
+                dt,
+                AvatarPoseDriver.Of(c) is { BodyHeld: true }
             );
+        TurnSettling = canFollow && Own.SettlingTurn;
         FollowGap = NVector2.Distance(head, Follow.Anchor);
         // A walk that cannot get the body within the lean limit (a wall, a ledge, a friend) ends in the recenter.
         bool stalled = Stance.Blocked && debt.Length() > LocomotionConfig.LeanRadius;

@@ -123,6 +123,42 @@ public static class BodyLean
         return new Vector3(upperMoment.X, 0f, upperMoment.Z) / carried;
     }
 
+    /// <summary>A look change in one physics step (degrees) from which it can be a snap: the smallest
+    /// (<c>Comfort.SnapTurnAngle</c>) is 15.</summary>
+    public const float SwingTrail = 15f;
+
+    /// <summary>How far a head swing's eye trails the look (s of its rate), as far as <see cref="MaxSwingLag"/> degrees.
+    /// A frame's worth at 30 fps, where it was measured: the 2-3 degrees of bend that trail leaves against the swing take
+    /// load off the feet, and after a glance the body slid 0.082-0.122 m with the hold on and none, 0.020-0.029 m with
+    /// (vr.302). It is set by the rate, so the frame rate doesn't shrink it: the step's own lag was 3-4x less at 90 Hz.</summary>
+    public const float SwingLagSeconds = 0.035f;
+
+    public const float MaxSwingLag = 8f;
+
+    /// <summary>Seconds the look's rate is smoothed over: at 25-40 fps one physics step carries a whole frame, reading
+    /// 1.25-2x the rate and the next step 0.</summary>
+    public const float SwingRateSeconds = 0.05f;
+
+    /// <summary>A step more than this (s) of the swing's rate is a jump of the look, not its turning: a frame is at most
+    /// 0.04 s at the frame rates played, so a fast swing's step stays well under it.</summary>
+    public const float SnapOverSeconds = 0.1f;
+
+    /// <summary>A look change of <paramref name="step"/> degrees in one physics step, against the swing's smoothed
+    /// <paramref name="rate"/> before it, is a snap.</summary>
+    public static bool IsSnap(float step, float rate) =>
+        MathF.Abs(step) >= SwingTrail && MathF.Abs(step) > MathF.Abs(rate) * SnapOverSeconds;
+
+    /// <summary>The look's smoothed rate (deg/s) after a step of <paramref name="step"/> degrees. A snap has landed by the
+    /// next frame and leaves no swing: smoothed, a 45 degree step read 740 deg/s, a 0.1 s trail under a still head.</summary>
+    public static float SwingRate(float rate, float step, float dt)
+    {
+        if (dt <= 0f)
+            return rate;
+        return IsSnap(step, rate)
+            ? 0f
+            : rate + (step / dt - rate) * ExpSmooth.Factor(1f / SwingRateSeconds, dt);
+    }
+
     /// <summary>
     /// What to add to the tracked head so the lean starts from the calibrated eyes: the unbent animated eyes
     /// (<paramref name="eyeFromHip"/>, relative to the animated hip, taken on a physics step) carried onto the
@@ -130,16 +166,20 @@ public static class BodyLean
     /// Both ends on the same frame, so a moving body adds no bias. The next step stands the pose on the look this frame
     /// wrote (<c>CharacterRagdoll.RotateCharacter</c>), so the eye turns by <paramref name="turned"/> (degrees), the look's
     /// change since that step. Left on the old look, a 45 degree snap read as a lean by the turn's chord for one step:
-    /// want 0.197-0.232 m, 16-22 degrees of target under a still head (vr.300, #123).
+    /// want 0.197-0.232 m, 16-22 degrees of target under a still head (vr.300, #123). A swing's eye still trails it, by
+    /// <see cref="SwingLagSeconds"/> of its smoothed <paramref name="lookRate"/>, which a snap resets
+    /// (<see cref="SwingRate"/>).
     /// </summary>
     public static Vector3 HeadBias(
         Vector3 eyeFromHip,
         Vector3 hip,
         Vector3 calibratedEye,
-        float turned = 0f
+        float turned = 0f,
+        float lookRate = 0f
     )
     {
-        var level = YawMath.Rotate(new Vector2(eyeFromHip.X, eyeFromHip.Z), turned);
+        float lag = Math.Clamp(lookRate * SwingLagSeconds, -MaxSwingLag, MaxSwingLag);
+        var level = YawMath.Rotate(new Vector2(eyeFromHip.X, eyeFromHip.Z), turned - lag);
         return hip + new Vector3(level.X, eyeFromHip.Y, level.Y) - calibratedEye;
     }
 

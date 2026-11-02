@@ -4,15 +4,17 @@ using System.Numerics;
 namespace PeakXR.Core;
 
 /// <summary>
-/// Holds the body's horizontal mass centre still while the avatar leans, against the lean's own contact creep and
-/// nothing else. Bending moves the slippery ragdoll's parts against the planted feet, and the contacts push the whole
-/// body sideways or toward the bend (run 30: 0.02-0.03 m over a second even with <see cref="BodyLean.LegShift"/>;
-/// run 32: about 1.3 m/s^2 on a back bend), which the view rides. A clamped spring-damper acceleration (applied to
-/// every part, so it moves only the mass centre, never the pose) pulls it back to where the lean started.
-/// Parity with flat players comes first: the caller's <see cref="HoldGate"/> turns it off for slides, slopes, water,
-/// carrying, climbing and input; it suspends itself for <see cref="Cooldown"/> after any acceleration it did not
-/// cause (knockback, shoves, bounces, wind gusts); its push is capped near the measured creep, so a steady outside
-/// force (wind, a tornado's pull) still moves the body; and each lean gets at most <see cref="Budget"/> of correction
+/// Holds the body's horizontal mass centre still while the avatar leans or the look swings, against the contact creep
+/// those make and nothing else. Bending moves the slippery ragdoll's parts against the planted feet, and the contacts
+/// push the whole body sideways or toward the bend (run 30: 0.02-0.03 m over a second even with
+/// <see cref="BodyLean.LegShift"/>; run 32: about 1.3 m/s^2 on a back bend), which the view rides. The game spinning
+/// the ragdoll to a new look does the same with nothing bent (<see cref="SwingSpeed"/>). A clamped spring-damper
+/// acceleration (applied to every part, so it moves only the mass centre, never the pose) pulls it back to where the
+/// lean or swing started.
+/// Parity with flat players comes first: outside forces (wind, a push, a slide, moving ground) move body and view as in
+/// vanilla, so the caller's <see cref="HoldGate"/> turns it off for those and for slopes, water, carrying, climbing and
+/// input; it suspends itself for <see cref="Cooldown"/> after any acceleration it did not cause, for a jolt the gate
+/// has not seen yet; and each lean gets at most <see cref="Budget"/> of correction
 /// and <see cref="MaxAfterLean"/> seconds after it.
 /// </summary>
 public sealed class BodyHold
@@ -21,8 +23,9 @@ public sealed class BodyHold
     public float Stiffness = 150f;
     public float Damping = 24f;
 
-    /// <summary>Largest corrective acceleration (m/s^2): the measured creep with some margin, well under a shove,
-    /// wind or a tornado's pull.</summary>
+    /// <summary>Largest corrective acceleration (m/s^2): the measured creep with some margin, so a slip past the
+    /// gate cannot do much. It does not let wind through: anything under it would be cancelled (#139), which is why
+    /// <see cref="HoldInputs.Outside"/> closes the gate.</summary>
     public float MaxAccel = 2f;
 
     /// <summary>Mass-centre acceleration (m/s^2) the lean's creep never reaches: anything above it is an outside
@@ -79,7 +82,31 @@ public sealed class BodyHold
     public float BendRateQuiet = 20f;
 
     public float BendSettleSeconds = 0.3f;
+
+    /// <summary>The look turns faster than this (deg/s; a glance is 100-250, idle sway a few, as <see cref="TurnSkip"/>
+    /// reads it): the game spins the ragdoll to it, and the body slides with no bend to arm the hold (vr.302, #123:
+    /// 0.073-0.189 m). The eye's lag behind the turn (<see cref="BodyLean.HeadBias"/>) used to arm it by accident.</summary>
+    public float SwingSpeed = 30f;
+
+    /// <summary>Mass-centre jolt (m/s^2) a head swing's own contacts never reach: 5.1 at most standing, against 15.6-16.7 for a
+    /// knockback (vr.304). Past it the hold lets go, swing or not.</summary>
+    public float SwingKickAccel = 8f;
+
+    float _jolt;
+
+    /// <summary>The largest mass-centre acceleration (m/s^2) since the last read, for the trace.</summary>
+    public float TakeJolt()
+    {
+        float jolt = _jolt;
+        _jolt = 0f;
+        return jolt;
+    }
+
+    float _sinceSwing = Never;
     float _spent;
+
+    /// <summary>Corrective velocity (m/s) this lean or swing has spent of <see cref="Budget"/>, for the trace.</summary>
+    public float Spent => _spent;
     Vector2 _lastVelocity;
     bool _haveVelocity;
 
@@ -89,13 +116,16 @@ public sealed class BodyHold
     /// <param name="free"><see cref="HoldGate.Free"/>: nothing but the lean is moving the body.</param>
     /// <returns>Acceleration (x, z) to add to every part.</returns>
     /// <param name="bendRate">How fast the lean's bend is changing (deg/s): its contact jolt is not an outside force.</param>
+    /// <param name="lookRate">How fast the look's heading is turning (deg/s): past <see cref="SwingSpeed"/> it counts as a
+    /// lean, and its jolt as the lean's own.</param>
     public Vector2 Update(
         Vector2 centre,
         Vector2 velocity,
         bool leaning,
         bool free,
         float dt,
-        float bendRate = 0f
+        float bendRate = 0f,
+        float lookRate = 0f
     )
     {
         if (!float.IsFinite(centre.X) || !float.IsFinite(centre.Y))
@@ -113,11 +143,16 @@ public sealed class BodyHold
             _sinceBend = 0f;
         else if (_sinceBend < Never)
             _sinceBend += dt;
+        bool swinging = MathF.Abs(lookRate) > SwingSpeed;
+        if (swinging)
+            _sinceSwing = 0f;
+        else if (_sinceSwing < Never)
+            _sinceSwing += dt;
+        float jolt = _haveVelocity && dt > 0f ? (velocity - _lastVelocity).Length() / dt : 0f;
+        _jolt = MathF.Max(_jolt, jolt);
         bool kicked =
-            _haveVelocity
-            && dt > 0f
-            && _sinceBend >= BendSettleSeconds
-            && (velocity - _lastVelocity).Length() > ExternalAccel * dt;
+            _sinceBend >= BendSettleSeconds
+            && jolt > (_sinceSwing < BendSettleSeconds ? SwingKickAccel : ExternalAccel);
         _lastVelocity = velocity;
         _haveVelocity = true;
         if (!free || kicked)
@@ -127,7 +162,7 @@ public sealed class BodyHold
 
         if (_sinceBlocked < Cooldown)
             _sinceLean = Never;
-        else if (leaning)
+        else if (leaning || swinging)
         {
             if (_sinceLean == Never)
                 _spent = 0f;
@@ -205,6 +240,10 @@ public struct HoldInputs
 
     /// <summary>The game's walkable limit (<c>CharacterMovement.maxAngle</c>, CharacterMovement.cs:130).</summary>
     public float MaxSlopeDeg;
+
+    /// <summary>The game is moving the body from outside (<c>LocomotionInput.OutsideNow</c>): wind, a push or knockback, a
+    /// slide, steep or moving ground. Any of it, at any strength, moves body and view as in vanilla (#139).</summary>
+    public bool Outside;
 }
 
 /// <summary>When <see cref="BodyHold"/> may act at all: only when nothing but the lean is moving the body, so a VR
@@ -241,6 +280,8 @@ public static class HoldGate
             return "bounce";
         if (!(i.SlopeDeg < i.MaxSlopeDeg))
             return "slope";
+        if (i.Outside)
+            return "outside";
         return null;
     }
 }

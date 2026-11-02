@@ -13,6 +13,7 @@ namespace PeakXR.Core;
 /// A stale skip once bent the lean away from the view (vr.300, run 13). Once the walk has been and gone, or none
 /// came for <see cref="ReleaseAfter"/>, the skip lets go and the lean takes what is left: a held offset. A look coming
 /// back up gives up the step back the same way (<see cref="GiveUpSpeed"/>): the debt's target moves, the body does not.
+/// The creep that follows a large turn stays out too, by the eyes' own travel: the head has not moved (T2-2: 16.5 degrees).
 /// </summary>
 public sealed class TurnSkip
 {
@@ -41,6 +42,7 @@ public sealed class TurnSkip
     float _lastBack;
     bool _have;
     bool _walked;
+    bool _lastSettling;
     bool _turnWalk;
     bool _byTurn;
     float _since = float.MaxValue;
@@ -53,8 +55,18 @@ public sealed class TurnSkip
     /// <param name="yaw">The body's heading, which the game keeps on the look (degrees).</param>
     /// <param name="walking">The stance walk is stepping the body.</param>
     /// <param name="back">The step back the look wants now (m, <see cref="BodyStance.StepBack"/>).</param>
+    /// <param name="settling">The body still creeps after a large look change (<see cref="OwnMotion.SettlingTurn"/>).</param>
+    /// <param name="eyeTravel">The body's eyes' travel since the last update (world, m).</param>
     /// <returns><see cref="Skip"/>.</returns>
-    public Vector3 Update(Vector3 share, float yaw, bool walking, float dt, float back = 0f)
+    public Vector3 Update(
+        Vector3 share,
+        float yaw,
+        bool walking,
+        float dt,
+        float back = 0f,
+        bool settling = false,
+        Vector3 eyeTravel = default
+    )
     {
         share.Y = 0f;
         if (!_have)
@@ -63,6 +75,7 @@ public sealed class TurnSkip
             _last = share;
             _lastYaw = yaw;
             _lastBack = back;
+            _lastSettling = settling;
             return Skip;
         }
         if (dt <= 0f)
@@ -83,14 +96,24 @@ public sealed class TurnSkip
         float most = MathF.Abs(gaveUp);
         var stepped =
             moved.LengthSquared() <= most * most ? moved : Vector3.Normalize(moved) * most;
+        // The step back growing again takes back what its giving up skipped: a nod keeps the lean.
+        bool regrown = gaveUp < 0f && Vector3.Dot(stepped, Skip) < 0f;
+        // A body creeping on after the look, before any walk: the eye moved and the view did not. A lean moves the view,
+        // so it keeps bending. After a walk the body is settling over its feet, which the lean takes as before; a look
+        // large enough to arm settling again starts a new creep, which that walk says nothing about.
+        if (settling && !_lastSettling)
+            _walked = false;
+        _lastSettling = settling;
+        bool creeping = settling && !_walked;
         if (walking)
             _walked = true;
         else if (_since <= SwingSeconds)
             Skip += _byTurn ? moved : stepped;
+        else if (creeping && !regrown)
+            Skip -= eyeTravel with { Y = 0f };
         else if (_walked || _since > ReleaseAfter)
             Skip *= MathF.Max(0f, 1f - ReleaseRate * dt);
-        // The step back growing again takes back what its giving up skipped: a nod keeps the lean.
-        else if (gaveUp < 0f && Vector3.Dot(stepped, Skip) < 0f)
+        else if (regrown)
             Skip += stepped;
         // Along the share and no longer than it: the lean then bends toward the view by at most the debt. Released,
         // never shorter than the skip's own part of the share past MaxLean.
@@ -104,7 +127,7 @@ public sealed class TurnSkip
         _kept =
             len2 <= MaxLean * MaxLean ? 0f
             : _turnWalk ? MathF.Sqrt(len2) - MaxLean
-            : _since <= SwingSeconds || walking ? MathF.Max(0f, Skip.Length() - MaxLean)
+            : _since <= SwingSeconds || walking || creeping ? MathF.Max(0f, Skip.Length() - MaxLean)
             : _kept;
         _last = share;
         _lastYaw = yaw;

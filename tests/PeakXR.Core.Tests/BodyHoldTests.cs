@@ -299,6 +299,177 @@ public class BodyHoldTests
         Assert.Equal("kick", h.Why);
     }
 
+    /// <summary>A glance with nothing bent (vr.302): the look turns for <paramref name="swing"/> s, the turn's contacts
+    /// creep the body at <paramref name="creep"/> m/s^2 and on after it. Returns the body's x per tick.</summary>
+    static List<float> Glance(BodyHold h, float swing, float seconds, float creep = 1.3f)
+    {
+        var x = new List<float>();
+        float pos = 0f,
+            vel = 0f;
+        for (float t = 0f; t < seconds; t += Dt)
+        {
+            var a = h.Update(
+                Start + new Vector2(pos, 0f),
+                new Vector2(vel, 0f),
+                false,
+                true,
+                Dt,
+                lookRate: t < swing ? 200f : 0f
+            );
+            vel += (creep + a.X) * Dt;
+            pos += vel * Dt;
+            x.Add(pos);
+        }
+        return x;
+    }
+
+    [Fact]
+    public void AGlance_HoldsTheBodyWithNothingBent()
+    {
+        // A still head after a glance leaves the body where it stood (vr.302, #123): the game spins the ragdoll to the
+        // look, its contacts creep it, and no lean is there to arm the hold (0.067-0.164 m of slide over 3.4 s).
+        var h = new BodyHold();
+        var x = Glance(h, 1f, 2.5f);
+        Assert.True(h.Holding, h.Why);
+        Assert.True(MathF.Abs(x[^1]) < 0.012f, $"slid {x[^1]:0.000} m after the glance");
+    }
+
+    [Theory]
+    [InlineData(-200f)]
+    [InlineData(40f)]
+    public void AGlance_Arms_EitherWayFromItsSpeed(float lookRate)
+    {
+        var h = new BodyHold();
+        h.Update(Start, Vector2.Zero, false, true, Dt, lookRate: lookRate);
+        Assert.True(h.Holding, h.Why);
+    }
+
+    [Theory]
+    [InlineData(7.5f, false)]
+    [InlineData(8.5f, true)]
+    public void ASwingsJolt_IsAKickOnlyPastItsLimit(float jolt, bool kick)
+    {
+        // Head swings reach 5.1 m/s^2 standing, vr.304's knockback 15.6-16.7.
+        var h = new BodyHold();
+        h.Update(Start, Vector2.Zero, false, true, Dt, lookRate: 200f);
+        h.Update(Start, new Vector2(jolt * Dt, 0f), false, true, Dt, lookRate: 200f);
+        Assert.Equal(!kick, h.Holding);
+        if (kick)
+            Assert.Equal("kick", h.Why);
+    }
+
+    [Fact]
+    public void AJoltAfterTheSwingHasRungOut_IsAKick()
+    {
+        // The swing's higher limit lasts BendSettleSeconds: half a second on, a swing's own jolt is a shove.
+        var h = new BodyHold();
+        h.Update(Start, Vector2.Zero, false, true, Dt, lookRate: 200f);
+        for (float t = 0f; t < 0.5f; t += Dt)
+            h.Update(Start, Vector2.Zero, false, true, Dt);
+        Assert.True(h.Holding, h.Why);
+        h.Update(Start, new Vector2(5f * Dt, 0f), false, true, Dt);
+        Assert.False(h.Holding);
+        Assert.Equal("kick", h.Why);
+    }
+
+    [Fact]
+    public void ASecondGlance_AfterLettingGo_HoldsAgainWithAFreshBudget()
+    {
+        var h = new BodyHold();
+        h.Update(Start, Vector2.Zero, false, true, Dt, lookRate: 200f);
+        // Pushed past MaxOffset: this glance's budget is gone.
+        h.Update(Start + new Vector2(0.2f, 0f), Vector2.Zero, false, true, Dt);
+        Assert.Equal("budget", h.Why);
+        for (float t = 0f; t < h.MaxAfterLean + Dt; t += Dt)
+            h.Update(Start, Vector2.Zero, false, true, Dt);
+        Assert.Equal("no lean", h.Why);
+        h.Update(Start, Vector2.Zero, false, true, Dt, lookRate: 200f);
+        Assert.True(h.Holding, h.Why);
+        Assert.Equal(0f, h.Spent);
+    }
+
+    [Fact]
+    public void AShoveDuringAGlance_IsAKick()
+    {
+        // vr.304's knockback reads 15.6-16.7 m/s^2 on the mass centre; a standing glance's own jolts reach 5.1.
+        var h = new BodyHold();
+        h.Update(Start, Vector2.Zero, false, true, Dt, lookRate: 200f);
+        Assert.True(h.Holding, h.Why);
+        Assert.Equal(
+            Vector2.Zero,
+            h.Update(Start, new Vector2(15.6f * Dt, 0f), false, true, Dt, lookRate: 200f)
+        );
+        Assert.False(h.Holding);
+        Assert.Equal("kick", h.Why);
+    }
+
+    [Fact]
+    public void AGlancesOwnJolt_IsNotAKick()
+    {
+        // T5-2 vr.302: the look's own swing jolts the mass centre past ExternalAccel, and the hold sat in cooldown through it.
+        var h = new BodyHold();
+        h.Update(Start, Vector2.Zero, false, true, Dt, lookRate: 200f);
+        var v = Vector2.Zero;
+        for (int i = 0; i < 8; i++)
+        {
+            v += new Vector2(0f, i % 2 == 0 ? 0.08f : -0.08f);
+            h.Update(Start, v, false, true, Dt, lookRate: 200f);
+            Assert.True(h.Holding, h.Why);
+        }
+        for (int i = 0; i < 5; i++)
+        {
+            v += new Vector2(0f, i % 2 == 0 ? 0.08f : -0.08f);
+            h.Update(Start, v, false, true, Dt, lookRate: 0f);
+            Assert.True(h.Holding, h.Why);
+        }
+    }
+
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(10f)]
+    [InlineData(-25f)]
+    [InlineData(float.NaN)]
+    public void IdleLookSway_ArmsNothing(float lookRate)
+    {
+        var h = new BodyHold();
+        for (float t = 0f; t < 1f; t += Dt)
+            Assert.Equal(
+                Vector2.Zero,
+                h.Update(Start, Vector2.Zero, false, true, Dt, lookRate: lookRate)
+            );
+        Assert.False(h.Holding);
+        Assert.Equal("no lean", h.Why);
+    }
+
+    [Fact]
+    public void AGlanceOverAQuietBody_LetsGo()
+    {
+        // A player looking around once is not anchored against the world: nothing to hold, so the hold ends.
+        var h = new BodyHold();
+        Glance(h, 0.5f, 0.5f + h.ReleaseSeconds + h.QuietSeconds + Dt * 2f, creep: 0f);
+        Assert.False(h.Holding);
+    }
+
+    [Fact]
+    public void AGlanceThatCreepsOn_IsHeldForABoundedTime()
+    {
+        var h = new BodyHold();
+        Glance(h, 0.5f, 0.5f + h.MaxAfterLean * 0.9f);
+        Assert.True(h.Holding, h.Why);
+        Glance(h, 0f, h.MaxAfterLean * 0.2f);
+        Assert.False(h.Holding);
+    }
+
+    [Fact]
+    public void AGate_StopsAGlancesHold()
+    {
+        // The stick, a slide, a carry: the hold stays off for a glance as for a lean.
+        var h = new BodyHold();
+        Assert.Equal(Vector2.Zero, h.Update(Start, Vector2.Zero, false, false, Dt, lookRate: 200f));
+        Assert.False(h.Holding);
+        Assert.Equal("gate", h.Why);
+    }
+
     [Fact]
     public void NonFinite_NoForce()
     {

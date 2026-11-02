@@ -113,7 +113,7 @@ internal sealed class LocalAvatar : MonoBehaviour
             // (run 28: 0.12 m, a 7.5 degree back bend standing on the spot). Send the head's offset from the
             // calibrated eyes applied to the animated ones, so the calibrated spot is upright here and for peers.
             // Both ends on this frame's pose: the animated eye is from the last physics step, so it rides the hip and
-            // turns with the look since. This reaches only the avatar's pose: the view never reads it.
+            // turns with a snap since. This reaches only the avatar's pose: the view never reads it.
             if (
                 RigDriver.LeanEye is { } calibrated
                 && driver.UnleanedEye is { } eyeFromHip
@@ -127,7 +127,8 @@ internal sealed class LocalAvatar : MonoBehaviour
                         Mathf.DeltaAngle(
                             driver.UnleanedYaw,
                             RigDriver.BodyHeading(character, driver.UnleanedYaw)
-                        )
+                        ),
+                        driver.SwingRate
                     )
                     .U();
             pose.HeadRotation = rig.Head.rotation;

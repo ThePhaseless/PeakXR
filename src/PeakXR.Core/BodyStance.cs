@@ -502,7 +502,7 @@ public sealed class OwnMotion
     /// input's run-down 0.5 s at most), so travel after that is something else's.</summary>
     public float MaxCoastSeconds = 1f;
 
-    /// <summary>Look change (degrees) in one go past which the body creeps on after <see cref="PoseSeconds"/>, settling
+    /// <summary>Farthest look (degrees) from where one go began past which the body creeps on after <see cref="PoseSeconds"/>, settling
     /// its turned pose over planted feet: run 20, vr.45b t203.4-205.1 0.13 m at 0.06-0.14 m/s after +90, vr.273
     /// t223.8-227.6 0.1 m at 0.03 m/s after 180. Less stays inside the view hold.</summary>
     public float SettleTurnDegrees = 20f;
@@ -521,17 +521,29 @@ public sealed class OwnMotion
     float _stillFor;
     float _poseFor;
     float _turned;
+    Vector2 _turnFrom;
     float _settleFor;
     float _settleStill;
     Vector2 _look;
     bool _haveLook;
 
+    /// <summary>The creep after a large look change is still running (<see cref="Settling"/>).</summary>
+    public bool SettlingTurn { get; private set; }
+
     /// <param name="walking">The stance walk is walking or settling.</param>
     /// <param name="levelSpeed">The body's level speed (m/s).</param>
     /// <param name="look">The character's look (yaw, pitch) in degrees, as the head drives it.</param>
     /// <param name="outside">An outside force acts this update: wind, an impulse, a slide, a moving ground.</param>
+    /// <param name="held"><see cref="BodyHold.Holding"/>.</param>
     /// <returns>This update's body travel is PeakXR's own.</returns>
-    public bool Update(bool walking, float levelSpeed, Vector2 look, bool outside, float dt)
+    public bool Update(
+        bool walking,
+        float levelSpeed,
+        Vector2 look,
+        bool outside,
+        float dt,
+        bool held = false
+    )
     {
         // Held still a while, not one slow update: a body springing back toward its planted feet passes through
         // zero at the turn and creeps at the end (run 10, vr.45 t837.25-837.85: the view followed that tail).
@@ -554,8 +566,16 @@ public sealed class OwnMotion
             float moved = new Vector2(yaw, look.Y - _look.Y).Length();
             if (moved / dt > LookRate)
             {
+                if (_poseFor <= 0f)
+                    _turnFrom = _look;
                 _poseFor = PoseSeconds;
-                _turned += moved;
+                _turned = MathF.Max(
+                    _turned,
+                    new Vector2(
+                        BodySlotLayout.DeltaAngle(_turnFrom.X, look.X),
+                        look.Y - _turnFrom.Y
+                    ).Length()
+                );
                 _settleFor = _settleStill = 0f;
             }
             else
@@ -563,17 +583,18 @@ public sealed class OwnMotion
         }
         _look = look;
         _haveLook = true;
-        bool settling = Settling(levelSpeed, outside, dt);
-        return !outside && (walking || _coasting || _poseFor > 0f || settling);
+        SettlingTurn = Settling(levelSpeed, outside, held, dt);
+        return !outside && (walking || _coasting || _poseFor > 0f || SettlingTurn);
     }
 
     /// <summary>The creep after a large look change is still running: once the pose window has passed, until the body
-    /// is still, too fast to be creeping, or pushed, at most <see cref="SettleMaxSeconds"/>.</summary>
-    bool Settling(float levelSpeed, bool outside, float dt)
+    /// is still, too fast to be creeping, or pushed, at most <see cref="SettleMaxSeconds"/>. A body
+    /// <see cref="BodyHold"/> holds is neither: its creep comes at let-go, so the clock starts then.</summary>
+    bool Settling(float levelSpeed, bool outside, bool held, float dt)
     {
         if (_turned < SettleTurnDegrees)
         {
-            // One look's worth at a time: small looks far apart do not add up.
+            // One look's worth at a time: small looks far apart do not add up, nor does sway on the spot.
             if (_poseFor <= 0f)
                 _turned = 0f;
             return false;
@@ -585,8 +606,8 @@ public sealed class OwnMotion
         }
         if (_poseFor > 0f)
             return true;
-        _settleFor += dt;
-        _settleStill = levelSpeed < SettleStillSpeed ? _settleStill + dt : 0f;
+        _settleFor = held ? 0f : _settleFor + dt;
+        _settleStill = !held && levelSpeed < SettleStillSpeed ? _settleStill + dt : 0f;
         if (
             levelSpeed > SettleMaxSpeed
             || _settleStill >= StillSeconds
@@ -607,5 +628,6 @@ public sealed class OwnMotion
         _poseFor = 0f;
         _turned = 0f;
         _haveLook = false;
+        SettlingTurn = false;
     }
 }

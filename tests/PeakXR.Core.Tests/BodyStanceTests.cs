@@ -1187,6 +1187,131 @@ public class OwnMotionTests
 {
     const float Dt = 1f / 90f;
 
+    /// <summary>A look of <paramref name="degrees"/> over a third of a second, then the pose window.</summary>
+    static OwnMotion AfterALook(float degrees)
+    {
+        var own = new OwnMotion();
+        float yaw = 0f;
+        own.Update(false, 0f, Vector2.Zero, false, Dt);
+        for (float t = 0f; t < 1f / 3f; t += Dt)
+        {
+            yaw += degrees * 3f * Dt;
+            own.Update(false, 0.05f, new Vector2(yaw, 0f), false, Dt);
+        }
+        for (float t = 0f; t < own.PoseSeconds + Dt; t += Dt)
+            own.Update(false, 0.05f, new Vector2(yaw, 0f), false, Dt);
+        return own;
+    }
+
+    [Fact]
+    public void ALargeLook_ReportsSettling_UntilTheBodyIsStill()
+    {
+        var own = AfterALook(90f);
+        var look = new Vector2(90f, 0f);
+        Assert.True(own.SettlingTurn);
+        for (float t = 0f; t < 1f; t += Dt)
+        {
+            own.Update(false, 0.05f, look, false, Dt);
+            Assert.True(own.SettlingTurn, $"creeping t {t:0.00}");
+        }
+        for (float t = 0f; t < own.StillSeconds + Dt; t += Dt)
+            own.Update(false, 0.005f, look, false, Dt);
+        Assert.False(own.SettlingTurn);
+    }
+
+    [Fact]
+    public void SettlingEnds_AfterSettleMaxSeconds_AndOnAnOutsideForce()
+    {
+        var own = AfterALook(90f);
+        var look = new Vector2(90f, 0f);
+        Assert.True(own.SettlingTurn);
+        for (float t = 0f; t < own.SettleMaxSeconds + Dt; t += Dt)
+            own.Update(false, 0.05f, look, false, Dt);
+        Assert.False(own.SettlingTurn);
+
+        own = AfterALook(90f);
+        Assert.True(own.SettlingTurn);
+        own.Update(false, 0.05f, look, outside: true, Dt);
+        Assert.False(own.SettlingTurn);
+    }
+
+    [Fact]
+    public void AHeldBody_KeepsSettling_PastTheMaxAndStillSpeed()
+    {
+        // BodyHold keeps the body still while it wants to creep: the slide comes at let-go, which T8 read 0.135 m. Neither
+        // the clock nor the stillness may run out behind the hold, or that slide lands in the view.
+        var own = AfterALook(90f);
+        var look = new Vector2(90f, 0f);
+        for (float t = 0f; t < own.SettleMaxSeconds + 1f; t += Dt)
+        {
+            own.Update(false, 0.005f, look, false, Dt, held: true);
+            Assert.True(own.SettlingTurn, $"held t {t:0.00}");
+        }
+        for (float t = 0f; t < own.SettleMaxSeconds - 0.1f; t += Dt)
+        {
+            Assert.True(own.Update(false, 0.05f, look, false, Dt), $"sliding t {t:0.00}");
+            Assert.True(own.SettlingTurn, $"sliding t {t:0.00}");
+        }
+    }
+
+    [Fact]
+    public void AHeldBody_StopsSettling_OnAnOutsideForceOrTooFast()
+    {
+        var look = new Vector2(90f, 0f);
+        var own = AfterALook(90f);
+        own.Update(false, 0.005f, look, false, Dt, held: true);
+        Assert.True(own.SettlingTurn);
+        own.Update(false, 0.005f, look, outside: true, Dt, held: true);
+        Assert.False(own.SettlingTurn);
+        own = AfterALook(90f);
+        own.Update(false, own.SettleMaxSpeed + 0.1f, look, false, Dt, held: true);
+        Assert.False(own.SettlingTurn);
+    }
+
+    [Fact]
+    public void IdleSway_AddsUpToNoTurn()
+    {
+        // A still player's head sways: each frame past LookRate at 90 Hz is 0.12 degrees, and summed they reach
+        // SettleTurnDegrees in 2 s with the look going nowhere.
+        var own = new OwnMotion();
+        own.Update(false, 0f, Vector2.Zero, false, Dt);
+        for (int i = 0; i < 450; i++)
+        {
+            own.Update(false, 0.05f, new Vector2(i % 2 == 0 ? 0.12f : 0f, 0f), false, Dt);
+            Assert.False(own.SettlingTurn, $"frame {i}");
+        }
+    }
+
+    [Fact]
+    public void AGlanceOutAndBack_IsAsLargeAsItsFarthestLook()
+    {
+        // Ending where it began is still a large look: the body creeps on after it (vr.302).
+        var own = new OwnMotion();
+        own.Update(false, 0f, Vector2.Zero, false, Dt);
+        float yaw = 0f;
+        for (int i = 0; i < 30; i++)
+            own.Update(false, 0.05f, new Vector2(yaw += 1f, 0f), false, Dt);
+        for (int i = 0; i < 30; i++)
+            own.Update(false, 0.05f, new Vector2(yaw -= 1f, 0f), false, Dt);
+        for (float t = 0f; t < own.PoseSeconds + Dt; t += Dt)
+            own.Update(false, 0.05f, new Vector2(yaw, 0f), false, Dt);
+        Assert.True(own.SettlingTurn);
+    }
+
+    [Fact]
+    public void ASmallLook_NeverReportsSettling()
+    {
+        var own = new OwnMotion();
+        own.Update(false, 0f, Vector2.Zero, false, Dt);
+        float yaw = 0f;
+        for (float t = 0f; t < 2f; t += Dt)
+        {
+            yaw = MathF.Min(10f, yaw + 30f * Dt);
+            own.Update(false, 0.05f, new Vector2(yaw, 0f), false, Dt);
+            Assert.False(own.SettlingTurn, $"t {t:0.00}");
+        }
+    }
+
     [Fact]
     public void DriftWithNoWalk_IsNotAddedToTheDebtTheWalkerPays()
     {

@@ -2,6 +2,16 @@ namespace PeakXR.Core.Tests;
 
 public class HoldGateTests
 {
+    [Fact]
+    public void AnOutsideForce_ClosesTheGate()
+    {
+        // Wind under BodyHold's cap never reads as a kick, so only this gate keeps the hold off it (#139).
+        var i = Calm();
+        i.Outside = true;
+        Assert.False(HoldGate.Free(i));
+        Assert.Equal("outside", HoldGate.Why(i));
+    }
+
     static HoldInputs Calm() =>
         new()
         {

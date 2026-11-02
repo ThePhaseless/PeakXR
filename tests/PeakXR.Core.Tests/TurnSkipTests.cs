@@ -447,4 +447,147 @@ public class TurnSkipTests
             Assert.True(lean.Length() < 0.02f, $"t {t:0.00}: lean {lean.Length():0.000} m");
         }
     }
+
+    // A body creeping under a still head after a turn: the eye moves, the view does not (T2-2 head -90: 0.241 m, 16.5
+    // degrees; vr.300's smooth 180: `budget` lines).
+    static readonly Vector3 Creep = Vector3.Normalize(TurnDebt(90f));
+
+    /// <summary>A 90 degree turn and its swing with the creep settling, ending on the turn's debt.</summary>
+    static TurnSkip TurnedAndSettling()
+    {
+        var s = new TurnSkip();
+        s.Update(Vector3.Zero, 0f, false, Dt, 0f, settling: true);
+        for (float t = 0f; t <= 0.6f; t += Dt)
+            s.Update(TurnDebt(150f * t), 150f * t, false, Dt, 0f, settling: true);
+        for (float t = 0f; t < 0.55f; t += Dt)
+            s.Update(TurnDebt(90f), 90f, false, Dt, 0f, settling: true);
+        return s;
+    }
+
+    /// <summary>One frame of a creep at <paramref name="rate"/> m/s plus a head moving <paramref name="headRate"/> m/s
+    /// along it. Only the creep is eye travel: a lean moves the view.</summary>
+    static Vector3 CreepStep(
+        TurnSkip s,
+        ref Vector3 share,
+        float rate,
+        float headRate = 0f,
+        bool settling = true
+    )
+    {
+        share += Creep * (rate + headRate) * Dt;
+        return share - s.Update(share, 90f, false, Dt, 0f, settling, -Creep * rate * Dt);
+    }
+
+    [Fact]
+    public void ABodysCreepAfterATurn_StaysOutOfTheLean()
+    {
+        var s = TurnedAndSettling();
+        var share = TurnDebt(90f);
+        for (float t = 0f; t < 3.5f; t += Dt)
+        {
+            var lean = CreepStep(s, ref share, 0.05f);
+            Assert.True(lean.Length() < 0.02f, $"t {t:0.00}: lean {lean.Length():0.000} m");
+        }
+    }
+
+    [Fact]
+    public void ALeanDuringTheCreep_StillBends()
+    {
+        var s = TurnedAndSettling();
+        var share = TurnDebt(90f);
+        for (float t = 0f; t < 0.6f; t += Dt)
+            CreepStep(s, ref share, 0.05f);
+        var lean = Vector3.Zero;
+        for (float t = 0f; t < 1f; t += Dt)
+            lean = CreepStep(s, ref share, 0.05f, headRate: 0.06f);
+        Assert.InRange(lean.Length(), 0.04f, 0.08f);
+    }
+
+    [Fact]
+    public void ACreepThatEnded_GivesTheLeanAtMostMaxLean()
+    {
+        var s = TurnedAndSettling();
+        var share = TurnDebt(90f);
+        for (float t = 0f; t < 3.5f; t += Dt)
+            CreepStep(s, ref share, 0.05f);
+        var lean = Vector3.Zero;
+        for (float t = 0f; t < 2f; t += Dt)
+            lean = CreepStep(s, ref share, 0f, settling: false);
+        Assert.True(lean.Length() <= s.MaxLean + 0.005f, $"lean {lean.Length():0.000} m");
+        Assert.True(lean.Length() >= s.MaxLean - 0.01f, $"lean {lean.Length():0.000} m");
+    }
+
+    [Fact]
+    public void ASpringBackAfterTheWalk_IsNotACreep()
+    {
+        // The walk has been: what the body does next is its settling over its feet, which the lean takes as before.
+        Vector3 Run(bool settling)
+        {
+            var s = TurnedAndSettling();
+            var share = TurnDebt(90f);
+            for (float t = 0f; t < 0.5f; t += Dt)
+            {
+                share *= 0.9f;
+                s.Update(share, 90f, true, Dt, 0f, settling);
+            }
+            var lean = Vector3.Zero;
+            for (float t = 0f; t < 1f; t += Dt)
+                lean = CreepStep(s, ref share, 0.05f, settling: settling);
+            return lean;
+        }
+        TestUtil.Near(Run(settling: false), Run(settling: true), 1e-4f);
+    }
+
+    [Fact]
+    public void ACreepUnderAPitchLook_ReadsTheSameAfterAnEarlierWalk()
+    {
+        // OwnMotion arms settling on pitch and slow yaw too, with no fast yaw for TurnSkip to see: a walk seconds ago must
+        // not send this creep into the lean.
+        float Run(bool walkedBefore)
+        {
+            var s = new TurnSkip();
+            var share = Vector3.Zero;
+            s.Update(share, 90f, false, Dt);
+            for (float t = 0f; walkedBefore && t < 1f; t += Dt)
+                s.Update(share, 90f, true, Dt);
+            for (float t = 0f; t < 5f; t += Dt)
+                s.Update(share, 90f, false, Dt);
+            var lean = Vector3.Zero;
+            for (float t = 0f; t < 3f; t += Dt)
+                lean = CreepStep(s, ref share, 0.05f);
+            return lean.Length();
+        }
+        TestUtil.Near(Run(walkedBefore: false), Run(walkedBefore: true), 1e-4f);
+    }
+
+    [Fact]
+    public void ADeepLookGoingBackDownWhileSettling_KeepsTheLean()
+    {
+        // The look comes up and goes down again past the swing, with a lean held: the growing step back takes back what
+        // its giving up skipped, creep or no creep, or the lean stays short by a skip nothing owes.
+        const float Head = 0.2f;
+        var s = new TurnSkip();
+        s.Update(Forward * Head, 0f, false, Dt, DeepBack, settling: true);
+        float pitch = -60f;
+        for (float t = 0f; t < 0.5f; t += Dt)
+        {
+            pitch += 40f * Dt;
+            float back = BodyStance.StepBack(pitch);
+            s.Update(Forward * (Head + DeepBack - back), 0f, false, Dt, back, settling: true);
+        }
+        for (float t = 0f; t < 0.7f; t += Dt)
+        {
+            float back = BodyStance.StepBack(pitch);
+            s.Update(Forward * (Head + DeepBack - back), 0f, false, Dt, back, settling: true);
+        }
+        var lean = Vector3.Zero;
+        for (float t = 0f; t < 1f; t += Dt)
+        {
+            pitch = MathF.Max(-60f, pitch - 40f * Dt);
+            float back = BodyStance.StepBack(pitch);
+            var share = Forward * (Head + DeepBack - back);
+            lean = share - s.Update(share, 0f, false, Dt, back, settling: true);
+        }
+        TestUtil.Near(Head, lean.Length(), 0.01f);
+    }
 }
