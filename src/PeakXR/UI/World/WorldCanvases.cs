@@ -461,6 +461,28 @@ internal static class WorldCanvases
             }
     }
 
+    /// <summary>Metres along the ray to the nearest open menu's canvas rect it crosses, or -1. For the laser's beam where
+    /// a panel has no raycast target (#137); runs only on frames with no hit.</summary>
+    public static float PanelCrossing(Vector3 origin, Vector3 direction)
+    {
+        var nearest = -1f;
+        var ray = new Ray(origin, direction);
+        foreach (var t in tracked)
+        {
+            if (
+                !t.IsOpen
+                || t.Kind is not (CanvasKind.Menu or CanvasKind.Custom)
+                || Mathf.Abs(t.Rect.lossyScale.x) < 1e-6f
+                || !new Plane(t.Rect.forward, t.Rect.position).Raycast(ray, out var distance)
+                || (nearest >= 0f && distance >= nearest)
+            )
+                continue;
+            if (t.Rect.rect.Contains((Vector2)t.Rect.InverseTransformPoint(ray.GetPoint(distance))))
+                nearest = distance;
+        }
+        return nearest;
+    }
+
     /// <summary>Places every converted canvas for this frame. Returns whether an interactive panel is shown.</summary>
     public static bool Update(Transform head, HudLayout hud, UIWorldSettings cfg)
     {

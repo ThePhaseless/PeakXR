@@ -164,6 +164,10 @@ internal static class HandAim
         return true;
     }
 
+    /// <summary>The held barrel's aim follows the hold's pose now; otherwise the physical item, which terrain may have
+    /// pushed off it. For the log of a refused piton (#129).</summary>
+    public static bool HoldPoseOn(Character c) => HoldTarget(c, out _, out _);
+
     private static readonly System.Collections.Generic.List<MeshFilter> Filters = new();
 
     /// <summary>

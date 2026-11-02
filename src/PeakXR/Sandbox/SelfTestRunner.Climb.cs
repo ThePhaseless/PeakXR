@@ -2162,12 +2162,14 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         int spikesBefore = c.data.climbingSpikeCount;
+        // The aim of the refused frame too: the wall above was measured before the press (#129).
+        StartCoroutine(TrackPressAim(rig, left, Affordance.Count));
         yield return PressAndExpect(left, DenyReason.CantUse);
         bool cast = Interact.Tools.SpikeHammer.Casting;
         int spikesAfter = c.data.climbingSpikeCount;
         string note =
             F(
-                $"first spike slot {first.itemSlotID}, drawn {selected.Value}, wall {hit.distance:0.00} m (reach {range:0.00} m), spikes {spikesBefore} then {spikesAfter}, cast {cast}; "
+                $"first spike slot {first.itemSlotID}, drawn {selected.Value}, wall {hit.distance:0.00} m (reach {range:0.00} m) along {spikeDir}, at the press from {pressFrom} along {pressDir}, spikes {spikesBefore} then {spikesAfter}, cast {cast}; "
             ) + stepNote;
         if (!stepOk)
             stepNote = note;

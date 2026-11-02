@@ -1,8 +1,12 @@
+using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using PeakXR.Framework;
+using PeakXR.Rig;
 using PeakXR.VR;
 using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
 namespace PeakXR.UI.World;
@@ -34,17 +38,61 @@ internal static class MenuWindowOpenPatch
 }
 
 /// <summary>Nested canvases spawned at runtime (dropdown lists and their blockers) must raycast through
-/// the laser camera too. UnityEngine.UI GraphicRaycaster.eventCamera getter.</summary>
+/// the laser camera too. With the headset off the head camera draws the window instead
+/// (<see cref="DesktopMirror.Flat"/>) and the laser is hidden, so a mouse click lands under the cursor (#132).
+/// UnityEngine.UI GraphicRaycaster.eventCamera getter.</summary>
 [HarmonyPatch(typeof(GraphicRaycaster), nameof(GraphicRaycaster.eventCamera), MethodType.Getter)]
 internal static class EventCameraPatch
 {
     // m_Canvas: the raycaster's own cached canvas, filled by the getter before this postfix runs.
     private static void Postfix(Canvas ___m_Canvas, ref Camera __result)
     {
-        if (!UIWorldRuntime.Ready || __result == LaserPointer.EventCamera)
+        var flat = DesktopMirror.Flat;
+        var camera = flat != null ? flat : LaserPointer.EventCamera;
+        if (!UIWorldRuntime.Ready || __result == camera)
             return;
         if (___m_Canvas != null && WorldCanvases.IsConverted(___m_Canvas.rootCanvas))
-            __result = LaserPointer.EventCamera;
+            __result = camera;
+    }
+}
+
+/// <summary>A world panel in the headset takes only the laser: a mouse has nothing to aim at, and through the laser's
+/// 1 degree camera its click would land where the laser rests (#132). UnityEngine.UI GraphicRaycaster.Raycast.</summary>
+[HarmonyPatch(
+    typeof(GraphicRaycaster),
+    nameof(GraphicRaycaster.Raycast),
+    typeof(PointerEventData),
+    typeof(List<RaycastResult>)
+)]
+internal static class LaserOnlyRaycastPatch
+{
+    private static bool mouseIgnoredLogged;
+
+    private static bool Prefix(GraphicRaycaster __instance, PointerEventData eventData)
+    {
+        if (
+            !UIWorldRuntime.Ready
+            || eventData.pointerId == LaserPointer.PointerId
+            || DesktopMirror.Flat != null
+        )
+            return true;
+        var canvas = __instance.GetComponent<Canvas>();
+        if (canvas == null || !WorldCanvases.IsConverted(canvas.rootCanvas))
+            return true;
+        // A click that does nothing on a panel in view says why, once: a press with no panel up is just a press.
+        if (
+            !mouseIgnoredLogged
+            && LaserPointer.Showing
+            && Mouse.current is { } mouse
+            && mouse.leftButton.wasPressedThisFrame
+        )
+        {
+            mouseIgnoredLogged = true;
+            Plugin.Log.LogInfo(
+                "[ui.world] mouse ignored on a world panel with the headset on: use the laser"
+            );
+        }
+        return false;
     }
 }
 
