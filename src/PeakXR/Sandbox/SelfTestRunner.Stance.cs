@@ -52,10 +52,6 @@ internal sealed partial class SelfTestRunner
         ready(c);
     }
 
-    /// <summary>Most the eye renderers may sit off the eye model (m, level). Run 10 had them 0.02-0.045 m behind it
-    /// standing still (lean-view renderers-model, t681 and t832-835); 0.015 m more for the head's idle sway.</summary>
-    const float MaxEyeModelGap = 0.06f;
-
     /// <summary>
     /// The eye model's (<see cref="RigDriver.LeanEye"/>, what the stance debt measures from) level offset from the
     /// view, NaN without a view or model; <paramref name="gap"/> is the eye renderers' level distance from the model
@@ -89,10 +85,10 @@ internal sealed partial class SelfTestRunner
     /// lean (<see cref="StanceWalk.Again"/>; run 11: pushes on less sprang back whole), and 1 cm for idle sway.</summary>
     static readonly float MaxStanceLeftover = new StanceWalk().Again + 0.01f;
 
-    /// <summary>Most the drawn eyes may sit off the view once a walk has settled (m, level): the lean bends for what
-    /// the walk left less what <see cref="TurnSkip"/> keeps out of it, and the eye model's own error
-    /// (<see cref="MaxEyeModelGap"/>) stays on top.</summary>
-    const float MaxDrawnEyeOff = MaxEyeModelGap;
+    /// <summary>Most the drawn eyes may sit off the view once a walk has settled (m, level): the walk may leave
+    /// <see cref="MaxStanceLeftover"/>, <see cref="TurnSkip.MaxLean"/> of it goes to the lean, which leaves 0.07 m, and
+    /// the eye model's own error sits on top (run 10: renderers 0.02-0.045 m behind it standing still).</summary>
+    const float MaxDrawnEyeOff = 0.085f;
 
     /// <summary>The eye renderers' level distance from the view (m), NaN without them. Without the view hold's deliberate
     /// offset, which the lean leaves out and the player cannot see with the head hidden, as vr.08 judges it (run 20,

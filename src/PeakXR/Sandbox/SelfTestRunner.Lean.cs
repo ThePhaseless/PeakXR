@@ -312,8 +312,9 @@ internal sealed partial class SelfTestRunner
     const float NeckSwing = 0.1f;
 
     /// <summary>Most the body may bend once it stands under a turned head (degrees): no lean is left to ask for, and
-    /// the old lean-back peers saw was 16 degrees.</summary>
-    const float MaxStanceLean = 8f;
+    /// the old lean-back peers saw was 16 degrees. <see cref="TurnSkip.MaxLean"/>'s 0.09 m reads 7.4 degrees plus sway by
+    /// design, so 8 sat on that cluster; a runaway reads 12-20.</summary>
+    const float MaxStanceLean = 10f;
 
     /// <summary>
     /// <c>vr.45b-head-turn</c>: the scripted head on the calibrated spot turns in the room (no snap turn) to 90, 180
@@ -538,8 +539,10 @@ internal sealed partial class SelfTestRunner
             stepNote = note;
     }
 
-    /// <summary>Least step back (m) vr.273 wants at a 60 degree look down.</summary>
-    const float MinStepBack = 0.2f;
+    /// <summary>Least step back (m) vr.273 wants at a 60 degree look down: what's asked less what
+    /// <see cref="StanceWalk.Again"/> lets a walk leave, about 0.118 m. A property: <see cref="MaxStanceLeftover"/> is in
+    /// another part of this class, whose static fields have no set order.</summary>
+    static float MinStepBack => BodyStance.StepBack(-60f) - MaxStanceLeftover;
 
     static readonly float StanceDelay = new StanceWalk().Delay;
 
