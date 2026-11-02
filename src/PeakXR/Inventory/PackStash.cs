@@ -279,13 +279,14 @@ internal sealed class PackStash : IGripExtension
         walkBestAngle = float.MaxValue;
         walkRayId = -1;
         // shortcut: one ray against solid colliders; a worn pack with only trigger colliders falls back to its angle.
+        // Past the player's own arm, which the ray starts in; a friend's worn pack still counts and your own is no target.
         if (
-            Physics.Raycast(
+            HandAim.FirstHit(
+                c,
                 from,
                 dir,
-                out var hit,
                 PackDrop.PointSearch + 1f,
-                HelperFunctions.GetMask(HelperFunctions.LayerType.AllPhysical),
+                out var hit,
                 QueryTriggerInteraction.Ignore
             )
         )

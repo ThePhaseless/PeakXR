@@ -600,17 +600,7 @@ internal static class PhysicalInteraction
         if (aim == null || cam == null || interaction == null)
             return AimedTarget.None;
         float reach = interaction.distance - Vector3.Distance(cam.transform.position, aim.position);
-        if (
-            reach <= 0f
-            || !Physics.Raycast(
-                aim.position,
-                aim.forward,
-                out var hit,
-                reach,
-                HelperFunctions.GetMask(HelperFunctions.LayerType.AllPhysical),
-                QueryTriggerInteraction.Collide
-            )
-        )
+        if (reach <= 0f || !HandAim.FirstHit(c, aim.position, aim.forward, reach, out var hit))
             return AimedTarget.None;
         var target = hit.collider.GetComponentInParent<IInteractible>();
         var kind = Classify(target, c);

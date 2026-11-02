@@ -119,14 +119,7 @@ internal static class InteractPatches
                     return;
                 var t = mc.transform; // still at the hand: the finalizer restores it
                 if (
-                    !Physics.Raycast(
-                        t.position,
-                        t.forward,
-                        out var hit,
-                        state.Distance,
-                        HelperFunctions.GetMask(HelperFunctions.LayerType.AllPhysical),
-                        QueryTriggerInteraction.Collide
-                    )
+                    !HandAim.FirstHit(c, t.position, t.forward, state.Distance, out var hit)
                     || hit.distance <= interaction.distance
                 )
                     return;

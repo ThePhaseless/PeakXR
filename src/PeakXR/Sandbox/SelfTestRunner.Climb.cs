@@ -1733,14 +1733,15 @@ internal sealed partial class SelfTestRunner
         if (aim == null)
             return "no aim pose";
         float reach = Vector3.Distance(aim.position, target) + 0.5f;
+        // Past the player's own body, as the game's interact ray is (Interaction.cs:224): a plain raycast stopped at a
+        // RigCollider of the arm it starts in, 0.04-0.66 m out, and failed the step with the Apple on the line (#55).
         if (
-            !Physics.Raycast(
+            !Interact.HandAim.FirstHit(
+                Character.localCharacter,
                 aim.position,
                 aim.forward,
-                out var hit,
                 reach,
-                HelperFunctions.GetMask(HelperFunctions.LayerType.AllPhysical),
-                QueryTriggerInteraction.Collide
+                out var hit
             )
         )
             return F($"nothing within {reach:0.00} m");
