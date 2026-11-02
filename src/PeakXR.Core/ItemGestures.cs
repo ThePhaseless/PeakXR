@@ -147,6 +147,34 @@ public static class BodyZones
 }
 
 /// <summary>
+/// A hollow case's solid box, in the case's own frame. Nothing stops a tracked hand going into a case, and an overlap
+/// sphere in its hollow meets nothing, so the box stands in for the hollow. It has to be the case's own frame: a
+/// world-axis box round a yawed or tilted case reaches about a metre past its walls, into air and rock (#54).
+/// </summary>
+public struct CaseBox
+{
+    private bool any;
+
+    public Vector3 Min { get; private set; }
+    public Vector3 Max { get; private set; }
+
+    /// <summary>Grows the box round a collider's box at <paramref name="centre"/> with these half axes, all in the
+    /// case's frame; each half axis's size per case axis adds up to the same box as the 8 corners.</summary>
+    public void Add(Vector3 centre, Vector3 halfX, Vector3 halfY, Vector3 halfZ)
+    {
+        var reach = Vector3.Abs(halfX) + Vector3.Abs(halfY) + Vector3.Abs(halfZ);
+        Min = any ? Vector3.Min(Min, centre - reach) : centre - reach;
+        Max = any ? Vector3.Max(Max, centre + reach) : centre + reach;
+        any = true;
+    }
+
+    /// <summary><paramref name="point"/>, in the case's frame, is inside the box or within
+    /// <paramref name="radius"/> of it. Never with nothing added.</summary>
+    public readonly bool Within(Vector3 point, float radius) =>
+        any && Vector3.Distance(point, Vector3.Clamp(point, Min, Max)) <= radius;
+}
+
+/// <summary>
 /// Lid lift for luggage: maps the hand's rise onto the game's hold-to-open timer. The timer still runs on time
 /// (<c>Interaction.currentInteractableHeldTime</c>), so a lift never opens faster than holding the button; the lid
 /// only caps how far it may go, and only a fully raised lid lets it finish.

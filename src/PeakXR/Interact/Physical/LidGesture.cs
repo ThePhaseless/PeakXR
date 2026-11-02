@@ -59,7 +59,7 @@ internal static class LidGesture
 
     /// <summary>Height of the hint ring over the lid's lower face, along the case's up, above the low hand: on the
     /// lid's edge. Tune against the prefabs in game.</summary>
-    private const float LidEdgeUp = 0.1f;
+    internal const float LidEdgeUp = 0.1f;
 
     /// <summary>Open time (<c>timeToOpen</c>, Luggage.cs:214) from which the low-grip hint is worth showing.</summary>
     internal const float LowGripMinOpen = 1.5f;
@@ -184,7 +184,7 @@ internal static class LidGesture
     /// inactive while closed. A case without one falls back on its render centre (Luggage.Center, Luggage.cs:148),
     /// which sits within a few cm of the seam on most upright prefabs.
     /// </summary>
-    private static float LidFace(Luggage lug, out Vector3 up)
+    internal static float LidFace(Luggage lug, out Vector3 up)
     {
         var caseUp = lug.transform.up;
         up = caseUp;

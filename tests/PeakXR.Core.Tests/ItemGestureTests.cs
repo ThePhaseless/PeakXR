@@ -378,3 +378,128 @@ public class RunnerSlideTests
         Assert.Equal(0, s.Update(5f));
     }
 }
+
+public class CaseBoxTests
+{
+    // A 2.6 x 1.08 x 1.45 m case on its own frame's floor: thin walls, a floor and a lid, hollow inside (LuggageClown).
+    const float HalfLength = 1.3f;
+    const float Height = 1.08f;
+    const float HalfWidth = 0.725f;
+    const float Radius = 0.12f;
+
+    static readonly (Vector3 Centre, Vector3 Half)[] Solids =
+    {
+        (new(0f, 0.05f, 0f), new(HalfLength, 0.05f, HalfWidth)),
+        (new(0f, Height - 0.2f, 0f), new(HalfLength, 0.2f, HalfWidth)),
+        (new(-HalfLength + 0.02f, 0.4f, 0f), new(0.02f, 0.4f, HalfWidth)),
+        (new(HalfLength - 0.02f, 0.4f, 0f), new(0.02f, 0.4f, HalfWidth)),
+    };
+
+    static CaseBox Case()
+    {
+        var box = default(CaseBox);
+        foreach (var (centre, half) in Solids)
+            box.Add(centre, Vector3.UnitX * half.X, Vector3.UnitY * half.Y, Vector3.UnitZ * half.Z);
+        return box;
+    }
+
+    static readonly Vector3 CasePos = new(10f, 2f, -3f);
+    static readonly Quaternion Yawed = Quaternion.CreateFromAxisAngle(
+        Vector3.UnitY,
+        45f * MathF.PI / 180f
+    );
+    static readonly Quaternion Tilted = Quaternion.CreateFromAxisAngle(
+        Vector3.UnitZ,
+        25f * MathF.PI / 180f
+    );
+
+    static Vector3 ToCase(Vector3 world, Quaternion pose) =>
+        Vector3.Transform(world - CasePos, Quaternion.Inverse(pose));
+
+    /// <summary>The world-axis box around the posed solids: what SunkInto used to test (2cad5c4).</summary>
+    static bool InWorldBox(Vector3 world, Quaternion pose)
+    {
+        var min = new Vector3(float.MaxValue);
+        var max = new Vector3(float.MinValue);
+        foreach (var (centre, half) in Solids)
+            for (int i = 0; i < 8; i++)
+            {
+                var corner =
+                    centre
+                    + new Vector3(
+                        (i & 1) == 0 ? -half.X : half.X,
+                        (i & 2) == 0 ? -half.Y : half.Y,
+                        (i & 4) == 0 ? -half.Z : half.Z
+                    );
+                var at = CasePos + Vector3.Transform(corner, pose);
+                min = Vector3.Min(min, at);
+                max = Vector3.Max(max, at);
+            }
+        return world == Vector3.Clamp(world, min, max);
+    }
+
+    public static TheoryData<float, float, float, bool> Points =>
+        new()
+        {
+            // Off a yawed case's long wall, inside its world box.
+            { 1.2f, 0.5f, 1.2f, true },
+            // Air over a tilted case's low end, inside its world box.
+            { -1.1f, 1.3f, 0f, false },
+            // Rock under a tilted case's high end, inside its world box.
+            { 1.1f, -0.1f, 0f, false },
+        };
+
+    [Theory]
+    [MemberData(nameof(Points))]
+    public void PointOutsideTheWalls_InsideTheWorldBox_DoesNotCount(
+        float x,
+        float y,
+        float z,
+        bool yawed
+    )
+    {
+        var pose = yawed ? Yawed : Tilted;
+        var world = CasePos + new Vector3(x, y, z);
+        Assert.True(InWorldBox(world, pose));
+        Assert.False(Case().Within(ToCase(world, pose), Radius));
+    }
+
+    [Fact]
+    public void HandInTheHollow_CountsHoweverTheCaseLies()
+    {
+        var hollow = new Vector3(0.5f, 0.45f, 0.2f);
+        foreach (var pose in new[] { Yawed, Tilted })
+            Assert.True(
+                Case().Within(ToCase(CasePos + Vector3.Transform(hollow, pose), pose), Radius)
+            );
+    }
+
+    [Fact]
+    public void GrabRadiusOffAWall_Counts_FartherDoesNot()
+    {
+        var box = Case();
+        Assert.True(box.Within(new Vector3(0f, 0.5f, HalfWidth + Radius - 0.01f), Radius));
+        Assert.False(box.Within(new Vector3(0f, 0.5f, HalfWidth + Radius + 0.01f), Radius));
+    }
+
+    [Fact]
+    public void BoxTurnedInTheCase_ReachesItsCorners()
+    {
+        // A lid bone a little open: half axes are the box's own, read in the case's frame.
+        var turn = Quaternion.CreateFromAxisAngle(Vector3.UnitX, 45f * MathF.PI / 180f);
+        var box = default(CaseBox);
+        box.Add(
+            Vector3.Zero,
+            Vector3.UnitX,
+            Vector3.Transform(Vector3.UnitY, turn),
+            Vector3.Transform(Vector3.UnitZ, turn)
+        );
+        TestUtil.Near(MathF.Sqrt(2f), box.Max.Y);
+        TestUtil.Near(-MathF.Sqrt(2f), box.Min.Z);
+        TestUtil.Near(1f, box.Max.X);
+    }
+
+    [Fact]
+    public void NoColliders_NothingCounts() =>
+        Assert.False(default(CaseBox).Within(Vector3.Zero, Radius));
+}
