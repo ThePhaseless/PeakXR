@@ -527,6 +527,18 @@ internal sealed partial class SelfTestRunner
         // The swing, watching every frame for the thrown instance so the contact probe is on before it lands (vr.13).
         Item thrown = null;
         ThrowProbe probe = null;
+        // Online A's copy is moved by the master's sync and need not raise a contact (#117), so the flight's end is
+        // also read from its height over the ground.
+        Vector3? touchdown = null;
+        void WatchTouchdown()
+        {
+            if (
+                touchdown == null
+                && thrown != null
+                && Terrain(thrown.Center(), Vector3.down, TouchdownHeight, out var under)
+            )
+                touchdown = under.point;
+        }
         var swing = SwingRelease(left, windup, release);
         float end = Now + 2.5f;
         bool swinging = true;
@@ -558,12 +570,17 @@ internal sealed partial class SelfTestRunner
         {
             if (thrown.rig != null)
                 seen = Mathf.Max(seen, thrown.rig.linearVelocity.magnitude);
+            WatchTouchdown();
             yield return null;
         }
         // The launch this client sent (#117): online, A's copy of the item is the master's, whose speed comes late.
         bool sent = InteractPatches.Dropping.Launches != launches;
         float launch = sent ? InteractPatches.Dropping.LastLaunch.magnitude : seen;
-        yield return Wait(0.25f);
+        for (float shotAt = Now + 0.25f; Now < shotAt; )
+        {
+            WatchTouchdown();
+            yield return null;
+        }
         yield return ShotAt("vr-13-throw", thrown != null ? thrown.Center() : HandsMid());
         float still = 0f;
         end = Now + 5f;
@@ -571,6 +588,7 @@ internal sealed partial class SelfTestRunner
         {
             float speed = thrown.rig != null ? thrown.rig.linearVelocity.magnitude : 0f;
             still = speed < 0.2f ? still + Time.unscaledDeltaTime : 0f;
+            WatchTouchdown();
             yield return null;
         }
         if (thrown == null)
@@ -587,7 +605,10 @@ internal sealed partial class SelfTestRunner
         // The clamp bounds the flight, which ends at the first contact; a roll down the slope after it is not the
         // throw's (#117: a flag touched down and slid on to 46.6 m), as in vr.13's ThrowReport.
         bool contact = probe != null && probe.Hit && !probe.OwnBody;
-        var flightEnd = contact ? probe.Point : landed;
+        var flightEnd =
+            contact ? probe.Point
+            : touchdown is { } down ? down
+            : landed;
         float flight = Vector2.Distance(
             new Vector2(from.x, from.z),
             new Vector2(flightEnd.x, flightEnd.z)
@@ -599,6 +620,10 @@ internal sealed partial class SelfTestRunner
         );
         string firstContact = contact
             ? F($"first contact {probe.Collider} {flight:0.0} m out")
+            : touchdown != null
+                ? F(
+                    $"no contact on this copy, first {TouchdownHeight:0.0} m over the ground {flight:0.0} m out"
+                )
             : "no contact seen";
         var note = F(
             $"landed {distance:0.0} m away, flew {flight:0.0} m ({firstContact}), launch {launch:0.0} m/s {(sent ? "sent" : "seen")} ({seen:0.0} m/s seen on this copy, clamp {clamp:0.0}), max range {range:0.0} m"
@@ -612,6 +637,10 @@ internal sealed partial class SelfTestRunner
         else
             stepNote = note;
     }
+
+    /// <summary>A thrown item's centre this near the ground (m) has come down: its flight ends here when no contact
+    /// shows, and a roll down the slope after it is not the throw's (#117).</summary>
+    const float TouchdownHeight = 0.3f;
 
     /// <summary>Constant speed (no easing): 0.9 m in 0.15 s, the grip opening at 70 % while the hand still moves.</summary>
     IEnumerator SwingRelease(bool left, Vector3 windup, Vector3 release)
