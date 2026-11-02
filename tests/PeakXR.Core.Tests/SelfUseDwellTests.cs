@@ -307,7 +307,7 @@ public class SelfUseDwellTests
         Assert.True(there);
         Assert.True(arm);
         // Hands idling apart with a kit reaching across: nothing means it.
-        BodyZones.Rest(0.1f, 0.02f, false, false, out there, out arm);
+        BodyZones.Rest(0.1f, 0.02f, false, false, out there, out _);
         Assert.False(there);
         // The torso nearer than the arm, or no arm in play: the torso alone answers.
         Assert.Equal(
