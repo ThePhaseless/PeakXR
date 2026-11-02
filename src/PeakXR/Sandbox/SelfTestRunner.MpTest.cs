@@ -4053,6 +4053,9 @@ internal sealed partial class SelfTestRunner
             yield break;
         var item = HeldItem();
         cpItemId = item.itemID;
+        // Carried back first: held at rest ahead, the food ended the walk at the host's mouth and the mouth dwell fed them
+        // (GetFedItemRPC, 1.1 s in the zone, #100), and the hand reached for the pack with nothing in it.
+        yield return CarryFoodBack(LocalHold.ItemInLeftHand);
         yield return BehindHost(host);
         if (!mpBehind)
         {
@@ -4096,7 +4099,9 @@ internal sealed partial class SelfTestRunner
         );
         if (!stepOk)
         {
-            stepNote = F($"over {stash.Over}, verdict {stash.Verdict}");
+            stepNote = F(
+                $"over {stash.Over}, verdict {stash.Verdict}, in hand {(HeldItem() != null ? HeldItem().name : "nothing")}"
+            );
             yield break;
         }
         int pocket = stash.Pocket;
@@ -4182,6 +4187,8 @@ internal sealed partial class SelfTestRunner
             yield break;
         var item = HeldItem();
         cpItemId = item.itemID;
+        // As in vr.330: food held ahead ends the walk at the host's mouth.
+        yield return CarryFoodBack(LocalHold.ItemInLeftHand);
         yield return BehindHost(host);
         if (!mpBehind)
         {
@@ -4266,13 +4273,14 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         string stashed = F($"{itemName} went into pocket {pocket} of the host's pack");
-        // From the front: WrongAngle, and the pull opens nothing.
+        // From the front: WrongAngle, and the pull opens nothing. Not food: the walk to the front can stop against the
+        // host, the mouth dwell then feeds them (no gaze rule, #119) and an empty hand arms no pack (#100).
         yield return GrabReachable(
-            i => i.UIData.canBackpack && i is not Backpack,
+            i => i.UIData.canBackpack && i is not Backpack && !i.canUseOnFriend,
             null,
             NearItems,
             5,
-            spawn: MpFood
+            spawn: MpPlainItem
         );
         if (!stepOk || stepSkip != null)
         {
@@ -4299,7 +4307,7 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
         {
             stepNote = F(
-                $"{stashed}; {PointState()}; A {FlatDistance(c.Center, host.Center):0.00} m from the host, the stance waited {stanceWaited:0.00} s"
+                $"{stashed}; {PointState()}; in hand {(HeldItem() != null ? HeldItem().name : "nothing")}; A {FlatDistance(c.Center, host.Center):0.00} m from the host, the stance waited {stanceWaited:0.00} s"
             );
             yield break;
         }
