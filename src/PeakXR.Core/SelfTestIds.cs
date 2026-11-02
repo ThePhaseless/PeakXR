@@ -18,8 +18,9 @@ public static class SelfTestIds
         "07-time-",
     };
 
-    /// <summary>Steps a filtered run always runs: the title, the session, the solo start, the beach level and the
-    /// segment jumps, so a chosen step meets the scene, segment and god mode it has in a full run.</summary>
+    /// <summary>Steps a filtered run keeps while a selected step is still to come: the title, the session, the solo start,
+    /// the beach level and the segment jumps, so a chosen step meets the scene, segment and god mode it has in a full run.
+    /// A filter of exact ids ends at its last step, so jumps past that step do not run.</summary>
     public static readonly string[] Setup =
     {
         "00-title",

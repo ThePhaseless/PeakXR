@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using Peak;
 using PeakXR.Core;
+using PeakXR.Diagnostics;
 using PeakXR.Render;
 using PeakXR.UI.Status;
 using PeakXR.UI.World;
@@ -23,6 +24,9 @@ internal sealed partial class SelfTestRunner
 {
     private const int EyeLumaStep = 4;
     private const int MonoDiffReads = 10;
+
+    /// <summary>Half the height of the rows P4 reads, in tangents: well inside the hole's radius of 0.5.</summary>
+    private const float HoleBandTan = 0.15f;
 
     /// <summary>Share of pixels that may move past <see cref="DrawnPixels.ChannelStep"/> between two images of one view:
     /// a small leak an RMS over the whole eye dilutes.</summary>
@@ -98,6 +102,57 @@ internal sealed partial class SelfTestRunner
             yield return null;
     }
 
+    /// <summary>Keeps what still moves or ticks with time frozen out of the reads until the step ends: the local avatar's
+    /// renderers and their shadows, whose outlines moved at timeScale 0 in the first in-game pairs (issue #5), and the
+    /// wrist's frame readout, whose text updates every 0.5 s on unscaled time (DebugDriver.cs:141-145). The setting goes
+    /// back through <see cref="OnRestore"/> and never reaches the disk: the run sets SaveOnConfigSet false.</summary>
+    string HideAvatarFromReads()
+    {
+        var stats = DebugFeature.ShowFrameStats;
+        if (stats != null && stats.Value)
+        {
+            stats.Value = false;
+            OnRestore(() => stats.Value = true);
+        }
+        var character = Character.localCharacter;
+        if (character == null)
+            return "no local character to hide";
+        var hidden = new List<Renderer>();
+        void Hide(Component root)
+        {
+            foreach (var r in root.GetComponentsInChildren<Renderer>(true))
+                if (r.enabled)
+                {
+                    r.enabled = false;
+                    hidden.Add(r);
+                }
+        }
+        Hide(character);
+        if (character.data.currentItem != null)
+            Hide(character.data.currentItem);
+        OnRestore(() =>
+        {
+            foreach (var r in hidden)
+                if (r != null)
+                    r.enabled = true;
+        });
+        return $"{hidden.Count} avatar renderers hidden";
+    }
+
+    /// <summary>The first problem among reads meant to be compared. Adaptive quality can land between two reads, and
+    /// images of two sizes would compare as equal.</summary>
+    static string ReadsProblem(params EyeImages[] reads)
+    {
+        foreach (var read in reads)
+        {
+            if (read.Problem != null)
+                return read.Problem;
+            if (read.Width != reads[0].Width || read.Height != reads[0].Height)
+                return $"the eye target went from {reads[0].Width}x{reads[0].Height} to {read.Width}x{read.Height} between reads";
+        }
+        return null;
+    }
+
     /// <summary>The head camera and display when two eye passes render; otherwise the step is skipped or failed.</summary>
     bool EyesReady(out Camera cam, out XRDisplaySubsystem display)
     {
@@ -169,6 +224,7 @@ internal sealed partial class SelfTestRunner
                 material.SetFloat(PoisonEdgeAddId, edgeAdd);
             }
         });
+        string avatar = HideAvatarFromReads();
         FreezeWorld();
         yield return Frames(3);
 
@@ -176,7 +232,7 @@ internal sealed partial class SelfTestRunner
         var second = new EyeImages(2);
         yield return ReadEyes(cam, display, first);
         yield return ReadEyes(cam, display, second);
-        string problem = first.Problem ?? second.Problem;
+        string problem = ReadsProblem(first, second);
         if (problem != null)
         {
             Fail("noise read: " + problem);
@@ -188,7 +244,11 @@ internal sealed partial class SelfTestRunner
                 0.5f,
                 2f * EyeImageMatch.Rms(EyeLuma(first, eye), EyeLuma(second, eye))
             );
-        var notes = new List<string> { F($"floor L {floor[0]:0.00} R {floor[1]:0.00} of 255") };
+        var notes = new List<string>
+        {
+            avatar,
+            F($"floor L {floor[0]:0.00} R {floor[1]:0.00} of 255"),
+        };
         var fails = new List<string>();
 
         // A hide that works leaves nothing to see; the poison quad covers the view at alpha 1, or this proves nothing
@@ -217,7 +277,7 @@ internal sealed partial class SelfTestRunner
         {
             yield return PoisonOffAndOn(cam, display, fx, StatusOverlayMode.HeadLocked, eyeLocked);
             string label = eyeLocked ? "on" : "off";
-            if (!HoleVerdict(cam, eyeLocked, floor, notes, fails))
+            if (!HoleVerdict(cam, eyeLocked, notes, fails))
                 SaveFlash($"vr-480-p4-{label}");
         }
 
@@ -258,7 +318,7 @@ internal sealed partial class SelfTestRunner
         List<string> fails
     )
     {
-        string problem = flashOff.Problem ?? flashOn.Problem;
+        string problem = ReadsProblem(flashOff, flashOn);
         if (problem != null)
         {
             fails.Add($"{phase}: {problem}");
@@ -283,18 +343,12 @@ internal sealed partial class SelfTestRunner
         return ok;
     }
 
-    /// <summary>P4: the hole's centre, in head-frame tangents, per eye. Off it differs by about the eyes' stereo on a quad
-    /// at D, and on it must not differ. False on a red.</summary>
-    bool HoleVerdict(
-        Camera cam,
-        bool eyeLocked,
-        float[] floor,
-        List<string> notes,
-        List<string> fails
-    )
+    /// <summary>P4: the hole's centre, in head-frame tangents, per eye. Off it differs by the eyes' stereo on a quad at D,
+    /// 0.063 / 0.06 = 1.05 tan on the default near plane, and on it must not differ. False on a red.</summary>
+    bool HoleVerdict(Camera cam, bool eyeLocked, List<string> notes, List<string> fails)
     {
         string phase = eyeLocked ? "P4 on" : "P4 off";
-        string problem = flashOff.Problem ?? flashOn.Problem;
+        string problem = ReadsProblem(flashOff, flashOn);
         if (problem != null)
         {
             fails.Add($"{phase}: {problem}");
@@ -311,44 +365,55 @@ internal sealed partial class SelfTestRunner
                 flashOn.Projections[eye].m11,
                 flashOn.Projections[eye].m12
             );
-            // The head's axis in this eye. The hole's chord is centred on any row through it, so a row a few pixels off
-            // or a flipped readback changes nothing.
+            // The head's axis in this eye gives the row. The hole's chord is centred on any row through it, so a band
+            // around that row survives a flipped readback, which this one is, and a median over it survives scene detail.
+            // Pixels come from the measured viewport: adaptive quality rescales the eye, and a target can outgrow it.
             Vector3 axis = view.MultiplyVector(cam.transform.forward);
-            float axisX = axis.x / -axis.z;
             float axisY = axis.y / -axis.z;
-            int column = Mathf.Clamp(
-                Mathf.RoundToInt(viewport.x + (axisX - left) / (right - left) * viewport.width),
-                0,
-                flashOn.Width - 1
+            int band = Mathf.RoundToInt(HoleBandTan / (top - bottom) * viewport.height);
+            int firstRow = Mathf.RoundToInt(viewport.y);
+            int lastRow = firstRow + Mathf.RoundToInt(viewport.height) - 1;
+            int row = Mathf.RoundToInt(
+                viewport.y + (axisY - bottom) / (top - bottom) * viewport.height
             );
-            int row = Mathf.Clamp(
-                Mathf.RoundToInt(viewport.y + (axisY - bottom) / (top - bottom) * viewport.height),
-                0,
-                flashOn.Height - 1
-            );
-            var (leftEdge, rightEdge) = EyeImageMatch.HoleEdges(
+            int firstColumn = Mathf.RoundToInt(viewport.x);
+            var profile = EyeImageMatch.ChangeProfile(
                 flashOff.Pixels[eye],
                 flashOn.Pixels[eye],
                 flashOn.Width,
-                row,
-                column,
-                Mathf.CeilToInt(Mathf.Max(8f, 3f * floor[eye]))
+                Mathf.Max(firstRow, row - band),
+                Mathf.Min(lastRow, row + band),
+                firstColumn,
+                firstColumn + Mathf.RoundToInt(viewport.width) - 1
             );
-            if (leftEdge < 0 || rightEdge < 0)
+            var (from, to) = EyeImageMatch.HoleInProfile(profile, EyeImageMatch.MinHoleContrast);
+            if (from < 0)
             {
                 fails.Add(
-                    $"{phase}: no hole in the {(eye == 0 ? "left" : "right")} eye (edges {leftEdge}, {rightEdge} from column {column}, row {row})"
+                    $"{phase}: no hole in the {(eye == 0 ? "left" : "right")} eye (rows {row - band}-{row + band})"
                 );
                 return false;
             }
-            float a = HeadTangent(cam, view, viewport, left, right, axisY, leftEdge);
-            float b = HeadTangent(cam, view, viewport, left, right, axisY, rightEdge);
+            from += firstColumn;
+            to += firstColumn;
+            float a = HeadTangent(cam, view, viewport, left, right, axisY, from);
+            float b = HeadTangent(cam, view, viewport, left, right, axisY, to);
+            float width = b - a + (right - left) / viewport.width;
             centre[eye] = (a + b) * 0.5f;
             notes.Add(
                 F(
-                    $"{phase} {(eye == 0 ? "L" : "R")} hole columns {leftEdge}-{rightEdge}, centre {centre[eye]:0.000} tan"
+                    $"{phase} {(eye == 0 ? "L" : "R")} hole columns {from}-{to}, centre {centre[eye]:0.000} tan, width {width:0.00}"
                 )
             );
+            if (width < EyeImageMatch.MinHoleTan || width > EyeImageMatch.MaxHoleTan)
+            {
+                fails.Add(
+                    F(
+                        $"{phase}: the {(eye == 0 ? "left" : "right")} eye's hole is {width:0.00} tan wide, not the quad's 1.0"
+                    )
+                );
+                return false;
+            }
         }
         float offset = Mathf.Abs(centre[0] - centre[1]);
         float separation = Vector3.Distance(
@@ -390,7 +455,12 @@ internal sealed partial class SelfTestRunner
         return head.x / head.z;
     }
 
-    void SaveFlash(string shot) => SavePair(flashOn, shot);
+    /// <summary>Saves both images of a red, so a later look can replay the verdict on them.</summary>
+    void SaveFlash(string shot)
+    {
+        SavePair(flashOn, shot);
+        SavePair(flashOff, shot + "-base");
+    }
 
     void SavePair(EyeImages image, string shot)
     {
@@ -549,6 +619,9 @@ internal sealed partial class SelfTestRunner
             SavePair(worst, "vr-481-mono");
         }
 
+        // The mono phase keeps the avatar, whose eyes it compares within one frame. From here the avatar is out: it moves
+        // while time is frozen, which reads as a difference no swap made.
+        notes.Add(HideAvatarFromReads());
         FreezeWorld();
         foreach (var effect in effects)
         foreach (var ps in effect.GetComponentsInChildren<ParticleSystem>())
@@ -556,26 +629,28 @@ internal sealed partial class SelfTestRunner
         yield return Frames(3);
         var before = head.position;
         var normal = new EyeImages(2);
-        var again = new EyeImages(2);
         var swapped = new EyeImages(2);
+        var later = new EyeImages(2);
         yield return ReadEyes(cam, display, normal);
-        yield return ReadEyes(cam, display, again);
         EyeViewOverride.Install(EyeViewOverride.Mode.Swap, cam);
         yield return Frames(2);
         yield return ReadEyes(cam, display, swapped);
         if (!EyeViewOverride.Remove())
             fails.Add("something chained above the view override during the swap phase");
-        string problem = normal.Problem ?? again.Problem ?? swapped.Problem;
+        // After the swap, so this read's distance from the first spans at least the swapped read's.
+        yield return Frames(2);
+        yield return ReadEyes(cam, display, later);
+        string problem = ReadsProblem(normal, swapped, later);
         if (problem != null)
             fails.Add("swap read: " + problem);
         else
         {
-            float still = Mathf.Max(
-                EyeImageMatch.Rms(EyeLuma(normal, 0), EyeLuma(again, 0)),
-                EyeImageMatch.Rms(EyeLuma(normal, 1), EyeLuma(again, 1))
-            );
+            var toLeft = SwapReading(swapped, 1, normal, later, 0);
+            var toRight = SwapReading(swapped, 0, normal, later, 1);
+            float still = Mathf.Max(toLeft.StillRms, toRight.StillRms);
             float moved = Vector3.Distance(before, head.position);
-            if (still > 1f || moved > 0.001f)
+            notes.Add($"swap right-as-left {toLeft}; left-as-right {toRight}");
+            if (still > EyeImageMatch.SwapStillLimit || moved > 0.001f)
             {
                 swapSkipped = true;
                 notes.Add(
@@ -584,30 +659,12 @@ internal sealed partial class SelfTestRunner
                     )
                 );
             }
-            else
+            else if (!toLeft.Matches || !toRight.Matches)
             {
-                float toLeft = EyeImageMatch.Rms(EyeLuma(swapped, 1), EyeLuma(normal, 0));
-                float toRight = EyeImageMatch.Rms(EyeLuma(swapped, 0), EyeLuma(normal, 1));
-                float shareLeft = DrawnPixels.ChangedShare(swapped.Pixels[1], normal.Pixels[0]);
-                float shareRight = DrawnPixels.ChangedShare(swapped.Pixels[0], normal.Pixels[1]);
-                notes.Add(
-                    F(
-                        $"swap right-as-left {toLeft:0.00} share {shareLeft:0.0000}, left-as-right {toRight:0.00} share {shareRight:0.0000}, still {still:0.00}"
-                    )
-                );
-                if (
-                    toLeft > 1f
-                    || toRight > 1f
-                    || shareLeft > MonoDiffShare
-                    || shareRight > MonoDiffShare
-                )
-                {
-                    fails.Add(
-                        "swapped eyes do not match the other eye's image: stale per-eye data"
-                    );
-                    SavePair(swapped, "vr-481-swapped");
-                    SavePair(normal, "vr-481-normal");
-                }
+                fails.Add("swapped eyes do not match the other eye's image: stale per-eye data");
+                SavePair(swapped, "vr-481-swapped");
+                SavePair(normal, "vr-481-normal");
+                SavePair(later, "vr-481-later");
             }
         }
 
@@ -617,6 +674,24 @@ internal sealed partial class SelfTestRunner
         else if (swapSkipped)
             stepSkip = stepNote;
     }
+
+    /// <summary>Pass <paramref name="from"/> rendered on the other eye's view, against that eye's normal read.</summary>
+    static EyeSwapReading SwapReading(
+        EyeImages swapped,
+        int from,
+        EyeImages normal,
+        EyeImages later,
+        int eye
+    ) =>
+        EyeImageMatch.ReadSwap(
+            EyeLuma(swapped, from),
+            EyeLuma(normal, eye),
+            EyeLuma(later, eye),
+            normal.Width / EyeLumaStep,
+            normal.Height / EyeLumaStep,
+            DrawnPixels.ChangedShare(swapped.Pixels[from], normal.Pixels[eye]),
+            DrawnPixels.ChangedShare(later.Pixels[eye], normal.Pixels[eye])
+        );
 
     /// <summary>Chosen alone, vr.482 holds the named effect for a compositor screenshot instead of measuring; a run that
     /// lists it with others must not stop there.</summary>
@@ -635,6 +710,7 @@ internal sealed partial class SelfTestRunner
         var head = cam.transform;
         var player = head.position;
         var ahead = player + Flat(head.forward) * 6f;
+        string avatar = HideAvatarFromReads();
         if (EyeEffectsLive)
         {
             if (!prefabs.ContainsKey(MonoDiffEffects[0]))
@@ -657,7 +733,8 @@ internal sealed partial class SelfTestRunner
             yield return EyeEffectMetrics(cam, display, prefabs, effect, ahead, "at 6 m");
             yield return EyeEffectMetrics(cam, display, prefabs, effect, player, "at the player");
         }
-        stepNote = $"{EyeEffects.Length - absent.Count} effects measured (eye-effect log lines)";
+        stepNote =
+            $"{EyeEffects.Length - absent.Count} effects measured (eye-effect log lines); {avatar}";
         if (absent.Count > 0)
             stepNote += "; absent: " + string.Join(", ", absent);
         if (absent.Contains(MonoDiffEffects[0]))
@@ -677,7 +754,9 @@ internal sealed partial class SelfTestRunner
     }
 
     /// <summary>What the effect added to each eye, 1 s after it spawned, against a read before it: how much differs
-    /// between the eyes, the shift that best explains the rest, and what that shift leaves.</summary>
+    /// between the eyes, the shift that best explains the rest, and what that shift leaves. The world is not frozen here,
+    /// so a read 1 s earlier gives what the same second does with no effect: a line is only readable when its signal is
+    /// well over that noise.</summary>
     IEnumerator EyeEffectMetrics(
         Camera cam,
         XRDisplaySubsystem display,
@@ -687,23 +766,27 @@ internal sealed partial class SelfTestRunner
         string where
     )
     {
+        var quiet = new EyeImages(2);
+        yield return ReadEyes(cam, display, quiet);
+        yield return Wait(1f);
         var before = new EyeImages(2);
         yield return ReadEyes(cam, display, before);
         var holder = SpawnEffect(prefabs, effect, spot);
         yield return Wait(1f);
         var after = new EyeImages(2);
         yield return ReadEyes(cam, display, after);
-        string problem = before.Problem ?? after.Problem;
+        string problem = ReadsProblem(quiet, before, after);
         if (problem != null)
             Plugin.Log.LogWarning($"[selftest] eye-effect {effect} {where}: {problem}");
         else
-            Plugin.Log.LogInfo(EyeEffectLine(cam, before, after, holder, effect, where));
+            Plugin.Log.LogInfo(EyeEffectLine(cam, quiet, before, after, holder, effect, where));
         Destroy(holder);
         yield return Frames(2);
     }
 
     static string EyeEffectLine(
         Camera cam,
+        EyeImages quiet,
         EyeImages before,
         EyeImages after,
         GameObject holder,
@@ -715,7 +798,12 @@ internal sealed partial class SelfTestRunner
         var right = Added(EyeLuma(after, 1), EyeLuma(before, 1));
         int w = after.Width / EyeLumaStep;
         int h = after.Height / EyeLumaStep;
-        float axis = EyeImageMatch.AxisShift(w, EyeTangents(after, 0), EyeTangents(after, 1));
+        // The axes sit in the viewport, which a target can outgrow, but both are read in target columns.
+        float axis = EyeImageMatch.AxisShift(
+            Mathf.RoundToInt(after.Viewports[0].width) / EyeLumaStep,
+            EyeTangents(after, 0),
+            EyeTangents(after, 1)
+        );
         // A near sheet can sit 370 px apart at full size.
         int from = Mathf.Clamp(Mathf.RoundToInt(axis) - 100, 1 - w, w - 1);
         int to = Mathf.Clamp(Mathf.RoundToInt(axis) + 100, 1 - w, w - 1);
@@ -723,8 +811,16 @@ internal sealed partial class SelfTestRunner
         float residual = EyeImageMatch.Residual(left, right, w, h, shift);
         float mass = EyeImageMatch.MassRatio(left, right);
         float nearest = NearestSheet(holder, cam.transform);
+        float signal = Mathf.Max(
+            EyeImageMatch.Rms(EyeLuma(after, 0), EyeLuma(before, 0)),
+            EyeImageMatch.Rms(EyeLuma(after, 1), EyeLuma(before, 1))
+        );
+        float noise = Mathf.Max(
+            EyeImageMatch.Rms(EyeLuma(before, 0), EyeLuma(quiet, 0)),
+            EyeImageMatch.Rms(EyeLuma(before, 1), EyeLuma(quiet, 1))
+        );
         return F(
-            $"[selftest] eye-effect {effect} {where}: mass {mass:0.000}, shift {shift} (axis {axis:0.0}), residual {residual:0.000}, nearest sheet {nearest:0.00} m"
+            $"[selftest] eye-effect {effect} {where}: signal {signal:0.00}, noise {noise:0.00}, mass {mass:0.000}, shift {shift} (axis {axis:0.0}), residual {residual:0.000}, nearest sheet {nearest:0.00} m"
         );
     }
 
