@@ -3,8 +3,8 @@ using System.Numerics;
 namespace PeakXR.Core;
 
 /// <summary>
-/// Where a head-locked quad goes for one MultiPass eye. A quad centred on the head shows its pattern up to half a tangent
-/// apart between the eyes, because its 13 cm distance gives it 13 cm of stereo (issue #5). Ahead of each eye and parallel
+/// Where a head-locked quad goes for one MultiPass eye. A quad centred on the head, 6 cm away on the default near plane,
+/// shows its pattern about 1 tangent apart between the eyes (0.063 / 0.06, issue #5). Ahead of each eye and parallel
 /// to the head, the same head-space direction hits the same UV in both eyes, on any cant and any frustum, whatever the
 /// quad's size.
 /// </summary>

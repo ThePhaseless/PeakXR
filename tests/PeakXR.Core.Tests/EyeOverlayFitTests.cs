@@ -2,8 +2,8 @@ namespace PeakXR.Core.Tests;
 
 public class EyeOverlayFitTests
 {
-    /// <summary>Today's distance ahead of the head, near 0.1 + 0.03.</summary>
-    private const float D = 0.13f;
+    /// <summary>Today's distance ahead of the head, Camera.NearClip's default 0.03 + 0.03.</summary>
+    private const float D = 0.06f;
 
     /// <summary>Half-size in tangents, which the quad keeps so the overlays keep today's density.</summary>
     private const float T = 3f;
@@ -105,7 +105,7 @@ public class EyeOverlayFitTests
         var centre = Origin + InHead(Vector3.UnitZ) * D;
         var left = Hit(EyeAt(-Eye), InHead(Vector3.UnitZ), centre, Head);
         var right = Hit(EyeAt(Eye), InHead(Vector3.UnitZ), centre, Head);
-        Assert.Equal(0.081f, MathF.Abs(left.U - right.U), 0.001f);
+        Assert.Equal(0.175f, MathF.Abs(left.U - right.U), 0.001f);
     }
 
     [Theory]

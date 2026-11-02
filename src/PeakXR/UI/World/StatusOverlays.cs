@@ -12,7 +12,8 @@ namespace PeakXR.UI.World;
 /// Status-effect quads (<see cref="CameraQuad"/>) size themselves to the mono camera frustum, which is
 /// wrong for each eye. In VR they become real head-locked quads just past the near plane, big enough to
 /// cover any headset FOV. Re-posed right before rendering so they do not lag behind head motion. That pose is centred
-/// on the head, which gives a pattern read from the quad's UV 13 cm of stereo (0.485 tan between the eyes, issue #5), so
+/// on the head, 6 cm away on the default near plane, so a pattern read from the quad's UV sits 0.063 / 0.06 = 1.05 tan
+/// apart between the eyes (measured 1.05 in vr.480, issue #5), so
 /// <see cref="EyeMatrixFeature"/> then moves them ahead of each eye before that eye's cull (Core
 /// <see cref="EyeOverlayFit"/>). The size stays, so density and strength do; with no XR pass or
 /// <c>Render.EyeLockedOverlays</c> off, the head-centred pose is the picture.
