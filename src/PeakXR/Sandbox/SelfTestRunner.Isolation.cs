@@ -58,7 +58,9 @@ internal sealed partial class SelfTestRunner
     /// with an animated rig or particles), or it removed itself (an explosion). <see cref="SpawnOnly"/> names only
     /// have to spawn. A mob that is a <c>Character</c> is tracked by its torso (<c>Character.Center</c>): its root stays
     /// where it spawned while the ragdoll walks. The Scoutmaster and the bee swarm get the context they act in
-    /// (<see cref="StageMob"/>) and must come for the player.
+    /// (<see cref="StageMob"/>) and must come for the player. A bubble (<c>AntiSphere</c>) stands still and lifts what
+    /// is in it, so it is judged on that: an Apple spawned inside must enter its <c>ACTIVE_ITEMS</c> and rise
+    /// (AntiSphere.cs:77, :147; #126).
     /// A level zombie sleeps until a player within 30 m looks at it (MushroomZombie.cs:517), gets up for 5 s
     /// (MushroomZombie.cs:649) and idles 2 s before it picks a target (MushroomZombie.cs:590-596), so it gets its
     /// <c>initialWakeUpTime</c> (MushroomZombie.cs:38) plus that idle. A vine gets the time to grow
@@ -73,6 +75,22 @@ internal sealed partial class SelfTestRunner
         Vector3 Where() => body != null ? body.Center : go.transform.position;
         var scout = go.GetComponentInChildren<Scoutmaster>();
         var swarm = go.GetComponentInChildren<BeeSwarm>();
+        var bubble =
+            entry.Name == "AntiSphere_Projectile" ? go.GetComponentInChildren<AntiSphere>() : null;
+        var bubbleItems =
+            bubble != null ? GameMember.Field<AntiSphere, List<Item>>("ACTIVE_ITEMS") : null;
+        Item lifted = null;
+        if (
+            bubble != null
+            && SandboxActions.SpawnItemAt(
+                FindItem(SandboxActions.Items, AppleFragment),
+                bubble.transform.position
+            )
+        )
+            lifted = SandboxActions.LastSpawned.GetComponent<Item>();
+        float liftedFrom = lifted != null ? lifted.transform.position.y : 0f;
+        bool taken = false;
+        float rose = 0f;
         string staged = StageMob(scout, swarm, c);
         if (stepSkip != null)
             yield break;
@@ -138,6 +156,11 @@ internal sealed partial class SelfTestRunner
                 || (zombie != null && zombie._currentTarget == c);
             grabbed |= body != null && grabbedRef != null && grabbedRef(body.data) == c;
             blinded |= c.data.isBlind;
+            if (lifted != null)
+            {
+                taken |= bubbleItems(bubble).Contains(lifted);
+                rose = Mathf.Max(rose, lifted.transform.position.y - liftedFrom);
+            }
             stole |=
                 raven != null
                 && raven.CurrentlyStealing
@@ -171,21 +194,21 @@ internal sealed partial class SelfTestRunner
             + (zombie != null ? $", zombie {zombie.currentState}, {ZombieWoke(wokeAfter)}" : "")
             + (raven != null ? $", stealing the player's voice {stole}" : "")
             + (staged != null ? $", {staged}" : "")
-            + (scout != null ? $", grabbed the player {grabbed}" : "");
+            + (scout != null ? $", grabbed the player {grabbed}" : "")
+            + (bubble != null ? F($", an Apple inside taken {taken}, rose {rose:0.00} m") : "");
         bool spawnOnly = false;
         foreach (var s in SpawnOnly)
             spawnOnly |= entry.Name.Contains(s, System.StringComparison.Ordinal);
         bool alive =
-            staged != null
-                ? Came(scout, swarm, near - closest, targeted, grabbed, moved)
-                : moved > 0.3f
-                    || near - closest > 0.3f
-                    || targeted
-                    || blinded
-                    || (grows && grew > MinGrowth)
-                    || Swelled(grew, size)
-                    || gone
-                    || stole;
+            bubble != null ? taken && rose > MinBubbleRise
+            : staged != null ? Came(scout, swarm, near - closest, targeted, grabbed, moved)
+            : moved > 0.3f
+                || near - closest > 0.3f
+                || targeted
+                || blinded
+                || (grows && grew > MinGrowth)
+                || gone
+                || stole;
         if (washed)
             Fail("BLIND washed out the view: " + note);
         else if (spawnOnly)
@@ -302,16 +325,9 @@ internal sealed partial class SelfTestRunner
     /// <summary>Growth (m) that counts as a sign of life.</summary>
     const float MinGrowth = 0.2f;
 
-    /// <summary>Growth (m) of a mob with no vine or AOE that still counts, when it also more than doubles its size.</summary>
-    const float MinSwell = 0.5f;
-
-    /// <summary>
-    /// A mob whose behaviour is to swell or pulse (AntiSphere_Projectile grew 18 m) shows it whatever its start
-    /// distance; run 66 started it 15 m off, where it came no closer, and the step read no behaviour. More than
-    /// <see cref="MinSwell"/> and more than its own spawned size, so a ragdoll's or an idle rig's pose change (a few
-    /// tenths of its size) does not pass.
-    /// </summary>
-    static bool Swelled(float grew, float size) => grew > MinSwell && grew > size;
+    /// <summary>How far (m) an item in a bubble must rise: it accelerates at 0.2 g (AntiSphere.cs:147), metres in the
+    /// 3 s watch, where a resting Apple does not move.</summary>
+    const float MinBubbleRise = 0.2f;
 
     static float BoundsSize(GameObject go)
     {
