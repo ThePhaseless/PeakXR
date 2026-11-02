@@ -18,7 +18,7 @@ namespace PeakXR.Emotes;
 /// wheel's own data (EmoteWheel.data), so nothing new is hard-coded. Not tracked while climbing (rope and vine too),
 /// carrying a friend, passed out, dead, in a menu or with a wheel open, nor on a hand whose grip is busy (a climber's
 /// reaching hands look like a cheer, an ordinary grip like a thumbs-up). The thumbs-up also needs an empty-handed fist
-/// held still out in front, on a controller that senses the thumb (EmoteGestures.ThumbIntent). Gestures track only on
+/// held still out in front, its thumb just lifted off a button (EmoteGestures.ThumbIntent). Gestures track only on
 /// the ground and away from holds, so noise is never refused; a played emote is confirmed on the hand (HappenedHere).
 /// </summary>
 [DefaultExecutionOrder(31060)]
@@ -47,9 +47,9 @@ internal sealed class GestureEmotes : MonoBehaviour
     private readonly DwellGesture leftThumb = new() { Dwell = EmoteGestures.ThumbDwell };
     private readonly DwellGesture rightThumb = new() { Dwell = EmoteGestures.ThumbDwell };
 
-    /// <summary>Per hand (left, right): the controller has reported a thumb touch or press at least once, so it has
-    /// thumb sensors and a lifted thumb means something.</summary>
-    private static readonly bool[] thumbSensed = new bool[2];
+    /// <summary>Per hand (left, right): when the thumb was last on a button (<c>Time.time</c>), never on a controller
+    /// with no thumb sensors (<see cref="EmoteGestures.ThumbJustLifted"/>).</summary>
+    private static readonly float[] thumbOnAt = { float.NegativeInfinity, float.NegativeInfinity };
 
     /// <summary>Gestures were tracked last frame (none of the early outs in <see cref="LateUpdate"/>).</summary>
     private static bool tracking;
@@ -60,7 +60,7 @@ internal sealed class GestureEmotes : MonoBehaviour
     /// <summary>
     /// This empty hand's grip may be the thumbs-up's fist, not a grab (interact.physical, #82): gestures are tracked,
     /// nothing is held, the hand is out in front and short of a reach (<see cref="EmoteGestures.ThumbOutFront"/>) and the thumb is lifted
-    /// and up (<see cref="EmoteGestures.ThumbLifted"/>) on a controller that senses it. Read live, so it holds on the
+    /// and up (<see cref="EmoteGestures.ThumbLifted"/>), just now (<see cref="EmoteGestures.ThumbJustLifted"/>). Read live, so it holds on the
     /// frame the grip closes, still or not.
     /// </summary>
     internal static bool ThumbPosed(bool left)
@@ -74,7 +74,7 @@ internal sealed class GestureEmotes : MonoBehaviour
             || c.data.currentItem != null
             || hand == null
             || rig.Head == null
-            || !thumbSensed[left ? 0 : 1]
+            || !ThumbJustLifted(left)
             || !VRInput.Hand(left).Tracked
         )
             return false;
@@ -137,6 +137,9 @@ internal sealed class GestureEmotes : MonoBehaviour
 
     private void LateUpdate()
     {
+        // Before the early outs: a thumb on the stick through a climb or a menu still came off it just now.
+        NoteThumb(true);
+        NoteThumb(false);
         var c = Character.localCharacter;
         var rig = VRRig.Instance;
         var current = GUIManager.instance;
@@ -248,7 +251,7 @@ internal sealed class GestureEmotes : MonoBehaviour
     }
 
     /// <summary>A deliberate thumbs-up (EmoteGestures.ThumbIntent): a tracked fist, thumb lifted and up, held still out
-    /// in front and short of a reach, empty-handed and not busy, on a controller that has shown it senses the thumb.</summary>
+    /// in front and short of a reach, empty-handed and not busy, the thumb just lifted off a button.</summary>
     private static bool Thumb(
         bool left,
         Transform hand,
@@ -261,14 +264,6 @@ internal sealed class GestureEmotes : MonoBehaviour
         ref var state = ref VRInput.Hand(left);
         if (!state.Tracked)
             return false;
-        ref bool sensed = ref thumbSensed[left ? 0 : 1];
-        sensed |=
-            state.PrimaryTouch
-            || state.SecondaryTouch
-            || state.StickTouch
-            || state.ThumbrestTouch
-            || state.Primary
-            || state.Secondary;
         var p = Rig.RealScale.Real(hand.position, head);
         var flat = forward;
         flat.y = 0f;
@@ -278,7 +273,7 @@ internal sealed class GestureEmotes : MonoBehaviour
                 LocalAvatar.ControllerCurls(left),
                 Vector3.Dot(hand.ThumbSide(), Vector3.up)
             ),
-            sensed,
+            ThumbJustLifted(left),
             holding,
             busy,
             Vector3.Dot(p - head, flat),
@@ -287,6 +282,23 @@ internal sealed class GestureEmotes : MonoBehaviour
             Stretch(left)
         );
     }
+
+    private static void NoteThumb(bool left)
+    {
+        ref var state = ref VRInput.Hand(left);
+        if (
+            state.PrimaryTouch
+            || state.SecondaryTouch
+            || state.StickTouch
+            || state.ThumbrestTouch
+            || state.Primary
+            || state.Secondary
+        )
+            thumbOnAt[left ? 0 : 1] = Time.time;
+    }
+
+    private static bool ThumbJustLifted(bool left) =>
+        EmoteGestures.ThumbJustLifted(Time.time - thumbOnAt[left ? 0 : 1]);
 
     /// <summary>How far this hand is out, on the reach-out's own measure (Core <see cref="ReachOut"/>, tracking space),
     /// against the measured arm or the nominal one if that is longer: a learner that shrank the arm must not shut the

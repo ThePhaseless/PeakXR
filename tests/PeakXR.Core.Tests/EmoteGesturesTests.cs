@@ -259,6 +259,27 @@ public class EmoteGesturesTests
     }
 
     [Fact]
+    public void ThumbIntent_AThumbThatNeverMovedIsNoThumbsUp()
+    {
+        // #146: reaching out and pausing with a closed fist, the thumb long off the stick. The fist closed in place,
+        // open when it got there, and this far out it is a thumbs-up's own stretch: only the thumb tells them apart.
+        var g = new DwellGesture { Dwell = EmoteGestures.ThumbDwell };
+        bool lifted = EmoteGestures.ThumbJustLifted(EmoteGestures.ThumbLiftWindow + 0.1f);
+        Assert.Equal(0, Fires(g, Thumb(sensed: lifted, stretch: 0.5f), 5f));
+    }
+
+    [Fact]
+    public void ThumbIntent_ALiftedThumbFitsARaiseAndTheDwell()
+    {
+        // Lifted, the fist raised for a second, then held for the longer of the two dwells.
+        const float Raise = 1f;
+        var g = new DwellGesture { Dwell = EmoteGestures.ThumbFarDwell };
+        bool lifted = EmoteGestures.ThumbJustLifted(Raise + EmoteGestures.ThumbFarDwell);
+        Assert.Equal(1, Fires(g, Thumb(sensed: lifted, stretch: 0.85f), 1.2f));
+        Assert.True(EmoteGestures.ThumbJustLifted(0f));
+    }
+
+    [Fact]
     public void ThumbIntent_BrokenByMovement_StartsOver()
     {
         var g = new DwellGesture { Dwell = EmoteGestures.ThumbDwell };

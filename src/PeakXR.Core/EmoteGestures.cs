@@ -55,6 +55,15 @@ public static class EmoteGestures
     public static float ThumbDwellAt(float stretch) =>
         stretch > ThumbFarStretch ? ThumbFarDwell : ThumbDwell;
 
+    /// <summary>A thumbs-up lifts the thumb: it was on a button at most this long ago (s), which covers raising the fist
+    /// and the longer dwell. A fist in the same place whose thumb has long been off is a reach that stopped, and a false
+    /// emote goes to every peer (#146).</summary>
+    public const float ThumbLiftWindow = 2.5f;
+
+    /// <summary>The thumb came off a button <paramref name="sinceTouch"/> seconds ago, recently enough to mean it. Never
+    /// on a controller that has reported no thumb touch: without the sensor every fist reads as a lifted thumb.</summary>
+    public static bool ThumbJustLifted(float sinceTouch) => sinceTouch <= ThumbLiftWindow;
+
     /// <summary>
     /// The body is doing something with its hands (climbing, on a rope or vine, carrying a friend, a grip that took or
     /// started something, struggling free of a web or fly trap): any hand pose now is part of that, not an emote.
@@ -76,15 +85,15 @@ public static class EmoteGestures
         midGrab || atRock || climbRing || grabGlow;
 
     /// <summary>
-    /// A deliberate thumbs-up this frame: the <see cref="ThumbsUp"/> pose, on a controller that reports thumb touch
-    /// (<paramref name="thumbSensed"/>; without the sensor every fist reads as a lifted thumb), no item held, the body
+    /// A deliberate thumbs-up this frame: the <see cref="ThumbsUp"/> pose with a thumb that just came off a button
+    /// (<paramref name="thumbJustLifted"/>, <see cref="ThumbJustLifted"/>), no item held, the body
     /// not <see cref="Busy"/>, the hand held out in front (<paramref name="forward"/> metres ahead of the eyes,
     /// <paramref name="belowEyes"/> metres under them, <paramref name="stretch"/> of the arm,
     /// <see cref="ThumbOutFront"/>) and still (<paramref name="speed"/> m/s).
     /// </summary>
     public static bool ThumbIntent(
         bool pose,
-        bool thumbSensed,
+        bool thumbJustLifted,
         bool holdingItem,
         bool busy,
         float forward,
@@ -93,7 +102,7 @@ public static class EmoteGestures
         float stretch
     ) =>
         pose
-        && thumbSensed
+        && thumbJustLifted
         && !holdingItem
         && !busy
         && ThumbOutFront(forward, belowEyes, stretch)

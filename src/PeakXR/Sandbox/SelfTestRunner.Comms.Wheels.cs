@@ -18,7 +18,7 @@ internal sealed partial class SelfTestRunner
     IEnumerator WheelGapSteps()
     {
         yield return HandStep("vr.126-wheel-climbing-refused", 40f, WheelClimbingStep());
-        yield return HandStep("vr.127-thumbs-up", 25f, ThumbsUpStep());
+        yield return HandStep("vr.127-thumbs-up", 30f, ThumbsUpStep());
         yield return HandStep("vr.443-thumbs-up-no-interact", 20f, ThumbsUpNoInteractStep());
         yield return HandStep("vr.447-thumbs-up-cooldown", 20f, ThumbsUpCooldownStep());
         yield return HandStep("vr.446-posed-tap-picks-up", 20f, PosedTapStep());
@@ -153,6 +153,22 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         Script(holdLeft).Grip = 0f;
+        yield return Wait(0.3f);
+
+        // Negative: the pose in the same place with a thumb long off the buttons, a reach that stopped (#146).
+        yield return MoveTrack(hand, Out(hand), 0.3f);
+        Script(hand).StickTouch = false;
+        yield return Wait(EmoteGestures.ThumbLiftWindow + 0.2f);
+        Fist(hand, forward);
+        yield return Wait(EmoteGestures.ThumbFarDwell + 0.3f);
+        Script(hand).Grip = 0f;
+        Script(hand).StickTouch = true;
+        notes.Add($"fist with a thumb long off: {GestureEmotes.PlayCount - before} emotes");
+        if (GestureEmotes.PlayCount != before)
+        {
+            Fail($"a fist with a thumb long off played '{GestureEmotes.LastPlayed}'");
+            yield break;
+        }
         yield return Wait(0.3f);
 
         // Positive: the deliberate pose, held still out in front.
