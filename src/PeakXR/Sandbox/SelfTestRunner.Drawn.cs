@@ -171,6 +171,9 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         yield return WaitFor(() => ViewClear, 5f);
+        yield return PanelSettled(root);
+        if (!stepOk)
+            yield break;
 
         int passes = display.GetRenderPassCount();
         var on = new EyeImages(passes);
@@ -235,6 +238,46 @@ internal sealed partial class SelfTestRunner
         if (fails.Count > 0)
             Fail(string.Join("; ", fails));
         stepNote = string.IsNullOrEmpty(stepNote) ? note : stepNote + "; " + note;
+    }
+
+    /// <summary>Waits until <paramref name="root"/> stops changing. A modal fades in by Lerp (Zorro.UI.Modal/Modal.cs:80)
+    /// and its plate is added once the fade lifts the content past 1 % (<see cref="BackplateView.Counts"/>), so reads taken
+    /// as it opens hold the panel's own change in the noise (#131). This watches the canvas, never the pixels, so an
+    /// undrawn panel still settles and fails at the reads.</summary>
+    IEnumerator PanelSettled(Canvas root)
+    {
+        var steady = new SteadyFrames();
+        var graphics = new List<UnityEngine.UI.Graphic>();
+        float end = Now + DrawnPixels.SettleSeconds;
+        while (steady.Feed(PanelLook(root, graphics)) < DrawnPixels.SettledFrames)
+        {
+            if (Now > end)
+            {
+                Fail(
+                    $"'{root.name}' still changing after {DrawnPixels.SettleSeconds:0} s, {graphics.Count} graphics"
+                );
+                yield break;
+            }
+            yield return null;
+        }
+    }
+
+    /// <summary>What is on a panel: each drawn graphic and its alpha to a sixteenth, fine enough for a fade and coarse
+    /// enough that its last slow steps end. A plate's own colour is left out: <see cref="BackdropProbe"/> eases it for
+    /// as long as the scene behind it moves.</summary>
+    static int PanelLook(Canvas root, List<UnityEngine.UI.Graphic> graphics)
+    {
+        root.GetComponentsInChildren(false, graphics);
+        int look = 17;
+        foreach (var g in graphics)
+        {
+            if (!g.isActiveAndEnabled)
+                continue;
+            float alpha = g.canvasRenderer.GetAlpha() * g.canvasRenderer.GetInheritedAlpha();
+            look = unchecked(look * 31 + g.GetInstanceID());
+            look = unchecked(look * 31 + Mathf.RoundToInt(alpha * 16f));
+        }
+        return look;
     }
 
     /// <summary>A layer no project setting names that the camera draws, or -1.</summary>

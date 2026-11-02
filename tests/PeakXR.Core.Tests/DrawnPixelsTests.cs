@@ -47,4 +47,19 @@ public class DrawnPixelsTests
         float signal,
         bool drawn
     ) => Assert.Equal(drawn, DrawnPixels.PanelDrawn(noise, signal));
+
+    [Fact]
+    public void SteadyFramesCountsFramesSinceTheLastChange()
+    {
+        var steady = new SteadyFrames();
+        Assert.Equal(0, steady.Feed(7)); // the first look has nothing to match
+        Assert.Equal(1, steady.Feed(7));
+        Assert.Equal(2, steady.Feed(7));
+        Assert.Equal(0, steady.Feed(8)); // a plate arrives
+        Assert.Equal(1, steady.Feed(8));
+    }
+
+    [Fact]
+    public void SteadyFramesFirstLookDoesNotMatchAnUnsetLast() =>
+        Assert.Equal(0, new SteadyFrames().Feed(0));
 }
