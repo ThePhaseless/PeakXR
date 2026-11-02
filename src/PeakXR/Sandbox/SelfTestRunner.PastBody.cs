@@ -19,9 +19,9 @@ internal sealed partial class SelfTestRunner
 
     /// <summary>
     /// vr.495 (Bandages), vr.495b (FirstAidKit, the big one): given to the hand that did not hold the last item while it
-    /// rests on the chest, it waits for the hand to move. Held out in front at the belt, the item itself on the body and
-    /// the hand under it, it starts nothing. Carried from there, across the belly (inside the press zone for longer than
-    /// the dwell, at either speed) to each hotbar slot, rested there and let go: no cast starts, nothing is spent, and it
+    /// rests on the chest, it waits for the hand to move. Held just under the belt, the item itself on the body and
+    /// the hand not counting, it starts nothing. Carried from there, across the belly (hand and item in the press zone for
+    /// longer than the dwell, at either speed) to each hotbar slot, rested there and let go: no cast starts, nothing is spent, and it
     /// is in its slot. Then a cast started on the chest and carried on to the slot stops there and stows. Then
     /// drawn and lifted straight up to the chest, held still, it heals (<see cref="BandageHeld"/>).
     /// </summary>
@@ -76,7 +76,7 @@ internal sealed partial class SelfTestRunner
         }
         float consumed = c.data.lastConsumedItem;
         int uses = UsesLeft(HeldItem());
-        string carries = "";
+        string carries = frontHoldNote + "; ";
         foreach (float speed in new[] { CarryFast, CarrySlow })
         {
             for (int to = 0; to < inv.Count; to++)
@@ -91,18 +91,36 @@ internal sealed partial class SelfTestRunner
                 var item = HeldItem();
                 float cast = 0f;
                 float inZone = 0f;
-                void Sample()
+                float atSlot = 0f;
+                void SampleCast()
                 {
                     if (item != null)
                         cast = Mathf.Max(cast, item.isUsingPrimary ? 1e-3f : 0f, item.castProgress);
-                    if (HeldGestures.AtBody)
+                }
+                // Only what could start a cast counts: the item on the body with the hand there too (HeldGestures.UpdateBody).
+                bool PressZone() => HeldGestures.AtBody && HeldGestures.HandAtBody;
+                void Sample()
+                {
+                    SampleCast();
+                    if (PressZone())
                         inZone += Time.unscaledDeltaTime;
                 }
-                // From the far side of the belly: the straight way to the holding side's slot met the zone for 0.31 s at
-                // 0.8 m/s, under the dwell, so a carry there could not have started a cast whatever the rule (#147).
+                // From the far side of the belly and across it: the straight way to the holding side's slot met the zone for
+                // 0.31 s at 0.8 m/s, and over the belly's middle to the kit's slot 1 for 0.59 s, under the dwell, so a carry
+                // there could not have started a cast whatever the rule (#147).
                 var far = head + forward * 0.1f + Vector3.down * 0.5f - side * 0.3f;
-                var belly = head + forward * 0.1f + Vector3.down * 0.5f + side * 0.08f;
-                foreach (var point in new[] { far, belly })
+                var belly = head + forward * 0.1f + Vector3.down * 0.5f + side * 0.2f;
+                // Square corners: a straight reversal stays inside HandStill's 0.05 m for up to 0.15 m of path, 0.75 s at
+                // 0.2 m/s, past the dwell, so the route's own turn read as a stop (cast 0.05 at slot 2).
+                foreach (
+                    var point in new[]
+                    {
+                        far + forward * 0.12f,
+                        far,
+                        belly,
+                        belly + Vector3.down * 0.12f,
+                    }
+                )
                 {
                     while (Vector3.Distance(Script(left).Position, point) > 0.01f)
                     {
@@ -117,9 +135,18 @@ internal sealed partial class SelfTestRunner
                     Sample();
                     yield return null;
                 }
-                yield return RestAndOpen(left, to, Sample);
+                yield return RestAndOpen(
+                    left,
+                    to,
+                    () =>
+                    {
+                        SampleCast();
+                        if (PressZone())
+                            atSlot += Time.unscaledDeltaTime;
+                    }
+                );
                 var at = F(
-                    $"slot {to} at {speed:0.0} m/s: {inZone:0.00} s in the press zone, cast {cast:0.00}"
+                    $"slot {to} at {speed:0.0} m/s: {inZone:0.00} s in the press zone on the way, {atSlot:0.00} s resting at the slot, cast {cast:0.00}"
                 );
                 if (inZone < SelfUseDwell.BodyDwell)
                 {
@@ -232,6 +259,11 @@ internal sealed partial class SelfTestRunner
         Script(left).Grip = 1f;
     }
 
+    /// <summary>What the last <see cref="ExpectNoCast"/> measured.</summary>
+    string noCastNote = "";
+
+    float noCastHandSeconds;
+
     /// <summary>The hand keeps still for a second, longer than the body's dwell; no cast may start. The item must be on
     /// the body throughout, or this proves nothing.</summary>
     IEnumerator ExpectNoCast(bool left, string where)
@@ -240,40 +272,90 @@ internal sealed partial class SelfTestRunner
         var at = Script(left).Position;
         float cast = 0f;
         float touching = 0f;
+        float gap = float.PositiveInfinity;
+        noCastHandSeconds = 0f;
         for (float start = Now; Now - start < 1f; )
         {
             SetHand(left, at);
+            noCastHandSeconds += HeldGestures.HandAtBody ? Time.unscaledDeltaTime : 0f;
             cast = Mathf.Max(cast, item.isUsingPrimary ? 1e-3f : 0f, item.castProgress);
+            gap = Mathf.Min(gap, HeldGestures.BodyGap);
             if (HeldGestures.AtBody)
                 touching += Time.unscaledDeltaTime;
             yield return null;
         }
-        var note = F($"{where}: {touching:0.00} s on the body, cast {cast:0.00}");
+        var note = F(
+            $"{where}: {touching:0.00} s on the body, the item's gap {gap:0.000} m, cast {cast:0.00}"
+        );
+        noCastNote = note;
         if (touching < SelfUseDwell.BodyDwell)
             Fail("the item barely touched the body, so this proves nothing: " + note);
         else if (cast > 0f)
             Fail("it started the use: " + note);
     }
 
-    /// <summary>In from far out in front until the item itself meets the body, the hand just under the torso's bottom,
-    /// where it never counts: the hold most likely to start a use by mistake, whatever the item's size. Straight in at
-    /// chest height the hand counted first: the Bandages' near face stops 0.19 m off the grip, under the 0.2 m the hand
-    /// gets (<see cref="BodyZones.HandOffTorso"/>), so the item stayed 0.028 m short (#147). Then a second's rest.</summary>
+    /// <summary>What the last <see cref="FrontHold"/> held, for the pass note.</summary>
+    string frontHoldNote = "";
+
+    /// <summary>The hand 4 cm under the torso's bottom, where it never counts, and the item turned until it meets the body:
+    /// the hold most likely to start a use by mistake, whatever the item's size. The hand's turn has to be chosen: re-aimed
+    /// from the head, a hand under the belt looks straight down, and the item hung away from the body (#147: 0.8 m under
+    /// the eyes, AtBody false throughout). Straight in at chest height the hand counted first: the Bandages' near face
+    /// stops 0.19 m off the grip, under the 0.2 m the hand gets (<see cref="BodyZones.HandOffTorso"/>). Then a second's
+    /// rest.</summary>
     IEnumerator FrontHold(bool left, Vector3 head, Vector3 forward, Vector3 side)
     {
-        var level = head + Vector3.down * (BodyZones.TorsoBottom + 0.1f) + side * 0.1f;
-        yield return MoveTrack(left, level + forward * 0.6f, 0.5f);
-        while (!HeldGestures.AtBody && Vector3.Distance(Script(left).Position, level) > 0.01f)
+        var under = head + Vector3.down * (BodyZones.TorsoBottom + 0.04f) + side * 0.1f;
+        yield return MoveTrack(left, under + forward * 0.6f, 0.5f);
+        var c = Character.localCharacter;
+        var turns = new[] { Vector3.up, forward, -forward, -side, side, Vector3.down };
+        float best = float.PositiveInfinity;
+        string found = null;
+        foreach (float ahead in new[] { 0.25f, 0.15f, 0.05f, 0.35f })
         {
-            SetHand(left, ApproachAt(left, level, 0.2f));
-            yield return null;
+            var at = under + forward * ahead;
+            yield return MoveTrack(left, at, 0.3f);
+            foreach (var fingers in turns)
+            {
+                HoldTurn(
+                    left,
+                    HandLook(fingers, Mathf.Abs(fingers.y) > 0.5f ? forward : Vector3.up)
+                );
+                SetHand(left, at);
+                // The hand's pose reaches the gesture a frame later.
+                yield return null;
+                yield return null;
+                best = Mathf.Min(best, HeldGestures.BodyGap);
+                if (
+                    HeldGestures.BodyGap <= 0f
+                    && !HeldGestures.HandAtBody
+                    && BodyInventory.Instance.HeldSlot(c, left) < 0
+                )
+                {
+                    found = F($"{ahead:0.00} m ahead of the eyes, fingers {fingers}");
+                    break;
+                }
+            }
+            if (found != null)
+                break;
         }
-        if (BodyInventory.Instance.HeldSlot(Character.localCharacter, left) >= 0)
+        if (found == null)
         {
-            Fail("setup: the front hold landed on a body slot, which would end a use anyway");
+            FreeTurn(left);
+            Fail(
+                F(
+                    $"setup: no turn under the belt put the item on the body with the hand not counting, nearest {best:0.000} m"
+                )
+            );
             yield break;
         }
         yield return ExpectNoCast(left, "at the front hold");
+        if (stepOk && noCastHandSeconds > 0f)
+            Fail(
+                "setup: the hand counted at the front hold, so this proves nothing: " + noCastNote
+            );
+        frontHoldNote = noCastNote + ", " + found;
+        FreeTurn(left);
     }
 
     /// <summary>

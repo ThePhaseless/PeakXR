@@ -75,6 +75,8 @@ internal static class HeldGestures
     {
         Body.Reset();
         BodyUse.Reset();
+        BodyGap = float.PositiveInfinity;
+        HandAtBody = false;
     }
 
     private static void ResetFace()
@@ -86,6 +88,12 @@ internal static class HeldGestures
 
     /// <summary>The held item is at your own body this frame, whether or not it counts yet (self-test vr.495).</summary>
     public static bool AtBody => Body.Active;
+
+    /// <summary>How far the held item is from your own torso or other forearm this frame, m (self-test vr.495).</summary>
+    public static float BodyGap { get; private set; } = float.PositiveInfinity;
+
+    /// <summary>The hand itself is at the body this frame, so an item there means it (self-test vr.495).</summary>
+    public static bool HandAtBody { get; private set; }
 
     /// <summary>The face gesture holds primary this frame (self-test reads it).</summary>
     public static bool AtFace => facing;
@@ -331,6 +339,8 @@ internal static class HeldGestures
             out bool handThere,
             out bool onForearm
         );
+        BodyGap = distance;
+        HandAtBody = handThere;
 
         // Rested against the body, not carried past it to a slot or swung across it in a throw.
         bool left = ItemGestures.HoldLeft;
