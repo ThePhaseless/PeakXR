@@ -45,6 +45,9 @@ internal sealed class PackStash : IGripExtension
         public Character Wearer;
         public Vector3 At;
         public int Id;
+
+        /// <summary>Terrain before the pack's pivot (<see cref="Occluded"/>): pointed at, it says so (#144).</summary>
+        public bool Blocked;
     }
 
     private static readonly Pick NoPick = new() { Id = -1 };
@@ -372,10 +375,12 @@ internal sealed class PackStash : IGripExtension
         // The pack the ray hits is the pick whatever its centre's angle (a big pack seen close).
         bool onRay = ReferenceEquals(rayTarget, target);
         float angle = onRay ? 0f : ReachOut.AimDegrees(from.N(), (from + dir).N(), pick.At.N());
-        if (angle > PackDrop.PointHold || (!onRay && Occluded(from, pick.At, target)))
+        if (angle > PackDrop.PointHold)
             return;
-        // All in range: the aim picks, never the distance (OutOfReach shows on the aimed pack).
-        t.Offer(pick.Id, angle, true);
+        // The aim picks, never the distance (OutOfReach shows on the aimed pack); a pack with the way open beats one
+        // behind rock, which still takes the pick when it is the only one, so the hand hears why (#144).
+        pick.Blocked = !onRay && Occluded(from, pick.At, target);
+        t.Offer(pick.Id, angle, !pick.Blocked);
         if (onRay)
             walkRayId = pick.Id;
         if (pick.Id == t.Friend)
@@ -410,7 +415,8 @@ internal sealed class PackStash : IGripExtension
         packAt = p.At;
         return PackDrop.PointRefusal(
             Vector3.Distance(c.Head, packAt),
-            Refusal(c, c.data.currentItem, packAt, out _)
+            Refusal(c, c.data.currentItem, packAt, out _),
+            p.Blocked
         );
     }
 

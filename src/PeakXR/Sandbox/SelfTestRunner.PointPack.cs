@@ -470,7 +470,8 @@ internal sealed partial class SelfTestRunner
     /// <summary>
     /// vr.432-point-pack-refusals: (a) a pack 3 m away gives OutOfReach (with the range hint), (b) a pack with every
     /// pocket filled (Backpack.Stash, Backpack.cs:119) gives PackFull, (c) an Apple packs refuse (its instance's
-    /// <c>UIData.canBackpack</c> off) gives CantHolster. Each pull gets the cue, no wheel and no secondary use.
+    /// <c>UIData.canBackpack</c> off) gives CantHolster, (d) rock between the aim and the pack gives NoPath. Each pull
+    /// gets the cue, no wheel and no secondary use.
     /// </summary>
     IEnumerator PointPackRefusalsStep()
     {
@@ -497,6 +498,27 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         yield return PointRefused(spawnedPack, DenyReason.OutOfReach);
+        if (!stepOk)
+            yield break;
+        // (d) rock between the aim and the near pack's pivot: the way is shut, and the hand hears it (#144).
+        var eye = VRRig.Instance.Head.position;
+        var slab = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        try
+        {
+            slab.name = "PeakXR_TestRock";
+            slab.layer = LayerMask.NameToLayer("Map");
+            slab.transform.SetPositionAndRotation(
+                Vector3.Lerp(eye, pointPack.Center(), 0.65f),
+                Quaternion.LookRotation(pointPack.Center() - eye)
+            );
+            slab.transform.localScale = new Vector3(0.8f, 0.8f, 0.05f);
+            yield return Wait(0.1f);
+            yield return PointRefused(pointPack, DenyReason.NoPath);
+        }
+        finally
+        {
+            Destroy(slab);
+        }
         if (!stepOk)
             yield break;
         // (b) fill every pocket of the near pack with Apples, then point a held one at it.
@@ -529,7 +551,7 @@ internal sealed partial class SelfTestRunner
         yield return PointRefused(pointPack, DenyReason.PackFull);
         if (stepOk)
             stepNote =
-                "CantHolster, OutOfReach and PackFull each refused the pull with their cue: "
+                "CantHolster, OutOfReach, NoPath and PackFull each refused the pull with their cue: "
                 + cueNote;
     }
 
