@@ -6,6 +6,7 @@ using System.IO;
 using System.Text;
 using PeakXR.Avatar;
 using PeakXR.Core;
+using PeakXR.Diagnostics;
 using PeakXR.Social;
 using PeakXR.UI.Affordances;
 using PeakXR.VR;
@@ -137,6 +138,7 @@ internal sealed partial class SelfTestRunner
         yield return MpStep("walk-to-host", 60f, true, WalkTo(HostCenter, 1.5f, true));
         yield return MpStep("emote", 20f, true, EmoteStep());
         yield return MpStep("ping", 15f, true, PingStep());
+        yield return MpStep("ping-seen", 20f, true, PingSeen());
         // A host-owned scene button refused for this non-host (WP5 body, SelfTestRunner.World.cs); SKIP when none.
         yield return MpStep("scene-button", 60f, true, MpSceneButton());
         yield return MpStep("board", 400f, false, Board());
@@ -671,10 +673,9 @@ internal sealed partial class SelfTestRunner
         var host = Host();
         if (!PingButtonHand(out bool left))
             yield break;
-        var aim = host.Center + Flat(c.Center - host.Center) * 1.5f;
-        if (Terrain(aim + Vector3.up * 2f, Vector3.down, 6f, out var ground))
-            aim = ground.point;
+        var aim = PingSpotInHostsView(c, host);
         MpPingProbe.Last = null;
+        PingProbe.Last = null;
         yield return ButtonAim(left, aim, 0.4f);
         yield return ButtonTap(left, aim);
         Script(left).SecondaryTouch = false;
@@ -685,7 +686,79 @@ internal sealed partial class SelfTestRunner
             yield break;
         }
         Extra("ping", point);
-        stepNote = $"ping {Vector3.Distance(point, aim):0.00} m from the aim point";
+        yield return WaitFor(() => PingProbe.Last != null, 1f);
+        stepNote =
+            $"ping {Vector3.Distance(point, aim):0.00} m from the aim point; own {PingProbe.Last?.Line ?? "probe wrote nothing"}";
+    }
+
+    /// <summary>How far (m) ahead of the host <see cref="PingSpotInHostsView"/> aims, and how far (degrees) off the
+    /// host's view: well inside a flat camera's field, on ground it sees.</summary>
+    const float PingSpotAhead = 3f;
+
+    const float PingSpotOff = 25f;
+
+    /// <summary>
+    /// Ground in the host's view, on the side away from A. The old spot, 1.5 m from the host toward A, lay behind A's
+    /// body from the host's camera, so the host's screenshot could say nothing about the marker (#130).
+    /// </summary>
+    static Vector3 PingSpotInHostsView(Character c, Character host)
+    {
+        var look = Flat(host.data.lookDirection_Flat);
+        var toA = Flat(c.Center - host.Center);
+        float side = Vector3.Dot(Vector3.Cross(Vector3.up, look), toA) > 0f ? -1f : 1f;
+        var aim = host.Center + Quaternion.Euler(0f, side * PingSpotOff, 0f) * look * PingSpotAhead;
+        return Terrain(aim + Vector3.up * 2f, Vector3.down, 6f, out var ground)
+            ? ground.point
+            : aim;
+    }
+
+    /// <summary>
+    /// ping-seen (#130): the host pings ground ahead of A through its own PointPinger (<see cref="MpRequest.Ping"/>) while
+    /// A looks at it. <see cref="PingProbe"/> must report a marker from the host on this client: the distance check
+    /// passed, its renderer on, its layer in the camera's mask and <c>renderer.isVisible</c>. A reads none of the
+    /// marker's looks; its checkpoint's screenshot falls inside the marker's 2 s for those.
+    /// </summary>
+    IEnumerator PingSeen()
+    {
+        var c = Character.localCharacter;
+        var host = Host();
+        // Turned off the line to the host, so the spot is clear of the host's body from both cameras.
+        var dir = Quaternion.Euler(0f, 60f, 0f) * Flat(c.Center - host.Center);
+        var spot = c.Center + dir * 3f;
+        if (!Terrain(spot + Vector3.up * 2f, Vector3.down, 6f, out var ground))
+        {
+            stepSkip = "no ground 3 m out for the host to ping";
+            yield break;
+        }
+        spot = ground.point;
+        Face(spot);
+        LookAtPoint(spot);
+        yield return Wait(0.5f);
+        PingProbe.Last = null;
+        yield return Ask(MpRequest.Ping, from: spot);
+        if (stepSkip != null)
+        {
+            EndGlance();
+            yield break;
+        }
+        yield return WaitFor(() => PingProbe.Last is { Local: false }, 2f);
+        EndGlance();
+        if (PingProbe.Last is not { Local: false } seen)
+        {
+            Fail("no ping from the host reached this client within 2 s");
+            yield break;
+        }
+        Extra("pingSeen", seen.Marker && seen.Visible);
+        if (!seen.Expected)
+            Fail("the game's own distance check drops this ping: " + seen.Line);
+        else if (!seen.Marker)
+            Fail("no marker for the host's ping: " + seen.Line);
+        else if (!seen.RendererOn || !seen.LayerSeen)
+            Fail("the host's marker cannot draw: " + seen.Line);
+        else if (!seen.Visible || !seen.InView)
+            Fail("the host's marker is not visible: " + seen.Line);
+        else
+            stepNote = seen.Line;
     }
 
     /// <summary>Turns the hand so its aim pose (<c>VRRig.Aim</c>, the ping ray's origin) looks at a world point.</summary>

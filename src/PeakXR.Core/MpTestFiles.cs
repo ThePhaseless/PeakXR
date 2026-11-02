@@ -242,6 +242,10 @@ public static class MpRequest
     /// fetch one (MP run 15, #103: a fetch walked 175 m and stranded A for the rest of the script).</summary>
     public const string SpawnItem = "spawn-item";
 
+    /// <summary>B pings the given point through its own PointPinger: the RPC PointPinger.DoPing sends (PointPinger.cs:71),
+    /// so a ping from another player reaches A (#130).</summary>
+    public const string Ping = "ping";
+
     public static bool Known(string what) =>
         what
             is PassOut
@@ -253,7 +257,8 @@ public static class MpRequest
                 or HangBelow
                 or StartClimb
                 or WearPack
-                or SpawnItem;
+                or SpawnItem
+                or Ping;
 
     public static string Line(int id, string what, double t) =>
         new JsonLine().Num("id", id).Str("do", what).Num("t", t).ToString();

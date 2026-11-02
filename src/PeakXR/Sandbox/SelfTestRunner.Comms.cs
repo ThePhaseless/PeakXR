@@ -771,8 +771,8 @@ internal sealed partial class SelfTestRunner
         yield return ButtonAim(left, aim, 0.5f);
         bool shown = PingPreview.DotShown && !PingPreview.DotRed;
         float off = Vector3.Distance(PingPreview.DotPosition, aim);
-        yield return ShotAt("vr-110-ping", aim);
         Affordance.ResetGate();
+        Diagnostics.PingProbe.Last = null;
         float mark = CueMark();
         float gameMark = Time.time;
         var oldMarker = PingMarker(pinger);
@@ -785,6 +785,10 @@ internal sealed partial class SelfTestRunner
         if (!stepOk)
             yield break;
         var landing = PingLanding(pinger, oldMarker, aim, left, out float landed);
+        // While the marker is up (2 s, PointPinger.cs:104): #130 had never seen one drawn.
+        yield return ShotAt("vr-110-ping", aim);
+        yield return WaitFor(() => Diagnostics.PingProbe.Last != null, 0.5f);
+        string drawn = Diagnostics.PingProbe.Last?.Line ?? "probe wrote nothing";
         yield return ExpectFeel(left, CueFeel.Contact, mark);
         string feel = cueNote;
         yield return ExpectNoCue(left, mark, 0.5f);
@@ -801,7 +805,7 @@ internal sealed partial class SelfTestRunner
             Fail($"the ping tap picked up {held.name} instead of only pinging");
         else
             stepNote =
-                $"preview dot {off:0.00} m from the aim, ping marker {landed:0.00} m; {feel}";
+                $"preview dot {off:0.00} m from the aim, ping marker {landed:0.00} m; {feel}; {drawn}";
     }
 
     /// <summary>

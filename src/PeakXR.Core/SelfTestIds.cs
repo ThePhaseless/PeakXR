@@ -67,6 +67,7 @@ public static class SelfTestIds
         "pal-jump",
         "pickup",
         "ping",
+        "ping-seen",
         "reach",
         "reach-deny",
         "reach-look",
