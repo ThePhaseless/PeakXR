@@ -7,6 +7,8 @@ using System.Text;
 using PeakXR.Avatar;
 using PeakXR.Core;
 using PeakXR.Diagnostics;
+using PeakXR.Locomotion;
+using PeakXR.Rig;
 using PeakXR.Social;
 using PeakXR.UI.Affordances;
 using PeakXR.VR;
@@ -416,6 +418,18 @@ internal sealed partial class SelfTestRunner
             )
         );
     }
+
+    /// <summary>Until the stance walk has stepped the body under the view, up to 3 s: it moves the body and swings both
+    /// arms (Settle can take over a second), and the wait is <c>stanceWaited</c>.</summary>
+    IEnumerator StanceQuiet()
+    {
+        float start = Now;
+        yield return WaitFor(() => !RigDriver.FollowWalking && !LocomotionInput.StanceOwed, 3f);
+        stanceWaited = Now - start;
+    }
+
+    /// <summary>Seconds the last <see cref="StanceQuiet"/> took.</summary>
+    float stanceWaited;
 
     /// <summary>A holding hand's bone off its tracked hand by at most this (m) counts as settled.</summary>
     const float HandSettledGap = 0.1f;
@@ -4159,9 +4173,16 @@ internal sealed partial class SelfTestRunner
         // The fetch leaves the holding hand low and ahead, close enough to the pack's low transform to count as in it
         // (PackStash.Reach), and a held item in a pack turns the free hand's point off (TickPoint; #144).
         yield return CarryFoodBack(!free);
-        PointAt(free, visuals.transform.position);
+        yield return StanceQuiet();
+        // Aimed anew every frame: the pack can lie nearly under the eye, where a stance push of 0.3 m is past the hold angle
+        // of an aim set once (#100, modded B: the hand 15 deg off straight down, nothing armed).
+        bool Armed(DenyReason verdict)
+        {
+            PointAt(free, visuals.transform.position);
+            return Points(free, visuals, verdict);
+        }
         yield return Until(
-            () => Points(free, visuals, DenyReason.None),
+            () => Armed(DenyReason.None),
             1.5f,
             "the host's pack pointed at from behind did not arm"
         );
@@ -4237,20 +4258,27 @@ internal sealed partial class SelfTestRunner
             stepNote = stashed + "; no second item for the front check";
             yield break;
         }
+        free = !LocalHold.ItemInLeftHand;
+        // Carried back first: held ahead, the item met the host on the walk, and the body keep and the stance push that
+        // followed took the aim off (#100, modded B: 0.66 m from the host, the item pressed on them).
+        yield return CarryFoodBack(!free);
         var front = host.Center + host.data.lookDirection_Flat.normalized * 1f;
         yield return MpWalkBounded(() => front, 0.3f, MpPackWalkSeconds);
+        yield return MpStandOff(host);
         Face(visuals.transform.position);
         free = !LocalHold.ItemInLeftHand;
         yield return CarryFoodBack(!free);
-        PointAt(free, visuals.transform.position);
+        yield return StanceQuiet();
         yield return Until(
-            () => Points(free, visuals, DenyReason.WrongAngle),
+            () => Armed(DenyReason.WrongAngle),
             1.5f,
             "from the host's front the pack did not show WrongAngle"
         );
         if (!stepOk)
         {
-            stepNote = stashed + "; " + PointState();
+            stepNote = F(
+                $"{stashed}; {PointState()}; A {FlatDistance(c.Center, host.Center):0.00} m from the host, the stance waited {stanceWaited:0.00} s"
+            );
             yield break;
         }
         LookAtHand(free);
