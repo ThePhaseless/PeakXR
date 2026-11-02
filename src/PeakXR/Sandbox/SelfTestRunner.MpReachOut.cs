@@ -486,7 +486,8 @@ internal sealed partial class SelfTestRunner
             tried.Add(stand);
             yield return MpWalkAround(() => behind, 0.2f, 15f);
             missed = FlatDistance(c.Center, behind);
-            if (missed <= 0.6f)
+            // Under the lip is no arrival: a level distance also reads small at the foot of its face (#95).
+            if (missed <= 0.6f && SelfTestChecks.OnLip(c.Center.y - stand.y))
                 break;
         }
         if (tried.Count == 0)
@@ -499,7 +500,7 @@ internal sealed partial class SelfTestRunner
         if (missed > 0.6f)
         {
             stepSkip = F(
-                $"the walk stopped {missed:0.0} m short of the last of {tried.Count} lip(s) tried"
+                $"the walk stopped {missed:0.0} m short of the last of {tried.Count} lip(s) tried (a straight walkable line to it: {ledgeWalkable})"
             );
             yield break;
         }
@@ -516,10 +517,10 @@ internal sealed partial class SelfTestRunner
         float atLip = FlatDistance(c.Center, behind);
         // On the lip's own ground too: the torso stands about 1 m over the feet, so well above that is A on something
         // higher next to it.
-        if (atLip > LedgeStandBy || c.Center.y - stand.y > 1.4f || c.Center.y < stand.y)
+        if (atLip > LedgeStandBy || !SelfTestChecks.OnLip(c.Center.y - stand.y))
         {
             stepSkip = F(
-                $"A stands {atLip:0.00} m from the spot {LedgeBack:0.0} m behind the lip ({c.Center.y - stand.y:0.00} m over the lip's ground), not at it"
+                $"A stands {atLip:0.00} m from the spot {LedgeBack:0.0} m behind the lip ({c.Center.y - stand.y:0.00} m over the lip's ground), not at it (a straight walkable line to it: {ledgeWalkable})"
             );
             yield break;
         }
@@ -655,44 +656,93 @@ internal sealed partial class SelfTestRunner
     {
         ledgeFound = false;
         ledgeStand = ledgeOutward = default;
-        float best = float.MaxValue;
         var home = c.Center;
         int mask = HelperFunctions.terrainMapMask;
-        for (float x = -LedgeRadius; x <= LedgeRadius; x += 1f)
+        // First a lip A can walk straight up onto, then any: the nearest lip was often the top of a face A stood under
+        // (#95: A at its foot, 1.84 m under the lip's ground, and a walk stopped 1.0 m short against it).
+        for (int pass = 0; pass < 2 && !ledgeFound; pass++)
         {
-            for (float z = -LedgeRadius; z <= LedgeRadius; z += 1f)
+            float best = float.MaxValue;
+            for (float x = -LedgeRadius; x <= LedgeRadius; x += 1f)
             {
-                float sq = x * x + z * z;
-                if (sq > LedgeRadius * LedgeRadius || sq >= best)
-                    continue;
-                if (
-                    !Physics.Raycast(
-                        home + new Vector3(x, 30f, z),
-                        Vector3.down,
-                        out var ground,
-                        60f,
-                        mask,
-                        QueryTriggerInteraction.Ignore
-                    )
-                    || ground.normal.y < 0.8f
-                    || Tried(tried, ground.point)
-                )
-                    continue;
-                for (int o = 0; o < 8; o++)
+                for (float z = -LedgeRadius; z <= LedgeRadius; z += 1f)
                 {
-                    var dir = Quaternion.Euler(0f, o * 45f, 0f) * Vector3.forward;
-                    if (!Lip(ground.point, dir, mask))
+                    float sq = x * x + z * z;
+                    if (sq > LedgeRadius * LedgeRadius || sq >= best)
                         continue;
-                    best = sq;
-                    ledgeStand = ground.point;
-                    ledgeOutward = dir;
-                    ledgeFound = true;
-                    break;
+                    if (
+                        !Physics.Raycast(
+                            home + new Vector3(x, 30f, z),
+                            Vector3.down,
+                            out var ground,
+                            60f,
+                            mask,
+                            QueryTriggerInteraction.Ignore
+                        )
+                        || ground.normal.y < 0.8f
+                        || Tried(tried, ground.point)
+                    )
+                        continue;
+                    for (int o = 0; o < 8; o++)
+                    {
+                        var dir = Quaternion.Euler(0f, o * 45f, 0f) * Vector3.forward;
+                        if (
+                            !Lip(ground.point, dir, mask)
+                            || (pass == 0 && !WalkableLine(home, ground.point, mask))
+                        )
+                            continue;
+                        best = sq;
+                        ledgeStand = ground.point;
+                        ledgeOutward = dir;
+                        ledgeFound = true;
+                        ledgeWalkable = pass == 0;
+                        break;
+                    }
                 }
+                yield return null;
             }
-            yield return null;
         }
     }
+
+    /// <summary>The ground from A's centre to <paramref name="to"/>, sampled every <see cref="WalkSample"/> m on the
+    /// level, has no step a body cannot walk (Core <see cref="SelfTestChecks.WalkableStep"/>).</summary>
+    static bool WalkableLine(Vector3 from, Vector3 to, int mask)
+    {
+        var flat = to - from;
+        flat.y = 0f;
+        float length = flat.magnitude;
+        if (length < 1e-3f)
+            return true;
+        var along = flat / length;
+        float top = Mathf.Max(from.y, to.y) + 30f;
+        float last = float.NaN;
+        for (float d = 0f; d < length + WalkSample; d += WalkSample)
+        {
+            var at = from + along * Mathf.Min(d, length);
+            at.y = top;
+            if (
+                !Physics.Raycast(
+                    at,
+                    Vector3.down,
+                    out var hit,
+                    60f,
+                    mask,
+                    QueryTriggerInteraction.Ignore
+                )
+            )
+                return false;
+            if (!float.IsNaN(last) && !SelfTestChecks.WalkableStep(hit.point.y - last, WalkSample))
+                return false;
+            last = hit.point.y;
+        }
+        return true;
+    }
+
+    /// <summary>How often (m) <see cref="WalkableLine"/> samples the ground.</summary>
+    const float WalkSample = 0.5f;
+
+    /// <summary>The last <see cref="FindLedge"/>'s lip has a walkable straight line from A.</summary>
+    bool ledgeWalkable;
 
     static bool Tried(List<Vector3> tried, Vector3 at)
     {
