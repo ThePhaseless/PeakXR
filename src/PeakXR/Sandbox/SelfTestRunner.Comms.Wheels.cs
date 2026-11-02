@@ -191,8 +191,9 @@ internal sealed partial class SelfTestRunner
         if (stepOk)
             stepNote = string.Join("; ", notes);
 
+        // Bent, as a thumbs-up is held: on the nominal arm 0.4 m ahead is past Social.ReachOutStretch, a reach (#146).
         Vector3 Out(bool left) =>
-            head + forward * 0.4f + (left ? -right : right) * 0.1f + Vector3.down * 0.2f;
+            head + forward * 0.33f + (left ? -right : right) * 0.1f + Vector3.down * 0.2f;
     }
 
     /// <summary>
@@ -214,7 +215,7 @@ internal sealed partial class SelfTestRunner
         Script(hand).StickTouch = true;
         yield return MoveTrack(
             hand,
-            head + forward * 0.4f + (hand ? -right : right) * 0.1f + Vector3.down * 0.2f,
+            head + forward * 0.33f + (hand ? -right : right) * 0.1f + Vector3.down * 0.2f,
             0.3f
         );
         int before = GestureEmotes.PlayCount;
@@ -262,7 +263,7 @@ internal sealed partial class SelfTestRunner
         Script(hand).StickTouch = true;
         yield return MoveTrack(
             hand,
-            head + forward * 0.4f + (hand ? -right : right) * 0.1f + Vector3.down * 0.2f,
+            head + forward * 0.33f + (hand ? -right : right) * 0.1f + Vector3.down * 0.2f,
             0.3f
         );
         int before = GestureEmotes.PlayCount;
@@ -339,7 +340,7 @@ internal sealed partial class SelfTestRunner
         Script(hand).StickTouch = true;
         yield return MoveTrack(
             hand,
-            head + forward * 0.3f + (hand ? -right : right) * 0.15f + Vector3.down * 0.25f,
+            head + forward * 0.33f + (hand ? -right : right) * 0.15f + Vector3.down * 0.25f,
             0.3f
         );
         for (float until = Now + 3f; Now < until; )

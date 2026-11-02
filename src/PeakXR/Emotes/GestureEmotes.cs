@@ -4,6 +4,7 @@ using PeakXR.Core;
 using PeakXR.Framework;
 using PeakXR.Interact;
 using PeakXR.Rig;
+using PeakXR.Social;
 using PeakXR.UI.Affordances;
 using PeakXR.VR;
 using UnityEngine;
@@ -58,7 +59,7 @@ internal sealed class GestureEmotes : MonoBehaviour
 
     /// <summary>
     /// This empty hand's grip may be the thumbs-up's fist, not a grab (interact.physical, #82): gestures are tracked,
-    /// nothing is held, the hand is out in front (<see cref="EmoteGestures.ThumbOutFront"/>) and the thumb is lifted
+    /// nothing is held, the hand is out in front and short of a reach (<see cref="EmoteGestures.ThumbOutFront"/>) and the thumb is lifted
     /// and up (<see cref="EmoteGestures.ThumbLifted"/>) on a controller that senses it. Read live, so it holds on the
     /// frame the grip closes, still or not.
     /// </summary>
@@ -82,7 +83,12 @@ internal sealed class GestureEmotes : MonoBehaviour
         var flat = rig.Head.forward;
         flat.y = 0f;
         flat = flat.sqrMagnitude > 1e-4f ? flat.normalized : Vector3.forward;
-        return EmoteGestures.ThumbOutFront(Vector3.Dot(p - head, flat), head.y - p.y)
+        return EmoteGestures.ThumbOutFront(
+                Vector3.Dot(p - head, flat),
+                head.y - p.y,
+                Stretch(left),
+                SocialConfig.Instance.ReachOutStretch
+            )
             && EmoteGestures.ThumbLifted(
                 LocalAvatar.ControllerCurls(left),
                 Vector3.Dot(hand.ThumbSide(), Vector3.up)
@@ -245,7 +251,7 @@ internal sealed class GestureEmotes : MonoBehaviour
     }
 
     /// <summary>A deliberate thumbs-up (EmoteGestures.ThumbIntent): a tracked fist, thumb lifted and up, held still out
-    /// in front, empty-handed and not busy, on a controller that has shown it senses the thumb.</summary>
+    /// in front and short of a reach, empty-handed and not busy, on a controller that has shown it senses the thumb.</summary>
     private static bool Thumb(
         bool left,
         Transform hand,
@@ -280,7 +286,25 @@ internal sealed class GestureEmotes : MonoBehaviour
             busy,
             Vector3.Dot(p - head, flat),
             head.y - p.y,
-            state.Velocity.magnitude
+            state.Velocity.magnitude,
+            Stretch(left),
+            SocialConfig.Instance.ReachOutStretch
+        );
+    }
+
+    /// <summary>How far this hand is out, on the reach-out's own measure (Core <see cref="ReachOut"/>, the measured arm
+    /// in tracking space): past Social.ReachOutStretch a fist is a reach, not a thumbs-up (#146).</summary>
+    private static float Stretch(bool left)
+    {
+        var headRotation = VRInput.HeadRotation.N();
+        return ReachOut.Stretch(
+            ReachOut.Shoulder(
+                BodySlotLayout.Neck(VRInput.HeadPosition.N(), headRotation),
+                BodySlotLayout.HeadYawDeg(headRotation),
+                left
+            ),
+            VRInput.Hand(left).Position.N(),
+            SocialHands.Instance.ReachOutArm
         );
     }
 

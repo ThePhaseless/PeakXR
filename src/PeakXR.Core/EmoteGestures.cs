@@ -63,7 +63,8 @@ public static class EmoteGestures
     /// A deliberate thumbs-up this frame: the <see cref="ThumbsUp"/> pose, on a controller that reports thumb touch
     /// (<paramref name="thumbSensed"/>; without the sensor every fist reads as a lifted thumb), no item held, the body
     /// not <see cref="Busy"/>, the hand held out in front (<paramref name="forward"/> metres ahead of the eyes,
-    /// <paramref name="belowEyes"/> metres under them) and still (<paramref name="speed"/> m/s).
+    /// <paramref name="belowEyes"/> metres under them, <paramref name="stretch"/> of the arm against
+    /// <paramref name="maxStretch"/>, <see cref="ThumbOutFront"/>) and still (<paramref name="speed"/> m/s).
     /// </summary>
     public static bool ThumbIntent(
         bool pose,
@@ -72,19 +73,28 @@ public static class EmoteGestures
         bool busy,
         float forward,
         float belowEyes,
-        float speed
+        float speed,
+        float stretch,
+        float maxStretch
     ) =>
         pose
         && thumbSensed
         && !holdingItem
         && !busy
-        && ThumbOutFront(forward, belowEyes)
+        && ThumbOutFront(forward, belowEyes, stretch, maxStretch)
         && speed <= StillSpeed;
 
     /// <summary>Where a thumbs-up is held: <paramref name="forward"/> metres ahead of the eyes (flat) and
-    /// <paramref name="belowEyes"/> metres under them, out in front at chest height or above.</summary>
-    public static bool ThumbOutFront(float forward, float belowEyes) =>
-        forward >= ThumbReach && belowEyes <= ThumbDrop;
+    /// <paramref name="belowEyes"/> metres under them, out in front at chest height or above, and no further out than
+    /// <paramref name="maxStretch"/> of the arm: past it (Social.ReachOutStretch) a still fist is a reach. Its neutral
+    /// wrist has the thumb side up and a thumb that is off the buttons reads as lifted, so a false one goes to every
+    /// peer (#146).</summary>
+    public static bool ThumbOutFront(
+        float forward,
+        float belowEyes,
+        float stretch,
+        float maxStretch
+    ) => forward >= ThumbReach && belowEyes <= ThumbDrop && stretch <= maxStretch;
 
     /// <summary>
     /// Why the game will not open the emote wheel (GUIManager.UpdateEmoteWheel, A/GUIManager.cs:561-569, and

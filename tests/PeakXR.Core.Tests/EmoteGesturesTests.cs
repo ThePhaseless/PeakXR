@@ -174,8 +174,21 @@ public class EmoteGesturesTests
         bool busy = false,
         float forward = 0.4f,
         float below = 0.2f,
-        float speed = 0.05f
-    ) => EmoteGestures.ThumbIntent(pose, sensed, holding, busy, forward, below, speed);
+        float speed = 0.05f,
+        float stretch = 0.6f,
+        float limit = 0.75f
+    ) =>
+        EmoteGestures.ThumbIntent(
+            pose,
+            sensed,
+            holding,
+            busy,
+            forward,
+            below,
+            speed,
+            stretch,
+            limit
+        );
 
     // Frames of one intent fed to the dwell; how many emotes fire.
     static int Fires(DwellGesture g, bool intent, float seconds)
@@ -207,6 +220,38 @@ public class EmoteGesturesTests
         Assert.False(Thumb(pose: false));
         var g = new DwellGesture { Dwell = EmoteGestures.ThumbDwell };
         Assert.Equal(0, Fires(g, Thumb(forward: 0.05f, below: 0.6f), 5f));
+    }
+
+    [Fact]
+    public void ThumbIntent_APlainReachIsNoThumbsUp()
+    {
+        // #146: a neutral forward reach has the thumb side up, so a still fist at full stretch met every other rule.
+        Assert.False(Thumb(stretch: 0.95f));
+        Assert.False(Thumb(stretch: 0.76f));
+        Assert.True(Thumb(stretch: 0.75f));
+        Assert.False(EmoteGestures.ThumbOutFront(0.4f, 0.2f, 0.8f, 0.75f));
+        Assert.True(EmoteGestures.ThumbOutFront(0.4f, 0.2f, 0.7f, 0.75f));
+    }
+
+    [Fact]
+    public void ThumbIntent_FollowsTheReachOutSetting()
+    {
+        Assert.False(Thumb(stretch: 0.7f, limit: 0.6f));
+        Assert.True(Thumb(stretch: 0.9f, limit: 0.95f));
+    }
+
+    [Fact]
+    public void ThumbIntent_ThePoseSelfTestsUseIsInsideTheLimit()
+    {
+        // vr.127's fist, from the eye: 0.33 m ahead, 0.1 m to its own side, 0.2 m down; on the nominal arm, as a player
+        // who has not stretched yet. The shoulder is under the neck.
+        var head = new System.Numerics.Vector3(0f, 1.6f, 0f);
+        var neck = BodySlotLayout.Neck(head, System.Numerics.Quaternion.Identity);
+        var shoulder = ReachOut.Shoulder(neck, 0f, false);
+        var hand = head + new System.Numerics.Vector3(0.1f, -0.2f, 0.33f);
+        float stretch = ReachOut.Stretch(shoulder, hand, ReachOut.NominalArm);
+        Assert.True(stretch <= 0.75f, $"stretch {stretch:0.00}");
+        Assert.True(EmoteGestures.ThumbOutFront(0.33f, 0.2f, stretch, 0.75f));
     }
 
     [Fact]
