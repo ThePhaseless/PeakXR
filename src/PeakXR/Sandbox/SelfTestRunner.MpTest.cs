@@ -1687,10 +1687,13 @@ internal sealed partial class SelfTestRunner
                 && ownGap >= PeakXR.Interact.Physical.HeldGestures.AwayFromMouth + 0.05f
                     ? placedFor + Time.unscaledDeltaTime
                     : 0f;
-            // Past the dwell with the trigger up, the ring already marks the mouth (#112).
+            // Past the dwell with the trigger up, the ring marks the mouth (#112). The dwell starts when the hand stops,
+            // the band's clock when the food enters it, and a stance push restarts the dwell, so the press waits for the
+            // ring, up to MpRingWait, and a ring that never came fails by name below (#119: a 0.1 s window, closed by a
+            // push 0.2 s before the press).
             ringInBand |=
-                placedFor >= 0.4f && Social.SocialHands.Instance.FeedState == HandOverState.Hint;
-            if (bandMark < 0f && placedFor >= 0.5f)
+                placedFor > 0f && Social.SocialHands.Instance.FeedState == HandOverState.Hint;
+            if (bandMark < 0f && placedFor >= 0.5f && (ringInBand || placedFor >= MpRingWait))
             {
                 bandMark = CueMark();
                 Script(left).Trigger = 1f;
@@ -1743,7 +1746,11 @@ internal sealed partial class SelfTestRunner
         }
         if (!ringInBand)
         {
-            Fail("no ring on the host's mouth with the food rested just short of it: " + bandGaps);
+            Fail(
+                F(
+                    $"no ring on the host's mouth with the food rested just short of it for {MpRingWait:0.0} s: {bandGaps}"
+                )
+            );
             yield break;
         }
         yield return ExpectCue(left, DenyReason.OutOfReach, bandMark, false, 1.5f);
@@ -2609,6 +2616,10 @@ internal sealed partial class SelfTestRunner
     /// <summary>How far (m) A's eye stands from the host's mouth for the squeeze beside it: the hand at its full
     /// <see cref="MpFeedHold"/> stops 0.4 m short, so only the hand brings the food to the band (#119).</summary>
     const float MpSqueezeEye = 1f;
+
+    /// <summary>How long (s) the food rests in the band waiting for the ring: the mouth dwell, a stance push and its
+    /// settle.</summary>
+    const float MpRingWait = 2f;
 
     /// <summary>How long (s) the hand gets to bring the food to the band from the carry, from each stance.</summary>
     const float MpBandBudget = 8f;
