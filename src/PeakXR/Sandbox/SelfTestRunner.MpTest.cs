@@ -196,9 +196,19 @@ internal sealed partial class SelfTestRunner
         if ((!r.Passed || r.Skipped) && HeldItem() != null)
             yield return Guard(TapDrop(), Now + 1f, _ => { });
         if (vr)
+        {
+            // The checkpoint compares hands at rest, and a stance walk swings both of them in the body frame (#145: regroup
+            // written during a push and read 0.32 m off; they matched within a second).
+            yield return StanceQuiet();
+            Extra(
+                "stance",
+                F(
+                    $"stance {(RigDriver.FollowWalking || LocomotionInput.StanceOwed ? "still walking" : "quiet")} after {stanceWaited:0.00} s"
+                )
+            );
             yield return HandClearOfBodies();
-        if (vr)
-            yield return HoldingHandSettled();
+            yield return HeldItem() != null ? HoldingHandSettled() : FreeHandsSettled();
+        }
         WriteCheckpoint(
             id,
             r.Skipped ? "skip"
