@@ -567,14 +567,29 @@ internal sealed partial class SelfTestRunner
         // Online A's copy is moved by the master's sync and need not raise a contact (#117), so the flight's end is
         // also read from its height over the ground.
         Vector3? touchdown = null;
+        Vector3 flewFrom = default;
+        float thrownAt = float.PositiveInfinity;
+        // Past the release, which can start under the height; along the whole frame's travel, because 20 m/s skips it.
         void WatchTouchdown()
         {
+            if (touchdown != null || thrown == null)
+                return;
+            var at = thrown.Center();
+            var moved = at - flewFrom;
             if (
-                touchdown == null
-                && thrown != null
-                && Terrain(thrown.Center(), Vector3.down, TouchdownHeight, out var under)
+                Now - thrownAt >= TouchdownFrom
+                && (
+                    Terrain(at, Vector3.down, TouchdownHeight, out var under)
+                    || Terrain(
+                        flewFrom + Vector3.down * TouchdownHeight,
+                        moved,
+                        moved.magnitude,
+                        out under
+                    )
+                )
             )
                 touchdown = under.point;
+            flewFrom = at;
         }
         var swing = SwingRelease(left, windup, release);
         float end = Now + 2.5f;
@@ -590,6 +605,8 @@ internal sealed partial class SelfTestRunner
                 ).AddComponent<ThrowProbe>();
                 probe.Thrower = c;
                 probe.Since = Now;
+                thrownAt = Now;
+                flewFrom = thrown.Center();
             }
             yield return null;
         }
@@ -678,6 +695,9 @@ internal sealed partial class SelfTestRunner
     /// <summary>A thrown item's centre this near the ground (m) has come down: its flight ends here when no contact
     /// shows, and a roll down the slope after it is not the throw's (#117).</summary>
     const float TouchdownHeight = 0.3f;
+
+    /// <summary>Seconds after the release before a touchdown counts: a low release starts within the height.</summary>
+    const float TouchdownFrom = 0.2f;
 
     /// <summary>Constant speed (no easing): 0.9 m in 0.15 s, the grip opening at 70 % while the hand still moves.</summary>
     IEnumerator SwingRelease(bool left, Vector3 windup, Vector3 release)
