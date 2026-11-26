@@ -26,12 +26,12 @@
   <!-- Bug and code-smell analyzers for every project, tests included. -->
   <ItemGroup>
     <PackageReference Include="Roslynator.Analyzers" Version="5.0.1" PrivateAssets="all" />
-    <PackageReference Include="SonarAnalyzer.CSharp" Version="10.35.0.4138" PrivateAssets="all" />
+    <PackageReference Include="SonarAnalyzer.CSharp" Version="10.37.0.15768" PrivateAssets="all" />
   </ItemGroup>
 
   <!-- Analyzers for every project except the test project. -->
   <ItemGroup Condition="'$(IsTestProject)' != 'true'">
-    <PackageReference Include="Meziantou.Analyzer" Version="3.0.317" PrivateAssets="all" />
+    <PackageReference Include="Meziantou.Analyzer" Version="3.0.342" PrivateAssets="all" />
   </ItemGroup>
 
   <!-- Unity analyzers for the game-side plugins (PeakXR, the MpObserver test plugin); Harmony's for PeakXR's patches. -->
@@ -53,6 +53,6 @@
 
   <!-- Language polyfills for netstandard2.x (IsExternalInit, CallerArgumentExpression, ...), as internal source. -->
   <ItemGroup Condition="'$(MSBuildProjectName)' == 'PeakXR' Or '$(MSBuildProjectName)' == 'PeakXR.Core' Or '$(MSBuildProjectName)' == 'PeakXR.Preloader'">
-    <PackageReference Include="PolySharp" Version="1.16.0" PrivateAssets="all" />
+    <PackageReference Include="PolySharp" Version="1.17.1" PrivateAssets="all" />
   </ItemGroup>
 </Project>
